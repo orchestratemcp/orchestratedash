@@ -38,6 +38,10 @@ import { ServerCard } from "../../_components/server-card";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { sightings } from "../../_data/sightings";
 import { submitHostCommand } from "../../_data/source";
+import {
+  readHostServiceReport,
+  type HostServiceReport,
+} from "../../../lib/deploy/service-unit";
 import { agentStageHref } from "../../_data/routes";
 import { useCanAct, useHost, useView } from "../../_data/use-view";
 import type { SavedServerView } from "../../../lib/views/types";
@@ -1111,6 +1115,45 @@ export default function HostsPage(): ReactNode {
     }
   }
 
+  /**
+   * Ask this server what it does when it restarts, or change it (MAR-795,
+   * ADR 0031).
+   *
+   * One function for both, because they answer with the same three facts and the
+   * card renders them the same way — see `HostActionResult`'s residency member,
+   * where that is the argument for one shape.
+   *
+   * Null on any failure, and the card draws its own sentence for it. The reason
+   * a refusal does not become a notice here is that this is the one control on
+   * the card a person may press to *find out* something: a red banner over "DASH
+   * could not reach your server" is already the standing at the top of the card,
+   * and repeating it in a second place would be the wall of text this page is
+   * written against.
+   *
+   * On a successful change the page re-reads, because `server.residency` is
+   * computed from the store and a press has just changed it.
+   */
+  async function residency(
+    server: SavedServerView,
+    change: "read" | "on" | "off",
+  ): Promise<HostServiceReport | null> {
+    setBusyHost(server.host_id);
+    setNotice(server.host_id, null);
+    const result =
+      change === "read"
+        ? await submitHostCommand("residencyState", { host_id: server.host_id })
+        : await submitHostCommand("residency", { host_id: server.host_id, state: change });
+    setBusyHost(null);
+    if (!result.ok) {
+      setNotice(server.host_id, result.detail ?? null);
+      return null;
+    }
+    if (change !== "read") {
+      setRevision((current) => current + 1);
+    }
+    return readHostServiceReport(result.data);
+  }
+
   async function forget(server: SavedServerView): Promise<void> {
     setBusyHost(server.host_id);
     setNotice(server.host_id, null);
@@ -1238,6 +1281,8 @@ export default function HostsPage(): ReactNode {
                     setup: () => setup(server),
                     bringHome: (agentId) => void bringHome(server, agentId),
                     installKey: (offer) => void installKey(server, offer),
+                    readResidency: () => residency(server, "read"),
+                    setResidency: (on) => residency(server, on ? "on" : "off"),
                   }}
                 />
               </li>

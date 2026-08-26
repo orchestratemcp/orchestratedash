@@ -138,6 +138,16 @@ export interface HostKeyCommandTarget extends HostDeployCommandTarget {
   fingerprint: string;
 }
 
+/**
+ * A saved host and one of two words (MAR-795, ADR 0031).
+ *
+ * `state` is `"on"` or `"off"`. No agent id: a boot entry is a fact about the
+ * machine, and the helper enumerates its own bundles rather than being told one.
+ */
+export interface HostResidencyCommandTarget extends HostCommandTarget {
+  state: "on" | "off";
+}
+
 export interface HostTrustCommandTarget extends HostCommandTarget {
   fingerprint: string;
 }
@@ -543,6 +553,15 @@ interface DashShellClient {
   runAgentOnHost?(args: HostDeployCommandTarget): Promise<CommandResult>;
   /** MAR-794, ADR 0018. Four names; the value never crosses this bridge. */
   installKeyOnHost?(args: HostKeyCommandTarget): Promise<CommandResult>;
+  /**
+   * What one server does when it restarts, and the switch (MAR-795, ADR 0031).
+   *
+   * Optional like every method around them, for the same reason: a DASH
+   * installed before this work has the rest of the bridge and not these two, and
+   * the page says so rather than throwing.
+   */
+  readHostResidency?(args: HostCommandTarget): Promise<CommandResult>;
+  setHostResidency?(args: HostResidencyCommandTarget): Promise<CommandResult>;
   /**
    * Take the copy that is on a server back (MAR-611, ADR 0017).
    *
@@ -2012,6 +2031,14 @@ export async function submitHostCommand(
   target: HostKeyCommandTarget,
 ): Promise<CommandResult>;
 export async function submitHostCommand(
+  action: "residencyState",
+  target: HostCommandTarget,
+): Promise<CommandResult>;
+export async function submitHostCommand(
+  action: "residency",
+  target: HostResidencyCommandTarget,
+): Promise<CommandResult>;
+export async function submitHostCommand(
   action:
     | "create"
     | "probe"
@@ -2021,13 +2048,16 @@ export async function submitHostCommand(
     | "run"
     | "bringHome"
     | "installKey"
+    | "residencyState"
+    | "residency"
     | "forget",
   target:
     | HostCreateCommandArgs
     | HostCommandTarget
     | HostTrustCommandTarget
     | HostDeployCommandTarget
-    | HostKeyCommandTarget,
+    | HostKeyCommandTarget
+    | HostResidencyCommandTarget,
 ): Promise<CommandResult> {
   const bridge = typeof window === "undefined" ? undefined : window.dashShell;
   if (bridge === undefined) {
@@ -2120,6 +2150,29 @@ export async function submitHostCommand(
         };
       }
       return bridge.installKeyOnHost(target as HostKeyCommandTarget);
+    // MAR-795, ADR 0031. The read and the write, refused separately, because a
+    // DASH old enough to have neither should say which control it lacks rather
+    // than one sentence for two acts.
+    case "residencyState":
+      if (bridge.readHostResidency === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot ask a server what it does when it restarts yet.",
+        };
+      }
+      return bridge.readHostResidency(target as HostCommandTarget);
+    case "residency":
+      if (bridge.setHostResidency === undefined) {
+        return {
+          ok: false,
+          request_id: "",
+          reason: "read_only_host",
+          detail: "This version of the DASH app cannot change what a server does when it restarts yet.",
+        };
+      }
+      return bridge.setHostResidency(target as HostResidencyCommandTarget);
     case "forget":
       if (bridge.forgetHost === undefined) {
         return {

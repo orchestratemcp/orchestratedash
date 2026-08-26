@@ -1206,6 +1206,63 @@ export const COMMANDS = {
     mutates: true,
     irreversible: true,
   },
+  /*
+   * MAR-795, ADR 0031. What one server does when it restarts, read from the
+   * server itself.
+   *
+   * `mutates: false`, and that is why it is its own command rather than a third
+   * value of the one below. ADR 0030 decision 2's rule is that a switch reads the
+   * system's own off state before it draws itself, and a surface that had to
+   * *write* in order to *read* would either be lying about what it does or asking
+   * a person to change something in order to find out what it is. The `service`
+   * verb's action set has `status` in it for the same reason.
+   *
+   * It reaches a machine over `ssh` and changes nothing there — no unit written,
+   * nothing enabled — and writes no row on this side either.
+   */
+  "host.residencyState": {
+    effect: "Ask one saved server whether it starts your agents again after it restarts.",
+    payload_keys: ["host_id"],
+    required_keys: ["host_id"],
+    mutates: false,
+    irreversible: false,
+  },
+  /*
+   * MAR-795, ADR 0031. Turn on — or off — a server starting your agents by
+   * itself after it reboots.
+   *
+   * ## `irreversible: false`, and why that is true here and was not for a key
+   *
+   * `host.installKey` is irreversible because it creates a copy DASH can never
+   * account for again. This writes a file DASH can remove, through the same verb
+   * that wrote it — and `lib/copy/host-residency.ts` prints the two lines an
+   * operator can type on the server if DASH is never able to reach it again. A
+   * press that the control beside it can un-press is reversible, and marking it
+   * otherwise would spend the word on the wrong thing.
+   *
+   * ## Three strings and no boolean
+   *
+   * `state` is `"on"` or `"off"`. This channel carries a payload of strings, and
+   * `"false"` is a string that reads as true in most of the places somebody
+   * might write the renderer's next line. The value is checked against the two
+   * words on the trusted side and anything else is refused rather than
+   * defaulted, because defaulting a switch is choosing for somebody.
+   *
+   * ## What it deliberately does not carry
+   *
+   * No unit name, no path, no command line. The renderer never names what runs
+   * on the server; it names the server and the agent, and the helper decides the
+   * rest — `lib/deploy/verbs.ts` on the `service` verb is the same rule at the
+   * other end of the same wire.
+   */
+  "host.residency": {
+    effect:
+      "Turn on, or off, one saved server starting the agents you put on it whenever it restarts. It does not put any key on that server.",
+    payload_keys: ["host_id", "state"],
+    required_keys: ["host_id", "state"],
+    mutates: true,
+    irreversible: false,
+  },
   "host.forget": {
     effect:
       "Stop using one server and remove DASH's key for it. Anything already running there keeps running.",
@@ -2351,6 +2408,11 @@ export const HOST_ACTIONS = {
   // outward. Named here rather than derived from a prefix, like the other
   // eight, so the trusted-side switch and the preload stay exhaustive.
   "host.installKey": "installKey",
+  // MAR-795, ADR 0031. The tenth and eleventh. Two names for one switch, because
+  // reading what a server does must not require changing it — see the commands
+  // themselves, where `mutates` differs and that difference is the argument.
+  "host.residencyState": "residencyState",
+  "host.residency": "residency",
   "host.forget": "forget",
 } as const;
 
@@ -3065,6 +3127,38 @@ export type HostActionResult =
       replaced: boolean;
       detail: string;
     }
+  /**
+   * What one server says it does when it restarts (MAR-795, ADR 0031).
+   *
+   * One shape for both the read and the write, because a card that rendered a
+   * press's outcome differently from a refresh's would be two accounts of one
+   * fact. `action` distinguishes which press produced it and nothing else reads
+   * differently.
+   *
+   * **`state` and `starts_at_boot` are two facts and stay two fields.** The
+   * first is about the entry — is it there, and will the server's own service
+   * manager act on it. The second is about the account DASH signs in as, whose
+   * programs may only run while somebody is signed in. Folding them into one
+   * boolean would draw *On* over a reboot that does nothing, which is the exact
+   * class of lie ADR 0030 decision 2 added the `approved` bit to prevent.
+   *
+   * `unit_name` is what the operator will see in their own listing, and it is
+   * the only thing off the server's filesystem that crosses. There is no path
+   * here: `describeResidencyRemoval` composes the two lines around the name from
+   * the platform's own convention, so a directory from somebody's server never
+   * travels to render a sentence DASH already knows.
+   */
+  | {
+      ok: true;
+      action: "residency" | "residencyState";
+      host_id: string;
+      label: string;
+      state: "not_written" | "enabled" | "disabled";
+      starts_at_boot: boolean;
+      /** One name per installed bundle, in the host's own order. Never a path. */
+      units: readonly { name: string }[];
+      detail: string;
+    }
   | { ok: true; action: "forget"; host_id: string; label: string }
   | {
       ok: false;
@@ -3265,7 +3359,11 @@ export interface DispatchContext {
       | { host_id: string; agent_id: string }
       // MAR-794. Four names and no value: the widest host target there is, and
       // still the only one that cannot carry a credential in either direction.
-      | { host_id: string; agent_id: string; connection_id: string; fingerprint: string },
+      | { host_id: string; agent_id: string; connection_id: string; fingerprint: string }
+      // MAR-795. A server, an agent copy on it, and one of two words. There is
+      // no unit name, no path and no command here — what runs on that server is
+      // the helper's decision and the renderer has never been told it.
+      | { host_id: string; state: string },
   ): Promise<HostActionResult>;
   /**
    * Show the application menu at a point in the window (MAR-440).
@@ -3813,6 +3911,21 @@ export async function dispatchCommand(
             connection_id: String(review.payload["connection_id"]),
             fingerprint: String(review.payload["fingerprint"]),
           });
+        /*
+         * MAR-795, ADR 0031. The read takes two names and the write takes a
+         * third, which is one of two words. Neither carries a unit name, a path
+         * or a command line: what runs on that server is the helper's decision,
+         * and the renderer has never been told what it is.
+         */
+        case "residencyState":
+          return context.hostAction(action, {
+            host_id: String(review.payload["host_id"]),
+          });
+        case "residency":
+          return context.hostAction(action, {
+            host_id: String(review.payload["host_id"]),
+            state: String(review.payload["state"]),
+          });
         case "trust":
           return context.hostAction(action, {
             host_id: String(review.payload["host_id"]),
@@ -3984,6 +4097,29 @@ export async function dispatchCommand(
             connection_id: result.connection_id,
             placed_on: result.placed_on,
             replaced: result.replaced,
+          },
+        };
+      /*
+       * MAR-795, ADR 0031. What the server now says, whichever press asked.
+       *
+       * Both arms return the same three facts, because the card renders them the
+       * same way — and because a read that answered differently from a write
+       * would let a person press the switch, see one sentence, refresh, and see
+       * another. `state` is narrowed to the union by `HostActionResult`, so what
+       * crosses this boundary is one of three words this repository wrote.
+       */
+      case "residency":
+      case "residencyState":
+        return {
+          ok: true,
+          request_id: review.audit.request_id,
+          detail: result.detail,
+          data: {
+            host_id: result.host_id,
+            label: result.label,
+            state: result.state,
+            starts_at_boot: result.starts_at_boot,
+            units: result.units,
           },
         };
       case "forget":

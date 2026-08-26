@@ -339,6 +339,13 @@ describe("the audited command chokepoint", () => {
       // key is read from the vault in main and has no route through this
       // boundary in either direction.
       "host.installKey",
+      // MAR-795, ADR 0031. The switch that makes a server come back by itself,
+      // and the read beside it. Two commands for one control on purpose: the
+      // read is `mutates: false` and changes nothing on either machine, which is
+      // what lets the card draw itself from the server's own answer instead of
+      // from what DASH last asked for.
+      "host.residencyState",
+      "host.residency",
       "host.forget",
       // MAR-434. A fifth family, addressing the runner's task workspace over
       // routes the runner already served and proof 9 already exercised. Note
@@ -996,7 +1003,10 @@ describe("dispatch", () => {
           | { host_id: string }
           | { host_id: string; fingerprint: string }
           | { host_id: string; agent_id: string }
-          | { host_id: string; agent_id: string; connection_id: string; fingerprint: string },
+          | { host_id: string; agent_id: string; connection_id: string; fingerprint: string }
+          // MAR-795. A server and one of two words. No agent: the boot entry is
+          // a fact about the machine, and the helper enumerates its own bundles.
+          | { host_id: string; state: string },
       ) => {
         hosts.push({ action, target });
         switch (action) {
@@ -1102,6 +1112,25 @@ describe("dispatch", () => {
               placed_on: "20 August 2026",
               replaced: false,
               detail: "The key is on My server. DASH cannot see or take back what uses it there.",
+            });
+          /*
+           * MAR-795, ADR 0031. One shape for both presses, and the property this
+           * fixture holds is that the answer is a **report** rather than an echo
+           * of the request: the three facts come from the server's own service
+           * manager, so a fake that answered whatever was asked would let the
+           * dispatch arm ship without ever having read one.
+           */
+          case "residency":
+          case "residencyState":
+            return Promise.resolve({
+              ok: true as const,
+              action,
+              host_id: "host-fake-1",
+              label: "My server",
+              state: "enabled" as const,
+              starts_at_boot: true,
+              units: [{ name: "orchestratedash-fixture-agent.service" }],
+              detail: "This server starts your agents when it reboots.",
             });
           case "forget":
             return Promise.resolve({
@@ -1634,6 +1663,44 @@ describe("dispatch", () => {
           },
         },
       },
+      /*
+       * MAR-795, ADR 0031. The read carries one name and the write carries a
+       * second string that is one of two words. Neither carries an agent id, a
+       * unit name, a path or a command line: what runs on that server is the
+       * helper's decision and the renderer has never been told what it is.
+       */
+      {
+        command: "host.residencyState",
+        payload: { host_id: "host-fake-1" },
+        action: "residencyState",
+        target: { host_id: "host-fake-1" },
+        result: {
+          detail: "This server starts your agents when it reboots.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            state: "enabled",
+            starts_at_boot: true,
+            units: [{ name: "orchestratedash-fixture-agent.service" }],
+          },
+        },
+      },
+      {
+        command: "host.residency",
+        payload: { host_id: "host-fake-1", state: "on" },
+        action: "residency",
+        target: { host_id: "host-fake-1", state: "on" },
+        result: {
+          detail: "This server starts your agents when it reboots.",
+          data: {
+            host_id: "host-fake-1",
+            label: "My server",
+            state: "enabled",
+            starts_at_boot: true,
+            units: [{ name: "orchestratedash-fixture-agent.service" }],
+          },
+        },
+      },
       {
         command: "host.forget",
         payload: { host_id: "host-fake-1" },
@@ -1654,6 +1721,10 @@ describe("dispatch", () => {
         // moves a credential outward. Pinned here for `DEPLOY_VERBS`' reason: a
         // family that grows quietly is a family that was never closed.
         "host.installKey",
+        // MAR-795, ADR 0031. The tenth and eleventh, and the first host action
+        // whose effect lands on a machine at a moment nobody chose.
+        "host.residencyState",
+        "host.residency",
         "host.forget",
       ]);
       const ctx = context();

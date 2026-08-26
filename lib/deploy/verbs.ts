@@ -44,6 +44,23 @@
  * would be a payload that could name `/etc`.
  */
 
+/*
+ * The one import in this module, and it is a vocabulary rather than a
+ * capability (MAR-795).
+ *
+ * `lib/deploy/service-unit.ts` is pure and imports nothing from here, so the two
+ * cannot cycle. What comes across is the closed set of actions and the closed
+ * set of states — the two things `checkDeployRequest` has to check by value and
+ * `DeployAnswer` has to carry — and taking them from the module that decides
+ * them is what stops a fourth action being spellable in one file and refused in
+ * the other.
+ */
+import {
+  isHostServiceAction,
+  type HostServiceAction,
+  type HostServiceState,
+} from "./service-unit";
+
 /* ---------------------------------------------------------------------- *
  * The set
  * ---------------------------------------------------------------------- */
@@ -250,6 +267,50 @@
  * name, and no `detail` string produced below quotes it, no answer carries it
  * back, and `electron/host-install-key.ts` is the only thing on this side that
  * ever holds one.
+ *
+ * ## The eleventh, and the first verb whose effect happens with nobody there (MAR-795, ADR 0031)
+ *
+ * Ten verbs act while somebody is asking. This one writes a file the **host's
+ * own service manager** reads at boot, so its effect lands on a machine nobody
+ * is looking at, at a moment nobody chose. That is a different kind of widening
+ * from `install-key`'s and it is argued at its own size in ADR 0031; what
+ * belongs here is why it is a *verb* and what keeps it small.
+ *
+ * **Why it is a verb rather than a bundle file.** `install` admits exactly the
+ * modes `0644` and `0755` and writes only under `bundles/{id}`. A unit has to
+ * land in the service manager's own directory, has to be *enabled through the
+ * service manager* rather than by existing, and — the part that decides it —
+ * must be generated from the roots the helper chose. A unit arriving as bundle
+ * material would be DASH composing an `ExecStart` line, which is a command line
+ * on a machine DASH does not administer: the exact thing this file's opening
+ * paragraph says no verb may take.
+ *
+ * **What narrows it.** The same three things that narrow `install-key`:
+ *
+ * - the bundle must already be installed, because the unit points at that
+ *   bundle's own entry point and there is nothing to start otherwise;
+ * - the helper chooses every path, every environment variable and the
+ *   executable. `lib/deploy/service-unit.ts` is the whole text and takes no
+ *   caller input but an identifier that has already been through the alphabet
+ *   below;
+ * - the request's field set is **closed** — a surplus member is refused rather
+ *   than ignored, `install-key`'s rule for `install-key`'s reason. A `unit`,
+ *   `exec`, `restart` or `environment` field is the shape an attempt to turn
+ *   this into remote execution would arrive in, and there is nowhere for one to
+ *   go.
+ *
+ * **Held to ADR 0014's three questions.** (1) *Does it carry a credential in
+ * either direction?* **No**, in either. The unit's three `Environment=` lines
+ * are a directory, a root and a name; the answer is a state, a boolean and a
+ * unit name. (2) *Does it choose what runs, or only which?* **Which**, and only
+ * among things already installed — the text of what runs is the helper's,
+ * unchanged from what `start` already spawns. (3) *Can DASH describe the result
+ * honestly afterwards?* **Yes, and this is the question that shaped the
+ * answer.** DASH reports the service manager's own `is-enabled` verdict rather
+ * than the file's existence, and reports whether the account lingers rather than
+ * assuming it — so a card cannot say *On* over a boot that does nothing. ADR
+ * 0030 decision 2 made the same demand of a Windows Run value, and the same
+ * answer is why this verb has three states and not two.
  */
 export const DEPLOY_VERBS = [
   "install",
@@ -262,6 +323,7 @@ export const DEPLOY_VERBS = [
   "uninstall",
   "pack",
   "install-key",
+  "service",
 ] as const;
 
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
@@ -493,6 +555,47 @@ export interface InstallKeyRequest {
   connection_id: string;
   key: string;
 }
+/**
+ * Ask, or change, whether this **server** starts its agents again after a reboot
+ * (MAR-795, ADR 0031).
+ *
+ * ## Two members, and the absent one is the design
+ *
+ * There is no `bundle_id`, which makes this the second verb after `pack` that
+ * asks about the machine rather than about a bundle — and for the same reason
+ * `pack` gives: there is no second question it could be pointed at. A host runs
+ * one runner *per bundle*, so a boot entry is written per bundle; but *"does
+ * this server come back by itself"* is one question with one answer, and a
+ * request that named a bundle would put the caller in charge of enumerating
+ * somebody else's filesystem one id at a time.
+ *
+ * The helper enumerates its own installed bundles, writes an entry for each,
+ * and reduces the result to one state. That keeps the whole act to a single
+ * `ssh` round trip, and it means the surface's switch is the same shape as the
+ * sentence beside it: *keep the agents on this server running.*
+ *
+ * `checkDeployRequest` refuses a third field, `install-key`'s rule for
+ * `install-key`'s reason: a unit file is a command line and an environment at
+ * once, and the names somebody would reach for to widen this — `unit`, `exec`,
+ * `restart`, `environment` — are refused by having nowhere to be put rather
+ * than by a branch that has to remember them. A `bundle_id` is refused too,
+ * which is what stops this becoming a per-file switch nobody decided to add.
+ *
+ * `action` is a closed set checked by value, not a free string and not a
+ * boolean. A boolean would have made `status` either a fourth verb or an
+ * overload of one of the two writes, and a surface that must *write* in order to
+ * *read* is the shape ADR 0030 decision 2 refused when it insisted on reading
+ * Windows' own off state before drawing the switch.
+ *
+ * There is no `now` and no `restart`. Enabling arranges the **next** boot and
+ * does not start a second runner beside one that is already up — see
+ * `scripts/host-helper/main.ts`'s `service`, where that is the difference
+ * between a feature and two processes fighting over one socket.
+ */
+export interface ServiceRequest {
+  verb: "service";
+  action: HostServiceAction;
+}
 
 export type DeployRequest =
   | InstallRequest
@@ -504,7 +607,8 @@ export type DeployRequest =
   | ChannelRequest
   | UninstallRequest
   | PackRequest
-  | InstallKeyRequest;
+  | InstallKeyRequest
+  | ServiceRequest;
 
 /* ---------------------------------------------------------------------- *
  * The check, run on both ends
@@ -536,7 +640,17 @@ export type DeployRequestProblem =
    * never says which surplus field it saw — a name a request chose is a string
    * from a machine DASH does not administer, headed for a log.
    */
-  | "malformed_key";
+  | "malformed_key"
+  /**
+   * `service` named something other than one of its three actions, or carried a
+   * field this verb does not have (MAR-795).
+   *
+   * One problem for both, `malformed_key`'s reasoning one verb over: a caller
+   * that sent `unit`, `exec` or `environment` beside the action has a model of
+   * this verb that is not ADR 0031's, and splitting the refusal would suggest
+   * one of those halves is nearly allowed.
+   */
+  | "malformed_service";
 
 export type DeployRequestCheck =
   | { ok: true; request: DeployRequest }
@@ -585,12 +699,17 @@ export function checkDeployRequest(candidate: unknown): DeployRequestCheck {
   // makes about a surplus argv token, and the reason `PackRequest` has no
   // fields.
   const bundleId = request["bundle_id"];
-  if (verb === "pack") {
+  // `pack` and `service` are the two verbs that take no identifier at all: both
+  // ask about the machine, and neither has a second question it could be
+  // pointed at (MAR-629, MAR-795). Refused rather than ignored, because a caller
+  // that sent one has a different model of the verb — and for `service` that
+  // model is a per-file switch this repository deliberately did not build.
+  if (verb === "pack" || verb === "service") {
     if (bundleId !== undefined) {
       return {
         ok: false,
-        problem: "malformed_identifier",
-        detail: "The pack question is about the server itself and names no agent.",
+        problem: verb === "pack" ? "malformed_identifier" : "malformed_service",
+        detail: "That question is about the server itself and names no agent.",
       };
     }
   } else if (verb === "status") {
@@ -661,6 +780,37 @@ export function checkDeployRequest(candidate: unknown): DeployRequestCheck {
           ok: false,
           problem: "malformed_key",
           detail: "A key placement names the agent and the need it satisfies, and nothing else.",
+        };
+      }
+    }
+  }
+
+  if (verb === "service") {
+    if (!isHostServiceAction(request["action"])) {
+      return {
+        ok: false,
+        problem: "malformed_service",
+        // The action that arrived is never quoted back. It is a string from a
+        // caller headed for a log, and the three that are admitted are this
+        // repository's own words and safe to state.
+        detail: "A service request asks about, turns on, or turns off the boot entry.",
+      };
+    }
+    /*
+     * The closed field set, `install-key`'s check with a different tuple.
+     *
+     * A unit file is the one thing on a host that is a command line and an
+     * environment at once, so the surplus field this refuses is not a caller
+     * with a different model of the verb — it is the shape of a widening
+     * nobody reviewed. Refused rather than dropped, because a dropped field is
+     * a field a later reader may start honouring.
+     */
+    for (const field of Object.keys(request)) {
+      if (field !== "verb" && field !== "action") {
+        return {
+          ok: false,
+          problem: "malformed_service",
+          detail: "A service request says what to do about this server, and nothing else.",
         };
       }
     }
@@ -870,5 +1020,40 @@ export type DeployAnswer =
       placed_at: string;
       replaced: boolean;
       owner_proved: boolean;
+    }
+  /**
+   * What the host's own service manager says about one bundle's boot entry
+   * (MAR-795, ADR 0031).
+   *
+   * **Three members, and every one of them is something the host said rather
+   * than something DASH asked for.** `state` is `is-enabled`'s verdict joined
+   * with whether the files are there, reduced across every bundle the host
+   * holds; `starts_at_boot` is the account's own lingering; `units` is what an
+   * operator will see in `systemctl --user list-unit-files`. The same answer
+   * comes back from `status`, `enable` and `disable`, so a press and a read
+   * produce one shape and a card cannot render a write's outcome differently
+   * from a refresh's.
+   *
+   * **The reduction is `weakest wins`, and it is the helper's** — see
+   * `hostServiceReduction`. A server whose two agents are in different states is
+   * reported as the lesser of them, because *"this server starts your agents
+   * when it reboots"* must not be printed over one that does not.
+   *
+   * **What has no room here.** No path — `lib/copy/host-residency.ts` composes
+   * the removal instructions around each name, so the wire never carries a
+   * directory off somebody's server. No unit text, no `ExecStart`, no
+   * environment: the answer says *whether*, never *what*, which is `pack`'s
+   * discipline applied to the second verb that reports on a host's filesystem.
+   * And no timestamp — when this was last true is DASH's own observation,
+   * recorded on DASH's side, because a host stamping its own answer would be the
+   * party being reported on doing the reporting.
+   */
+  | {
+      ok: true;
+      verb: "service";
+      state: HostServiceState;
+      starts_at_boot: boolean;
+      /** One per installed bundle, in the host's own order. Names, never paths. */
+      units: string[];
     }
   | { ok: false; problem: string; detail: string };

@@ -121,6 +121,18 @@ interface HostKeyTarget extends HostDeployTarget {
   fingerprint: string;
 }
 
+/**
+ * A saved host and one of two words (MAR-795, ADR 0031).
+ *
+ * `state` is `"on"` or `"off"` and nothing else reaches the trusted side, which
+ * refuses anything that is not one of them. Spelled as a string rather than a
+ * boolean because this channel carries strings, and `"false"` is a string that
+ * reads as true almost everywhere.
+ */
+interface HostResidencyTarget extends HostTarget {
+  state: "on" | "off";
+}
+
 function send(command: string, payload: Record<string, string>): Promise<CommandResult> {
   return ipcRenderer.invoke(SHELL_COMMAND_CHANNEL, {
     command,
@@ -543,6 +555,25 @@ const dashShell = {
    */
   installKeyOnHost: ({ host_id, agent_id, connection_id, fingerprint }: HostKeyTarget) =>
     send("host.installKey", { host_id, agent_id, connection_id, fingerprint }),
+  /**
+   * What one server does when it restarts, and the switch that changes it
+   * (MAR-795, ADR 0031).
+   *
+   * Two methods for one switch, because the read changes nothing — not on the
+   * server and not in this store — and that is what lets the card draw itself
+   * from the server's own answer rather than from what DASH last asked for. ADR
+   * 0030 decision 2's rule about reading Windows' own off switch, one machine
+   * over: a control that had to write in order to read would be asking a person
+   * to change something to find out what it is.
+   *
+   * `state` is `"on"` or `"off"`, checked against those two words on the trusted
+   * side. There is no unit name here, no path, no command line and no key: this
+   * switch names a server and an agent copy, and the helper decides everything
+   * about what that server will run.
+   */
+  readHostResidency: ({ host_id }: HostTarget) => send("host.residencyState", { host_id }),
+  setHostResidency: ({ host_id, state }: HostResidencyTarget) =>
+    send("host.residency", { host_id, state }),
   forgetHost: ({ host_id }: HostTarget) => send("host.forget", { host_id }),
 
   /**

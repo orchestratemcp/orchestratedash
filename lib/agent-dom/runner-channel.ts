@@ -76,6 +76,55 @@ export const EVIDENCE_ROUTES = [
   "/workspace-artifacts",
   "/registrations/reload",
   "/shutdown",
+  /*
+   * The standing instructions, in both directions (MAR-795, ADR 0031).
+   *
+   * ## Why a schedule may cross when a broker route may not
+   *
+   * `POST /schedules` carries the whole set DASH holds plus the cursor each
+   * agent resumes from; `POST /schedules/drain` brings back the windows the
+   * runner settled while DASH was closed. They are the pair ADR 0029 decision 2
+   * designed, and they are added **together and to both channels**, which is
+   * this module's own rule: *a route is added to both channels or to neither.*
+   *
+   * ADR 0014's three questions, answered for the pair rather than for each,
+   * because a push nothing can drain is a push whose effects DASH cannot
+   * account for:
+   *
+   * 1. **A credential in either direction?** None. Out goes a list of agent ids,
+   *    times, and a per-schedule ceiling that is *a count of model calls and
+   *    never a currency* (ADR 0029 amendment 1); back come settlements — a
+   *    window, an outcome and a sentence. There is no field in
+   *    `ScheduleConfiguration` a key could travel in, and a host runner spends
+   *    against `runner/host-broker.ts` out of the host's own secret store or not
+   *    at all.
+   * 2. **Does it choose what runs, or only which?** **Which**, and one step
+   *    further removed than the run route beside it. A schedule names an agent
+   *    and a time; `runner/schedule.ts` turns a due window into the same `retry`
+   *    a press produces, through the same `executeCommand`, so
+   *    `runner/README.md`'s rule holds unchanged. A set naming an agent the host
+   *    does not hold starts nothing there — the host's own supervisor refuses
+   *    it — which is the two-stores discipline ADR 0014 already relies on.
+   * 3. **Can DASH describe the result honestly afterwards?** **Yes, and this is
+   *    the question that produced the surface.** The push is DASH's own act and
+   *    DASH records when it made it; the drain is evidence DASH *observed*,
+   *    recorded with its origin the way `evidence_pulls` already is. What DASH
+   *    may not claim is that a server is currently honouring anything — only
+   *    when it last told it, which is `describeSchedulesTold`'s one sentence on
+   *    the server card.
+   *
+   * ## Why leaving them off was not an option once ADR 0031 shipped a boot entry
+   *
+   * A runner parses and does not trust what it is pushed
+   * (`readScheduleConfiguration`) and keeps the document verbatim in
+   * `schedule_standing`, so a host that reboots comes back with the last set it
+   * was told. Without this route a host is never told anything, and a boot entry
+   * would start a runner holding nothing — a switch with no observable effect,
+   * which is precisely the mistake ADR 0030 caught before shipping this feature
+   * on the other machine.
+   */
+  "/schedules",
+  "/schedules/drain",
 ] as const;
 
 /**

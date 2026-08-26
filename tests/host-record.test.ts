@@ -225,10 +225,11 @@ describe("sshArgv", () => {
 
   it("composes no command line: every verb comes from the closed set", () => {
     /*
-     * Pinned by value, and this pin has **fired five times**: once when MAR-487
+     * Pinned by value, and this pin has **fired six times**: once when MAR-487
      * widened the set from `["connect"]` to ADR 0007's six, again when MAR-602
      * added `channel`, again when MAR-611 added `uninstall`, again when MAR-629
-     * added `pack`, and again when MAR-794 added `install-key`. Every time it
+     * added `pack`, again when MAR-794 added `install-key`, and again when
+     * MAR-795 added `service`. Every time it
      * did its job. The set being closed is only worth anything if adding to it
      * is a change somebody has to make here and defend, rather than one that
      * rides along in a commit about something else.
@@ -244,6 +245,11 @@ describe("sshArgv", () => {
      * the reason this assertion matters more than it did: the value
      * `install-key` carries is the one string in this product that must never
      * reach a command line, and the loop below is what says it does not.
+     * `service` carries the same property from the other direction: like `pack`
+     * it names no identifier at all, so the whole of what a boot entry will run
+     * is decided by the helper on the far side and none of it can arrive on a
+     * command line here.
+     *
      * `lib/deploy/verbs.ts` and `tests/deploy-bridge.test.ts` carry the admission
      * arguments.
      */
@@ -258,6 +264,7 @@ describe("sshArgv", () => {
       "uninstall",
       "pack",
       "install-key",
+      "service",
     ]);
     for (const verb of HOST_VERBS) {
       const built = sshArgv(record(), verb, paths);

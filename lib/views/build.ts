@@ -125,6 +125,7 @@ import {
   readAgentFavourites,
   readHostDeploys,
   readHostKeyPlacements,
+  readHostResidency,
   readAgentManifest,
   readEvidencePulls,
   readHost,
@@ -172,6 +173,7 @@ import type {
   HostsView,
   KeyOfferView,
   PlacedKeyView,
+  ServerResidencyView,
   LabTelemetryView,
   NotificationsView,
   PlannedStepView,
@@ -936,6 +938,16 @@ export function hostsView(store: StoreShape = readStore()): HostsView {
             sent_on: plainDay(deploy.sent_at),
           })),
         ...keysOn(record.host_id, store),
+        /*
+         * MAR-795, ADR 0031. What DASH asked of this server, and when it last
+         * managed to tell it anything.
+         *
+         * Read from this store and never from the machine, for the same reason
+         * `keysOn` asks no server: a view runs on every read of this page, and a
+         * round trip per server on render is the polling ADR 0015 refuses. The
+         * server's live answer arrives on a press and is held by the page.
+         */
+        residency: residencyOn(record.host_id),
       };
     }),
   };
@@ -1045,6 +1057,25 @@ function keysOn(
       placed_on: plainDay(one.placed_at),
     })),
     key_offers: offers,
+  };
+}
+
+/**
+ * What DASH asked of one server (MAR-795, ADR 0031).
+ *
+ * Days rather than stamps, `plainDay`'s rule: every sentence built from these is
+ * a report with an age on it, and a surface that formatted a raw stamp would be
+ * a second place that decides how a date reads.
+ */
+function residencyOn(hostId: string): ServerResidencyView {
+  const row = readHostResidency(hostId);
+  if (row === null) {
+    return { asked_on: null, told_on: null, told_count: null };
+  }
+  return {
+    asked_on: plainDay(row.asked_at),
+    told_on: row.told_at === null ? null : plainDay(row.told_at),
+    told_count: row.told_count,
   };
 }
 

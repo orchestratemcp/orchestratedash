@@ -232,7 +232,18 @@ describe("the closed verb set", () => {
      * ceremony, the owner-only write and the receipt rather than on the
      * transport.
      *
-     * An eleventh arriving without a line here is a verb nobody decided to add.
+     * The eleventh is the first verb whose **effect happens with nobody there**:
+     * it writes an entry the host's own service manager reads at boot, so what
+     * it changes happens on a machine nobody is looking at, at a moment nobody
+     * chose. It is the second verb after `pack` that names no bundle, and that
+     * is the narrowing worth restating here — the helper enumerates its own
+     * installed bundles and generates every line of the unit from roots it
+     * picked, so there is no path, no environment variable and no command line a
+     * request could contribute. ADR 0031 argues the decision; what makes it
+     * admissible at this size is that the answer is a **report** the service
+     * manager gave, not a claim DASH makes about a machine it cannot see.
+     *
+     * A twelfth arriving without a line here is a verb nobody decided to add.
      */
     expect([...DEPLOY_VERBS]).toEqual([
       "install",
@@ -245,6 +256,7 @@ describe("the closed verb set", () => {
       "uninstall",
       "pack",
       "install-key",
+      "service",
     ]);
   });
 

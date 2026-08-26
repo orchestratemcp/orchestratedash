@@ -43,13 +43,19 @@ import {
 import { fetchAgentDomState, httpAdapter, type ControlChannel } from "../lib/agent-dom/transport";
 import { isManifestV2 } from "../lib/contracts";
 import type { ScheduleSettlement } from "../lib/schedule/plan";
+import { splitSchedules, windowsFor } from "../lib/schedule/delegation";
 import {
   newestScheduleWindows,
   readAgentSchedules,
   recordScheduleRuns,
 } from "../lib/schedule/store";
 import { isSecureStoreError, type SecureStore } from "../lib/secure-store";
-import { listAgentNames, readAgentManifest, recordEvidencePull } from "../lib/store";
+import {
+  listAgentNames,
+  readAgentManifest,
+  readResidentHosts,
+  recordEvidencePull,
+} from "../lib/store";
 import { runnerFetch, type RunnerHandle } from "./runner-process";
 
 /**
@@ -242,6 +248,25 @@ export function createAgentChannels(
       // failed loses nothing because nothing was deleted.
     }
 
+    /*
+     * What this runner is told, once a server can be told too (MAR-795,
+     * ADR 0031 decision 4).
+     *
+     * `install` copies an agent to a server rather than moving it, so after a
+     * deploy the same agent is registered on two runners. That was harmless for
+     * schedules while a host could never be told about any, and admitting
+     * `POST /schedules` to the remote channel is what makes it dangerous: one
+     * instruction would produce two runs, on two machines, in the same minute,
+     * landing in one agent's history with nothing on the row to separate them.
+     *
+     * `splitSchedules` is the whole rule and it is pure, so the argument lives
+     * where a test can ask it rather than inside a five-second timer. And the
+     * part worth knowing here: a server with residency **off** takes nothing out
+     * of this push — which is every server until somebody presses the switch, so
+     * this line changes nothing for anybody who has not asked for it.
+     */
+    const mine = splitSchedules(readAgentSchedules(), readResidentHosts()).local;
+
     try {
       await runnerFetch(runner)(`${runner.origin}/schedules`, {
         method: "POST",
@@ -250,8 +275,12 @@ export function createAgentChannels(
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          schedules: readAgentSchedules(),
-          since: newestScheduleWindows(),
+          schedules: mine,
+          // Narrowed to what this runner was told, for `windowsFor`'s reason: a
+          // cursor for an agent this runner does not hold is a fact about
+          // another machine, and it is the kind of harmless that stops being
+          // harmless the first time two ids match.
+          since: windowsFor(newestScheduleWindows(), mine),
         }),
         signal: AbortSignal.timeout(3_000),
       });
