@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-08-26",
-  "current_wave": "Wave 2 - outside-app connections",
+  "updated_at": "2026-09-04",
+  "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
   "lifecycle_note": "2026-08-26 evening reconcile: MAR-795 (VPS packet B, ADR 0031) merged bf0feda; MAR-800 resolved (claim did not reproduce; the real masked-hint envelope bug fixed, a3986b0); MCP MAR-788 merged 12421c1. MAR-785 PROVEN: autostart fired twice today on real sign-ins with no DASH (autostart.log receipts). Schedule receipt sits in the un-checkpointed wal — readable at Henriks next DASH open, which is act one of the VPS sitting (packet A five presses + packet B reboot script, on MAR-794/795). dash.sqlite base integrity ok; external wal-attach reads fail benignly while un-checkpointed.",
   "authority": {
     "implementation": "Git",
@@ -1945,6 +1945,42 @@
         "command": "pnpm typecheck && pnpm test (PowerShell); no verify:shell -- leftover scratch runners hold stores tonight",
         "run": "SEE THE HANDOFF COMMENT ON MAR-795 -- filled at merge. The attended half is scheduled with Henrik and is not part of this packet's merge gate."
       }
+    },
+    {
+      "id": "MAR-861",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-862",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-863",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-864",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-865",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-866",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
     }
   ]
 }
