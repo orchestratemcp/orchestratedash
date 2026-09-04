@@ -34,6 +34,7 @@
     "electron",
     "runner",
     "agent-kit",
+    "tools",
     "scripts/google-proof",
     "scripts/schedule-proof",
     "scripts/schedule-spend-proof",

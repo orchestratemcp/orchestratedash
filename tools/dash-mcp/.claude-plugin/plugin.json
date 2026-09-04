@@ -1,0 +1,19 @@
+{
+  "name": "dash-agent",
+  "version": "0.1.0",
+  "description": "Build an agent that DASH imports without a single validation failure. Carries DASH's own import validator as a tool, so a manifest is checked before it is written rather than refused afterwards.",
+  "author": {
+    "name": "OrchestrateDASH"
+  },
+  "repository": "https://github.com/orchestratemcp/orchestratedash",
+  "keywords": [
+    "orchestratedash",
+    "agents",
+    "manifest",
+    "scaffold",
+    "validation"
+  ],
+  "skills": [
+    "./skills/building-a-dash-agent"
+  ]
+}
