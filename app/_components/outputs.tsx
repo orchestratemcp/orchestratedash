@@ -346,6 +346,27 @@ function OutputCard({
           nothing. */}
       <OutputContent card={card} grounding={grounding} />
 
+      {/* MAR-863, ADR 0033. What the press will do, said **before** it and on
+          the surface rather than behind a disclosure.
+
+          This is the one control in DASH that publishes something nobody can
+          take down, and `lib/copy/genlayer.ts`' second rule is that the
+          irreversible fact is stated before it is a fact. A sentence a person
+          has to open a `<details>` to read is a sentence they did not read —
+          the argument `describeKeyNarrowing` makes for the wider-permission
+          line on a capability card, pointed at something stronger than a scope.
+
+          Only before the first press. Once an attempt exists the receipt below
+          is drawing what actually happened, and repeating the warning under it
+          would be DASH telling somebody what is about to occur about a thing
+          that already has. */}
+      {judgeable && card.adjudications.length === 0 ? (
+        <div className="output-adjudicate-note">
+          <p className="muted">{ADJUDICATE_COPY.consequence}</p>
+          <p className="muted">{ADJUDICATE_COPY.withheld}</p>
+        </div>
+      ) : null}
+
       <div className="output-footer">
         {/* Still in the same row as the receipt, which is what MAR-434 wanted
             it next to — the size is the fact a person weighs before asking for

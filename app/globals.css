@@ -8669,3 +8669,18 @@ main:has(.agent-cockpit) {
   overflow-wrap: anywhere;
   font-size: var(--text-sm);
 }
+
+/* The sentence before the press. Set above the footer rather than inside it,
+   because the footer is a row of controls and this is what one of them will
+   do — see the note at its call site in app/_components/outputs.tsx. */
+.output-adjudicate-note {
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--line-strong);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.output-adjudicate-note p {
+  margin: 0;
+}
