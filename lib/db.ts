@@ -2087,6 +2087,108 @@ const MIGRATIONS: readonly Migration[] = [
     told_count  INTEGER
   );
   `,
+  /**
+   * What DASH sent for judgement on GenLayer, and what came back (MAR-863,
+   * ADR 0033).
+   *
+   * ## Why this is durable and not a field held in memory for the length of a run
+   *
+   * Because a verdict is a **receipt**, and a receipt that disappears when the
+   * window closes is not one. The whole claim of this feature is that a person
+   * can open a briefing tomorrow and see that a committee of models on a public
+   * network judged it, and what they said — which is a claim about something
+   * that outlives the process that made it.
+   *
+   * The second reason is the latency. A judgement takes between forty-five
+   * seconds and five minutes end to end, across three transactions; a person can
+   * navigate away, and DASH can be closed and reopened, inside that window. A
+   * row recording which stage the attempt reached is what lets the page say
+   * *what is happening* rather than draw a spinner over a fact nobody stored.
+   *
+   * ## One row per attempt, not one per brief
+   *
+   * A brief can be judged more than once, and the resubmission is not an edge
+   * case: roughly one judgement in ten reaches a decided transaction whose
+   * committee refused the leader's verdict, which applies no state and leaves no
+   * verdict to read — `lib/genlayer/receipt.ts` sets out the three fields that
+   * say so. Asking again is the route out of it, and the contract refuses a
+   * commission id it already holds, so a second attempt is a second commission
+   * and a second row.
+   *
+   * Keeping every attempt is deliberate. A brief refused twice and accepted on
+   * the third try is a different thing from one accepted first time, and a table
+   * holding only the newest would report them identically.
+   *
+   * ## What is stored and what is not
+   *
+   * The **deliverable is not here.** It is a hundred kilobytes of prose DASH
+   * already holds as an artifact, and `brief_digest` with
+   * `(agent, run_id, artifact_id)` names it exactly — `broker_audit`'s
+   * discipline, which keeps names and never payloads. What is here is what
+   * became of the attempt: which network, which contract, which transactions,
+   * what the three receipt fields said, and the verdict with its reasons.
+   *
+   * `reasons_json` is a JSON array of strings, bounded to the contract's own
+   * twelve at four hundred characters each by `GENLAYER_ADJUDICATE.project`,
+   * which is the only thing that writes it.
+   *
+   * `outcome` is DASH's own three-field reading rather than any single field the
+   * network returned. It is stored rather than recomputed because the receipt
+   * itself is not kept: the reading is the conclusion, and the three columns
+   * beside it are what it was read from.
+   *
+   * Appended on the standing terms: an installed store that has recorded 0 to 37
+   * runs exactly one more, and the step is a bare `CREATE TABLE IF NOT EXISTS`
+   * with its index, so a store the tests rewind runs it again without complaint.
+   * The index was assigned as 37 and confirmed against the literal pin in
+   * `tests/store-sqlite.test.ts` before it was written — `user_version` was 37
+   * at this branch point, so this step is index 37 and produces 38.
+   */
+  `
+  CREATE TABLE IF NOT EXISTS brief_adjudications (
+    -- The commission id DASH minted. Unique on the contract, so unique here.
+    commission_id     TEXT PRIMARY KEY,
+    agent             TEXT NOT NULL,
+    run_id            TEXT NOT NULL,
+    -- The brief this judged. With the two above, the artifact DASH is holding.
+    artifact_id       TEXT NOT NULL,
+    -- sha256 over the exact bytes submitted. What the contract re-derived.
+    brief_digest      TEXT NOT NULL,
+    -- Which network and which contract, so a hash below can be resolved.
+    rpc_url           TEXT NOT NULL,
+    contract_address  TEXT NOT NULL,
+    chain_id          INTEGER NOT NULL,
+    -- Where the attempt has got to. One of AdjudicationStage.
+    stage             TEXT NOT NULL,
+    started_at        TEXT NOT NULL,
+    -- When the attempt stopped moving, either way. Null while it is running.
+    settled_at        TEXT,
+    -- The three transactions, in order. Null until each is submitted.
+    open_tx           TEXT,
+    submit_tx         TEXT,
+    evaluate_tx       TEXT,
+    -- DASH's reading of the evaluate receipt, and the three fields it read.
+    outcome           TEXT,
+    status_name       TEXT,
+    execution_result  TEXT,
+    consensus_result  TEXT,
+    -- What the network says wrote the verdict. Its claim, never DASH's.
+    leader_model      TEXT,
+    -- One of ADJUDICATION_VERDICTS, or null when no state was applied.
+    verdict           TEXT,
+    -- JSON array of strings. Written only by GENLAYER_ADJUDICATE.project.
+    reasons_json      TEXT,
+    -- One of AdjudicationFailure when the attempt could not finish. Never a
+    -- network's own error text: a message DASH did not write is content, and a
+    -- durable column is how content reaches a page.
+    failure           TEXT
+  );
+
+  -- The page asks one question of this table — what happened to this brief? —
+  -- and asks it on every render while an attempt is running.
+  CREATE INDEX IF NOT EXISTS brief_adjudications_by_artifact
+    ON brief_adjudications (agent, artifact_id, started_at DESC);
+  `,
 ];
 
 /**

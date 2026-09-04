@@ -3,6 +3,9 @@ import type { ReactNode } from "react";
 
 import type { GroundingAnalysis } from "../../lib/analyze";
 import { AGENT_OUTPUTS_COPY } from "../../lib/copy/agent-page";
+/* MAR-863, ADR 0033. A value import and safe: `lib/copy/genlayer.ts` imports
+   nothing but types. */
+import { ADJUDICATE_COPY } from "../../lib/copy/genlayer";
 import { OUTPUTS_PANEL_COPY as COPY } from "../../lib/copy/artifacts";
 import { canPreview, resolveOpenCard, type ArtifactCardView } from "../../lib/views/artifacts";
 import { BriefBody, DigestBody, DraftBody, DraftPlacementChip, GroundingChip } from "./digest";
@@ -49,6 +52,7 @@ export function OutputsPanel({
   openId,
   onDownload,
   onExportBrief,
+  onAdjudicate,
   runHref,
 }: {
   cards: readonly ArtifactCardView[];
@@ -123,6 +127,20 @@ export function OutputsPanel({
    */
   onExportBrief?: (card: ArtifactCardView) => void;
   /**
+   * Send this briefing for judgement on GenLayer, or absent (MAR-863, ADR 0033).
+   *
+   * Absent hides the control entirely, on `onExportBrief`' reasoning — and the
+   * argument is at its strongest here, because a greyed-out control beside a
+   * verdict would read as a claim about the briefing rather than about the
+   * window.
+   *
+   * **This is why the button lives on this panel and not in `BriefBody`.** The
+   * verdict is drawn there, where the author's panel gets it too; the control
+   * is drawn here, because ADR 0008 bars controls from the author's panel. The
+   * record is shared and the act is not.
+   */
+  onAdjudicate?: (card: ArtifactCardView) => void;
+  /**
    * Where the run that made one card lives, or absent (MAR-609).
    *
    * Per card and not per panel. The agent page's list spans runs, so a single
@@ -156,6 +174,7 @@ export function OutputsPanel({
         card={entry}
         onDownload={onDownload}
         onExportBrief={onExportBrief}
+        onAdjudicate={onAdjudicate}
         runHref={runHref}
         /* Only the newest digest is graded, which is the rule
            `lib/views/build.ts` already applies when it computes the verdict.
@@ -218,12 +237,14 @@ function OutputCard({
   grounding,
   onDownload,
   onExportBrief,
+  onAdjudicate,
   runHref,
 }: {
   card: ArtifactCardView;
   grounding: GroundingAnalysis | null;
   onDownload?: (card: ArtifactCardView) => void;
   onExportBrief?: (card: ArtifactCardView) => void;
+  onAdjudicate?: (card: ArtifactCardView) => void;
   runHref?: (card: ArtifactCardView) => string;
 }): ReactNode {
   const { artifact, role, receipt, recovery, reference } = card;
@@ -253,6 +274,29 @@ function OutputCard({
    * gone.
    */
   const exportable = onExportBrief !== undefined && artifact.kind === "brief";
+
+  /*
+   * MAR-863. Offered on a brief and on nothing else, like the export beside it,
+   * and gated on one further fact: an attempt that is still moving.
+   *
+   * A second press while a committee is reading would open a *second*
+   * commission on a public network for the same document, which is not a retry
+   * — the contract refuses a commission id it already holds, so DASH would have
+   * to mint a new one, and two judgements of one briefing is not what anybody
+   * pressing twice meant. So the control stays but stops being pressable, and
+   * says what it is waiting for.
+   *
+   * Not gated on `recovery`, on the export's own reasoning: the briefing is
+   * composed from the artifact DASH stores, which is still here whatever
+   * happened to the agent's workspace.
+   */
+  const judging = card.adjudications[0]?.stage !== undefined && card.adjudications[0].stage !== "settled";
+  const judgeable = onAdjudicate !== undefined && artifact.kind === "brief";
+  const judgeLabel = judging
+    ? ADJUDICATE_COPY.action_running
+    : card.adjudications.length === 0
+      ? ADJUDICATE_COPY.action
+      : ADJUDICATE_COPY.action_again;
 
   return (
     <article className={recovery === null ? "output-card" : "output-card is-unavailable"}>
@@ -302,6 +346,27 @@ function OutputCard({
           nothing. */}
       <OutputContent card={card} grounding={grounding} />
 
+      {/* MAR-863, ADR 0033. What the press will do, said **before** it and on
+          the surface rather than behind a disclosure.
+
+          This is the one control in DASH that publishes something nobody can
+          take down, and `lib/copy/genlayer.ts`' second rule is that the
+          irreversible fact is stated before it is a fact. A sentence a person
+          has to open a `<details>` to read is a sentence they did not read —
+          the argument `describeKeyNarrowing` makes for the wider-permission
+          line on a capability card, pointed at something stronger than a scope.
+
+          Only before the first press. Once an attempt exists the receipt below
+          is drawing what actually happened, and repeating the warning under it
+          would be DASH telling somebody what is about to occur about a thing
+          that already has. */}
+      {judgeable && card.adjudications.length === 0 ? (
+        <div className="output-adjudicate-note">
+          <p className="muted">{ADJUDICATE_COPY.consequence}</p>
+          <p className="muted">{ADJUDICATE_COPY.withheld}</p>
+        </div>
+      ) : null}
+
       <div className="output-footer">
         {/* Still in the same row as the receipt, which is what MAR-434 wanted
             it next to — the size is the fact a person weighs before asking for
@@ -324,6 +389,19 @@ function OutputCard({
             type="button"
           >
             {COPY.export_pdf}
+          </button>
+        ) : null}
+        {/* MAR-863, ADR 0033. The one press in DASH that publishes something
+            nobody can take down, so what it will do is said beside it rather
+            than behind it — see `ADJUDICATE_COPY.consequence`. */}
+        {judgeable ? (
+          <button
+            className="button-secondary"
+            disabled={judging}
+            onClick={() => onAdjudicate?.(card)}
+            type="button"
+          >
+            {judgeLabel}
           </button>
         ) : null}
         {/* MAR-609. The route from one output back to the run that made it,
@@ -480,7 +558,13 @@ function OutputContent({
       // card, so this renderer branches on an answer rather than computing one
       // — `node:crypto` cannot enter this bundle. `card.citations` is null when
       // nobody resolved it, which draws the document and no citations.
-      return <BriefBody artifact={artifact} citations={card.citations} />;
+      return (
+        <BriefBody
+          artifact={artifact}
+          citations={card.citations}
+          adjudications={card.adjudications}
+        />
+      );
     default:
       // Unreachable through the union, and deliberately not a throw. The kinds
       // are validated against a JSON schema at the boundary and narrowed by a

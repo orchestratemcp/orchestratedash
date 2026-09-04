@@ -181,6 +181,14 @@ interface DashShellClient {
       say so rather than throw. */
   exportBriefAsPdf?(args: { agent_id: string; artifact_id: string }): Promise<CommandResult>;
   /**
+   * Send one briefing for judgement on GenLayer (MAR-863, ADR 0033).
+   *
+   * Optional on the bridge for every other method's reason: a browser tab has
+   * no main process behind it, and the surface hides the control rather than
+   * offering a dead one.
+   */
+  adjudicateBrief?(args: { agent_id: string; artifact_id: string }): Promise<CommandResult>;
+  /**
    * The two ways out of DASH's window (MAR-697, MAR-698).
    *
    * Optional for the reason everything here is, and the degradation differs
@@ -1480,6 +1488,44 @@ export async function exportBriefAsPdf(args: {
   }
   return bridge.exportBriefAsPdf(args);
 }
+
+/**
+ * Send one briefing for judgement on GenLayer (MAR-863, ADR 0033).
+ *
+ * `exportBriefAsPdf`' twin, with the two refusals kept separate for its own
+ * reason — a browser tab has no main process at all, and an older installed
+ * build has the command but not this member. Both sentences name what to do
+ * rather than what failed.
+ *
+ * It returns as soon as the attempt is recorded and running, not when the
+ * verdict is in: a judgement takes minutes, and what the page draws afterwards
+ * it reads out of the store on the poll it already runs. So an `ok` here means
+ * *DASH will publish this and is now waiting*, never *it was judged*.
+ */
+export async function adjudicateBrief(args: {
+  agent_id: string;
+  artifact_id: string;
+}): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to have this briefing judged.",
+    };
+  }
+  if (bridge.adjudicateBrief === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "This version of the DASH app cannot have a briefing judged yet.",
+    };
+  }
+  return bridge.adjudicateBrief(args);
+}
+
 
 /**
  * Open one address the agent collected, outside DASH (MAR-698).

@@ -53,7 +53,7 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * they assert that a re-open, or a migration of an old store, lands at the head,
  * and following the head is the whole content of that claim.
  */
-const HEAD_VERSION = 37;
+const HEAD_VERSION = 38;
 
 async function freshStore(seed?: (dataDir: string) => void): Promise<{
   dataDir: string;
@@ -242,8 +242,18 @@ describe("schema", () => {
     // The index was **assigned as 36 and confirmed against this pin before it
     // was written**. `user_version` was 36 at that branch point, so the next
     // step is index 36 and produces 37.
+    //
+    // 38 is MAR-863's `brief_adjudications` (ADR 0033) — every time a briefing
+    // was sent to a committee on GenLayer for judgement, and what came back.
+    // Appended on the standing terms; the step is a bare
+    // `CREATE TABLE IF NOT EXISTS` with its index, so a store the tests below
+    // rewind runs it again without complaint.
+    //
+    // The index was **assigned as 37 and confirmed against this pin before it
+    // was written**. `user_version` was 37 at that branch point, so the step is
+    // index 37 and produces 38.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(37);
+    expect(version.user_version).toBe(38);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -325,6 +335,12 @@ describe("schema", () => {
     // itself in the vault. Named here for `notify_discord`'s reason — which
     // tables exist stays a list somebody reads.
     expect(tables).toContain("chief_discord");
+    // MAR-863, ADR 0033. One row per attempt at having a briefing judged, and
+    // the first table in this list about something DASH did **outside this
+    // machine that cannot be undone**. It holds names, hashes and conclusions —
+    // never the document, which `run_artifacts` above already holds and
+    // `brief_digest` names, and never a network's own words about itself.
+    expect(tables).toContain("brief_adjudications");
   });
 
   it("carries the provenance columns ADR 0028 added, defaulted to what was true before", async () => {

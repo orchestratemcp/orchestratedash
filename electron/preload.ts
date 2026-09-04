@@ -801,6 +801,14 @@ const dashShell = {
    * whose reachable surface grows without a review.
    */
   markAgentLooked: (args: { agent_id: string }) => send("glance.looked", { ...args }),
+  /*
+   * MAR-863, ADR 0033. Two opaque ids and nothing else — the briefing, the
+   * endpoint and the contract address are all resolved in main. See the
+   * catalogue entry in `lib/shell/ipc.ts` for why that is load-bearing here
+   * rather than merely tidy.
+   */
+  adjudicateBrief: (args: { agent_id: string; artifact_id: string }) =>
+    send("adjudicate.start", { ...args }),
 
   /**
    * The three model commands (MAR-583).

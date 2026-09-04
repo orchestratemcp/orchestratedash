@@ -24,6 +24,7 @@
 
 import type { BriefCitations } from "../brief/citations";
 import type { RunArtifact } from "../contracts";
+import type { Adjudication } from "../genlayer/record";
 import type { RunArtifactRecord } from "../store";
 import {
   describeArtifactAvailability,
@@ -115,6 +116,25 @@ export interface ArtifactCardView {
    * data, exactly as `GroundingAnalysis` does.
    */
   citations: BriefCitations | null;
+  /**
+   * Every time this brief was sent for judgement on GenLayer, newest first
+   * (MAR-863, ADR 0033).
+   *
+   * **Empty for every kind but `brief`**, and empty on a brief means nobody has
+   * asked for one — which is the ordinary state and draws no receipt at all.
+   *
+   * A list rather than the newest, because a brief can be judged more than once
+   * and the resubmission is not an edge case: roughly one judgement in ten ends
+   * with the committee refusing its leader's verdict, which records nothing and
+   * whose route out is asking again. A field holding only the newest would
+   * report a brief accepted on its third attempt identically to one accepted
+   * first time.
+   *
+   * Computed by the caller on `citations`' reasoning: the answer needs
+   * `node:sqlite`, this module is imported by components, and the shapes live in
+   * `lib/genlayer/record.ts` precisely so the verdict can cross as data.
+   */
+  adjudications: readonly Adjudication[];
   /** The short date label used when this card sits in an agent's history. */
   history_day: string;
   role: ArtifactRole;
@@ -150,6 +170,15 @@ export function buildArtifactCards(
    * correct without an `undefined` in the middle of it.
    */
   resolveCitations: (record: RunArtifactRecord) => BriefCitations | null = () => null,
+  /**
+   * Every judgement asked for against one brief, or none (MAR-863).
+   *
+   * A third resolver with an honest default, on the two above's terms. The
+   * default is an empty list, which renders as *nobody has asked for this to be
+   * judged* — the true statement about a DASH that has never pressed the button,
+   * and about every surface that did not look.
+   */
+  resolveAdjudications: (record: RunArtifactRecord) => readonly Adjudication[] = () => [],
   today = new Date(),
 ): ArtifactCardView[] {
   return records.map((record) => {
@@ -159,6 +188,7 @@ export function buildArtifactCards(
     return {
       artifact,
       citations: resolveCitations(record),
+      adjudications: resolveAdjudications(record),
       history_day: describeArtifactHistoryDay(artifact.generated_at, today),
       role: describeArtifactRole(artifact.kind),
       availability,

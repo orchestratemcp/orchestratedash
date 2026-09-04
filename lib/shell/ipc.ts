@@ -430,6 +430,54 @@ export const COMMANDS = {
    * waving away, and it is bounded by what the fact drives: DASH would draw one
    * fewer chip. It reaches no agent, no runner, no vault and no provider.
    */
+/*
+   * MAR-863, ADR 0033. The one press in DASH that publishes something nobody
+   * can take down.
+   *
+   * A **tenth family**, and it earns one on the terms the ninth did. Every
+   * other command in this catalogue acts on this computer, this person's
+   * account, or a program on this machine. This one puts a document on a public
+   * network, where it stays whatever anybody here does afterwards — which is a
+   * distinct kind of reach and deserves to be findable by name rather than
+   * folded in beside commands about files a person chose.
+   *
+   * `irreversible` is **true**, and it is the first command in this catalogue
+   * for which it is true in the strongest sense. `connection.disconnect` is
+   * irreversible in that a token cannot be un-revoked; a person can reconnect.
+   * There is no reconnecting from this: the briefing, the rows it cites and the
+   * run's fetch receipts are in contract state on a public chain the moment the
+   * second transaction is accepted, and DASH cannot remove them.
+   * `ADJUDICATE_COPY.consequence` is the sentence that says so beside the
+   * button.
+   *
+   * ## The payload is two opaque ids and nothing else
+   *
+   * `workspace.exportBrief`' rule, and the reason is the same one plus a
+   * sharper one: main resolves the ids to an artifact it is already holding,
+   * builds the payload itself, and refuses the ones it cannot check. **No
+   * document crosses this boundary**, so a compromised renderer cannot choose
+   * what gets published — it can only name a briefing this agent already
+   * produced, and even that is refused unless the digest it was written from is
+   * still here and still hashes the same.
+   *
+   * Neither the endpoint nor the contract address is on the payload either, for
+   * the reason `open.export` carries no path: main computes both from the
+   * connection, so a renderer cannot point a judgement at a chain of its own
+   * choosing.
+   *
+   * `mutates` is true. It changes nothing about the agent and nothing in this
+   * store that the agent reads, and it writes a durable row about an attempt —
+   * which is the flag's own subject.
+   */
+  "adjudicate.start": {
+    effect:
+      "Publish this briefing and the rows it cites to a public test network, and have a committee of models there judge it against the terms. Anyone can read it afterwards and nobody can take it down.",
+    payload_keys: ["agent_id", "artifact_id"],
+    required_keys: ["agent_id", "artifact_id"],
+    mutates: true,
+    irreversible: true,
+  },
+
   "glance.looked": {
     effect:
       "Remember that you have just opened this agent's page, so DASH can tell you what has arrived since.",
@@ -2040,6 +2088,29 @@ export function isSampleCommandName(value: CommandName): value is SampleCommandN
  * One member is not a shape waiting to be filled — see `SAMPLE_ACTIONS` for the
  * same standing.
  */
+/**
+ * Publishing a briefing for judgement (MAR-863, ADR 0033).
+ *
+ * A tenth family with one member, on the terms `SAMPLE_ACTIONS` was created
+ * under: one member is not a shape waiting to be filled. A reviewer asking
+ * *"what in DASH can put something somewhere it cannot be taken down from?"*
+ * gets a complete answer from one map, and it has one entry in it.
+ *
+ * Performed by `electron/adjudicate-host.ts` and nothing else, which is what
+ * makes that module reviewable as the seam rather than as one caller of many —
+ * `OPEN_ACTIONS`' own argument.
+ */
+export const ADJUDICATE_ACTIONS = {
+  "adjudicate.start": "start",
+} as const;
+
+export type AdjudicateCommandName = keyof typeof ADJUDICATE_ACTIONS;
+export type AdjudicateAction = (typeof ADJUDICATE_ACTIONS)[AdjudicateCommandName];
+
+export function isAdjudicateCommandName(value: CommandName): value is AdjudicateCommandName {
+  return Object.hasOwn(ADJUDICATE_ACTIONS, value);
+}
+
 export const GLANCE_ACTIONS = {
   "glance.looked": "looked",
 } as const;
@@ -2491,6 +2562,7 @@ type UnroutedCommand = Exclude<
   | OpenCommandName
   | SampleCommandName
   | GlanceCommandName
+  | AdjudicateCommandName
   | IdentityCommandName
   | StandingAnswerCommandName
   | ScheduleCommandName
@@ -2824,6 +2896,13 @@ export function executeCommand(review: CommandReview): CommandResult {
     // every entry above: succeeding here would report a look recorded that was
     // not, and the fleet card would go on saying an output is new.
     isGlanceCommandName(review.command) ||
+    // MAR-863, ADR 0033. Performing one reaches the network, `node:crypto` and
+    // `node:sqlite`, none of which a sandboxed preload can carry. It is also the
+    // entry where succeeding without acting would be worst in a new way: every
+    // other line above would leave a person believing something local happened
+    // that did not, and this one would leave them believing they had published
+    // a document — which is a claim about the outside world.
+    isAdjudicateCommandName(review.command) ||
     // MAR-589, MAR-640. Writes a row through `node:sqlite`, the same reason as
     // the entry immediately above: succeeding here would report a rename or a
     // star that never touched the store.
@@ -3501,6 +3580,31 @@ export interface DispatchContext {
    * start reasoning about a value it has no business holding.
    */
   glanceAction(action: GlanceAction, target: { agent_id: string }): Promise<{ ok: boolean }>;
+  /**
+   * Send one briefing for judgement on GenLayer (MAR-863, ADR 0033).
+   *
+   * Injected for `glanceAction`'s reason and two of its own. The real
+   * implementation reaches `node:sqlite`, `node:crypto` and the network, none
+   * of which a sandboxed preload can carry — and it is **long-running**, at a
+   * measured forty-five seconds to five minutes.
+   *
+   * So it returns as soon as the attempt is *recorded and started*, not when it
+   * finishes. What comes back says whether DASH will publish this briefing at
+   * all; what happens afterwards is written to the store stage by stage, and the
+   * page reads it there on the poll it already runs. A command that awaited the
+   * whole judgement would be a promise held open across five minutes of a
+   * person's session, and a renderer that reloaded in the middle would lose the
+   * only handle on it.
+   *
+   * `refusal` is one of `PayloadRefusal` when DASH declined to publish, so the
+   * page can say which — a stale digest and an empty briefing lead somewhere
+   * different. It is never a network's own message.
+   */
+  adjudicateAction(
+    action: AdjudicateAction,
+    target: { agent_id: string; artifact_id: string },
+  ): Promise<{ ok: boolean; refusal?: string; detail?: string }>;
+
   /**
    * The reader's own record of one agent: its DASH-given name, and whether
    * it is starred (MAR-589, MAR-640).
@@ -4440,6 +4544,25 @@ export async function dispatchCommand(
               ...(result.masked_hint === undefined ? {} : { masked_hint: result.masked_hint }),
               ...(result.sent === undefined ? {} : { sent: result.sent }),
             },
+    };
+  }
+
+if (isAdjudicateCommandName(review.command)) {
+    /*
+     * MAR-863. Two opaque ids, and there is nowhere for a third field to go —
+     * the payload rules permit exactly these two, and the document, the endpoint
+     * and the contract address are all resolved in main. See the catalogue entry
+     * for why that matters more here than anywhere else in this file.
+     */
+    const result = await context.adjudicateAction(ADJUDICATE_ACTIONS[review.command], {
+      agent_id: String(review.payload["agent_id"]),
+      artifact_id: String(review.payload["artifact_id"]),
+    });
+    return {
+      ok: result.ok,
+      request_id: review.audit.request_id,
+      reason: result.refusal,
+      detail: result.detail,
     };
   }
 
