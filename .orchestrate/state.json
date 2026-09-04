@@ -1954,15 +1954,25 @@
     },
     {
       "id": "MAR-862",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "279fc4e"
+      "lifecycle": "proven",
+      "linear_status": "Done",
+      "commit": "7c8c72a",
+      "note": "The dash-agent plugin, proven by using it rather than by testing it. Scaffolded a fresh agent in a clean session, validated it with DASH's own validateManifest, installed it and imported it. One defect found by the installed proof and fixed in the same session: tools/dash-mcp/template/agent.mjs read agent.manifest.json only beside itself, but DASH splits the project on import and runs the program from code/ — an agent that cannot read its own manifest stamps the wrong name on every event and ingestArtifacts discards every artifact silently, so the screen reads \"Nothing has run yet\" forever. Two candidate paths now. Not done: the plugin cannot be 'installed' without writing persistent MCP config, which the dispatch prompt assumed and should not have.",
+      "proof": {
+        "command": "dash-agent plugin scaffold + validate + install, then import into the installed build (proving session 2026-09-04); qa-screenshots-mar-861/01-mar862-fleet-proof-scout.png and 02-mar862-run-digest-and-brief.png",
+        "run": "proof-scout-mar861 imported with ZERO validation failures and appeared in the fleet, then ran and produced its own digest and brief (brief-5c752a10-7131-431d-9a8f-ea574c511735) — which is what MAR-863's proof was then pressed against."
+      }
     },
     {
       "id": "MAR-863",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "4a83520"
+      "lifecycle": "proven",
+      "linear_status": "Done",
+      "commit": "7c8c72a",
+      "note": "genlayer.brief.adjudicate, pressed on the installed build against a brand-new agent's own brief rather than the competitor-scout fallback. Studionet was checked before anything was blamed on DASH: chain 0xf22f, live block height, and 0xD08455a5Cfc53E43731834d6C92a6FE4aA0b3B75 still refusing an unknown commission rather than being absent — no redeploy, the shipped constant does not move. The verdict was REJECTED twice and that is the packet WORKING: the agent wrote point totals (2105, 1128, 668, 446, 327) into its briefing that its own evidence rows do not carry, and two committees caught it under two different leader models. Any acceptance language that says 'an ACCEPTED renders' is wrong and should be fixed rather than the proof re-run. Not done: the no-verdict (MAJORITY_DISAGREE) path did not reproduce live, two for two on MAJORITY_AGREE; and the genlayer connection still has no card on the Connections page, because lib/fleet/catalogue.ts builds rows from credential custody and a kind holding no credential has no shape there yet.",
+      "proof": {
+        "command": "press 'Have it judged' on the installed build against proof-scout-mar861's brief-5c752a10-7131-431d-9a8f-ea574c511735 (proving session 2026-09-04); qa-screenshots-mar-861/03-mar863-button-and-consequence.png, 04-mar863-verdict-receipt-rejected.png, 05-mar863-second-verdict-after-refresh.png",
+        "run": "Two judgements, both FINALIZED / SUCCESS / MAJORITY_AGREE, both rendered as a receipt beneath the citations with the network, the transaction hash as text, the judging model and the moment. evaluate_tx 0x7e374f0f5e88010908aa28321b5ba5cd161cfa2c35410ce26013f71405f933d7 (131s, llm-router/policy:prd-sonnet, REJECTED, 4 reasons) and 0x01f3b1df3f3f52584a918396f7eee2b85cf84eb6230adc2e743d830ad30d6877 (129s, openrouter/google/gemini-3-flash-preview, REJECTED, 2 reasons). The receipt needed a manual refresh to appear — the record and the component were both correct and the page did not notice; filed as MAR-868 and fixed there."
+      }
     },
     {
       "id": "MAR-864",
@@ -1978,6 +1988,12 @@
     },
     {
       "id": "MAR-866",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-868",
       "lifecycle": "planned",
       "linear_status": "Backlog",
       "commit": null
