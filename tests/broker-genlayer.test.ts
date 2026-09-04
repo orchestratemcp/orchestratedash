@@ -107,7 +107,7 @@ function digestOf(items: ArtifactItem[] = ITEMS): DigestArtifact {
         // projection that shipped only the successes would fail the criterion.
         source_name: "Hermes Agent on Reddit",
         source_url: "https://www.reddit.com/r/hermes/.json",
-        status: "failed",
+        status: "unreachable",
       },
     ],
   };
@@ -224,7 +224,7 @@ describe("what reaches the chain", () => {
     // The sources that did not answer travel too — the terms ask for them by
     // name, and a payload with only the successes fails that criterion.
     expect(built.payload.deliverable.sources_fetched).toHaveLength(2);
-    expect(built.payload.deliverable.sources_fetched[1]?.status).toBe("failed");
+    expect(built.payload.deliverable.sources_fetched[1]?.status).toBe("unreachable");
     // And the fetch receipts carry no address either.
     expect(JSON.stringify(built.payload.deliverable.sources_fetched)).not.toMatch(/https?:\/\//);
   });
