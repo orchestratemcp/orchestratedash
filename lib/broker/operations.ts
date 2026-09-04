@@ -2344,3 +2344,350 @@ export function operationsForProvider(connectionProvider: string): BrokerOperati
 export function allOperations(): readonly BrokerOperation[] {
   return OPERATIONS;
 }
+
+/* ---------------------------------------------------------------------- *
+ * Having a brief judged on GenLayer (MAR-863, ADR 0033)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A fourth kind of thing this file declares, and the one an agent cannot reach.
+ *
+ * ## Why it is not a `BrokerOperation`
+ *
+ * Every member of that union is something an agent may *name* in a brokered
+ * request: `operationById` resolves it, `lib/broker/execute.ts` decides about
+ * it, and a credential is held for the length of one call. All three are wrong
+ * here.
+ *
+ * - **There is no credential.** The account that signs is a throwaway made per
+ *   run and funded from a faucet — see `lib/genlayer/connection.ts`. Step 5 of
+ *   `handle` is a vault read, and there would be nothing for it to read.
+ * - **It is not one HTTP request.** It is three transactions and a read, each
+ *   waiting on a committee of models, and `handle`'s fetch carries a fixed
+ *   twenty-second deadline. Measured latency to finalized was 45 to 281 seconds
+ *   across the spike's ten judgements.
+ * - **A person presses it.** Nothing schedules it, no agent program can start
+ *   one, and there is no allowance that would let one.
+ *
+ * So rather than widen `BrokerAccess` and then write three refusals to stop the
+ * widening from meaning anything, this is declared beside the union and outside
+ * it. `operationById` returns null for `genlayer.brief.adjudicate` exactly as it
+ * does for `gmail.send` — **there is no line an agent can write that names
+ * this** — and `SPEND_PATHS` and `WRITE_PATHS` are unchanged by construction
+ * rather than by inspection.
+ *
+ * ## The four-part rule, met on all four counts
+ *
+ * This file's rule is that adding an operation is "a deliberate act with a card
+ * sentence, a scope list, a request shape and a projection". All four are here
+ * and all four differ from anything above:
+ *
+ * 1. **The card sentence is in the user's words** — *have this brief judged on
+ *    GenLayer* — and `consequence` says the thing that actually matters, which
+ *    is that the document becomes public and permanent.
+ * 2. **The scope list is empty and nothing grew.** `required_scopes` is `[]`
+ *    because there is no credential to intersect, and neither frozen path array
+ *    above gained an entry. What bounds this instead is `ADJUDICATE_FUNCTIONS` —
+ *    the complete list of contract functions DASH will ever call, which is
+ *    `WRITE_PATHS`' argument applied to a chain.
+ * 3. **The request shape** carries the commission id, the deliverable and the
+ *    terms, and nothing an author could fill: every field is built by DASH from
+ *    an artifact it is already holding, and `compose` refuses anything else.
+ * 4. **The projection returns `{verdict, reasons[]}`** — a different structure
+ *    from a completion's five fields and from a curation's groups, and
+ *    deliberately not the raw judge output.
+ */
+export interface AdjudicateOperation {
+  /** Stable id. Named by DASH's own code, never by an agent. */
+  id: string;
+  /** The connection this belongs to. `genlayer`, and there is one. */
+  connection_provider: string;
+  /** One sentence, plain language, no identifiers. Rendered on the card. */
+  label: string;
+  /**
+   * A fourth value beside `BrokerAccess`' three, and deliberately not a member
+   * of it — see the note above. It says what this does out in the world, which
+   * is neither a read, nor a write to somebody's account, nor a spend.
+   */
+  access: "adjudicate";
+  /** Empty, always. There is no credential, so there is nothing to intersect. */
+  required_scopes: readonly string[];
+  /**
+   * What happens to the person because this ran. Plain language, no identifiers.
+   *
+   * Required for `WriteOperation.consequence`'s reason, and it is sharper here
+   * than anywhere else in this file: what a draft leaves behind is in the
+   * person's own mailbox and they can delete it. What this leaves behind is on
+   * a public chain and nobody can.
+   */
+  consequence: string;
+  /**
+   * Always true. The field exists so that adding one of these means writing
+   * `true` next to a comment about what becomes public, which is the review
+   * event this type is for — `SpendOperation.spends`' argument, pointed at the
+   * one irreversible thing this packet can do.
+   */
+  publishes: true;
+  /**
+   * Turn a validated input into the values that reach the contract.
+   *
+   * Takes no endpoint, no address and no account, and returns none — the shape
+   * `WriteOperation.compose` has, for the same reason. Where a request goes is
+   * the connection's business (`lib/genlayer/connection.ts`) and who signs it is
+   * the run's (`lib/genlayer/adjudicate.ts`); a `compose` that could name either
+   * would be a `compose` a bug could point at a different chain.
+   */
+  compose(input: Record<string, unknown>): ComposeResult;
+  /** Turn what `get_verdict` returned into the answer, field by named field. */
+  project(body: unknown): { verdict: string | null; reasons: string[] };
+}
+
+/**
+ * Every contract function DASH will ever call, and the complete answer.
+ *
+ * `WRITE_PATHS`' argument, moved to a chain: read this array as the answer to
+ * *"what can DASH make happen on this contract?"*. It is complete, because
+ * `lib/genlayer/adjudicate.ts` calls no function that is not named here, and
+ * `tests/broker-genlayer.test.ts` pins it by value and greps the caller for a
+ * `functionName` that is not in it.
+ *
+ * Note the one that is absent. `reclaim` is on the contract, it is a write, and
+ * it **moves the bounty back to the client** — the only function there that
+ * moves anything at all. DASH opens every commission at zero, so there is
+ * nothing for it to reclaim, and an operation able to call it would be an
+ * operation able to move money. It is refused here by absence, which is stronger
+ * than refusing it by a check.
+ *
+ * `evaluate` is the one that costs a committee of models real work, and the only
+ * one whose outcome is not a foregone conclusion — see `lib/genlayer/receipt.ts`.
+ */
+export const ADJUDICATE_FUNCTIONS: readonly string[] = Object.freeze([
+  "open_commission",
+  "submit_deliverable",
+  "evaluate",
+  "get_verdict",
+]);
+
+/** The longest deliverable DASH will put on a chain. */
+const MAX_DELIVERABLE_CHARS = 120_000;
+
+/** The longest one clause of the terms may be. */
+const MAX_TERM_CHARS = 4_000;
+
+/** The most reasons a verdict may carry back. The contract's own cap. */
+const MAX_VERDICT_REASONS = 12;
+
+/** The longest one reason may be. The contract's own cap. */
+const MAX_REASON_CHARS = 400;
+
+/**
+ * A commission id, as narrow as a Gmail id and for the same reason.
+ *
+ * It is stored in contract state and read back into a case file a model is
+ * shown, so the alphabet excludes everything that could end one field and start
+ * another. `commissionIdFor` in `lib/genlayer/adjudicate.ts` is the only thing
+ * that mints one, and this is the check that it did.
+ */
+const COMMISSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** A sha256, lowercase hex. The contract re-derives it and refuses a mismatch. */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * Any address at all, anywhere in a string.
+ *
+ * A second, blunter regex beside `LOOKS_LIKE_A_LINK`, and the difference is
+ * load-bearing. That one requires a space or a line start before the scheme,
+ * because it reads *prose* and a bare `example.com:` in a sentence is not a
+ * link. This one reads a **serialised JSON document**, where an address would
+ * arrive as `"source_url":"https://…"` — preceded by a quotation mark, which
+ * that pattern lets through.
+ *
+ * Applied to the whole document rather than field by field, so a member nobody
+ * thought about cannot carry one past it.
+ */
+const ANY_ADDRESS = /[a-z][a-z0-9+.-]*:\/\//i;
+
+/** Every verdict the contract will ever store. Anything else is not one. */
+export const ADJUDICATION_VERDICTS: readonly string[] = Object.freeze([
+  "ACCEPTED",
+  "REJECTED",
+  "INSUFFICIENT_EVIDENCE",
+]);
+
+/**
+ * Have a brief judged on GenLayer (MAR-863, ADR 0033).
+ *
+ * The one adjudication DASH performs. A single object rather than a generator,
+ * because unlike the model-provider operations there is no closed list of
+ * profiles to generate from: there is one contract, and widening this means
+ * writing a second object here, under review.
+ */
+export const GENLAYER_ADJUDICATE: AdjudicateOperation = {
+  id: "genlayer.brief.adjudicate",
+  connection_provider: "genlayer",
+  // The card sentence, in the words a person would use. Not "submit to an
+  // intelligent contract", which names a mechanism nobody asked about; the
+  // person's question is whether the thing their agent wrote holds up.
+  label: "Have this brief judged on GenLayer",
+  access: "adjudicate",
+  publishes: true,
+  // Empty, and for a reason no other operation in this file can give: there is
+  // no credential at all. A key carries no scopes to intersect; this carries no
+  // key. See `lib/genlayer/connection.ts`.
+  required_scopes: [],
+  consequence:
+    "The briefing, the evidence rows it cites and this run's fetch receipts are published to a " +
+    "public test network, where anyone can read them and nobody can take them down. A committee " +
+    "of models there judges the briefing against the terms and writes back a verdict. Nothing is " +
+    "charged to you and no account of yours is touched.",
+
+  compose(input) {
+    const commission = requireString(input, "commission_id", {
+      max: 128,
+      pattern: COMMISSION_ID,
+    });
+    if (!commission.ok) {
+      return commission;
+    }
+
+    /*
+     * The bytes, and the hash of the bytes.
+     *
+     * Both cross, because the contract re-derives the second from the first and
+     * refuses a mismatch. That is a transport check rather than a trust check —
+     * DASH computed the digest over the same string it is sending — and it turns
+     * a byte mangled between here and the chain into a refused transaction
+     * rather than a differently-judged document.
+     */
+    const deliverable = requireString(input, "deliverable_json", {
+      max: MAX_DELIVERABLE_CHARS,
+    });
+    if (!deliverable.ok) {
+      return deliverable;
+    }
+    const digest = requireString(input, "brief_digest", { max: 64, pattern: SHA256_HEX });
+    if (!digest.ok) {
+      return digest;
+    }
+
+    /*
+     * The terms, as three clauses.
+     *
+     * They are DASH's own constants — `lib/genlayer/terms.ts` — and they arrive
+     * here as inputs anyway, so that the one function deciding what reaches a
+     * contract sees every value that reaches it. A field validated somewhere
+     * else is a field this function does not bound.
+     */
+    const asked = requireString(input, "asked", { max: MAX_TERM_CHARS });
+    if (!asked.ok) {
+      return asked;
+    }
+    const criteria = requireString(input, "acceptance_criteria", { max: MAX_TERM_CHARS });
+    if (!criteria.ok) {
+      return criteria;
+    }
+    const evidence = requireString(input, "evidence_requirements", { max: MAX_TERM_CHARS });
+    if (!evidence.ok) {
+      return evidence;
+    }
+
+    /*
+     * The one thing a judge must never be handed, checked at the last door.
+     *
+     * `readBrief` already drops a model's paragraph whole rather than cleaning a
+     * link out of it, and `buildAdjudicationPayload` carries a receipt id where
+     * a URL would go. This is the third reading of the same rule, in the one
+     * place where getting it wrong is permanent and public.
+     */
+    if (ANY_ADDRESS.test(deliverable.value)) {
+      return { ok: false, refusal: "input_malformed", field: "deliverable_json" };
+    }
+
+    return {
+      ok: true,
+      json: {
+        commission_id: commission.value,
+        asked: asked.value,
+        acceptance_criteria: criteria.value,
+        evidence_requirements: evidence.value,
+        brief_digest: digest.value,
+        deliverable_json: deliverable.value,
+      },
+    };
+  },
+
+  project(body) {
+    /*
+     * What `get_verdict` returned, narrowed to two named fields.
+     *
+     * `judge_output` is on that structure and is deliberately **not** projected.
+     * It is the model's raw reply — a fenced JSON block, in every transcript —
+     * and it is the one part of this that is unbounded model prose. The verdict
+     * and the reasons are what the contract *stored* after checking them; the
+     * raw reply is what it was checking.
+     *
+     * A verdict outside the closed list is null rather than passed through, on
+     * `readModelId`'s rule: a value that is not one of the three is not a
+     * verdict, whatever a network says. Null is also what a commission with no
+     * verdict reads as, which is the `MAJORITY_DISAGREE` case — the two are told
+     * apart by the receipt, never by this field. See `lib/genlayer/receipt.ts`.
+     */
+    const source = (body ?? {}) as Record<string, unknown>;
+    const stated = readString(source, "verdict");
+    const verdict =
+      stated !== undefined && ADJUDICATION_VERDICTS.includes(stated) ? stated : null;
+
+    const raw = source["reasons"];
+    const reasons: string[] = [];
+    if (Array.isArray(raw)) {
+      for (const one of raw.slice(0, MAX_VERDICT_REASONS)) {
+        if (typeof one === "string" && one.length > 0) {
+          reasons.push(one.slice(0, MAX_REASON_CHARS));
+        }
+      }
+    }
+
+    return { verdict, reasons };
+  },
+};
+
+const ADJUDICATE_OPERATIONS: readonly AdjudicateOperation[] = Object.freeze([
+  GENLAYER_ADJUDICATE,
+]);
+
+/**
+ * The adjudication with this id, or null.
+ *
+ * A sibling of `operationById` and deliberately a **separate** lookup: an
+ * agent's request is resolved through that one, and this list is not reachable
+ * from it. That is the whole safety property — see `AdjudicateOperation`'s note
+ * — and `tests/broker-genlayer.test.ts` asserts it in the direction that
+ * matters, by driving `operationById("genlayer.brief.adjudicate")` and expecting
+ * null.
+ */
+export function adjudicateOperationById(id: unknown): AdjudicateOperation | null {
+  return typeof id === "string" && id === GENLAYER_ADJUDICATE.id ? GENLAYER_ADJUDICATE : null;
+}
+
+/** Every adjudication DASH offers. One, and the card reads it from here. */
+export function allAdjudicateOperations(): readonly AdjudicateOperation[] {
+  return ADJUDICATE_OPERATIONS;
+}
+
+/**
+ * No adjudication id may collide with a brokered operation's (MAR-863).
+ *
+ * At module load, not at request time. The safety argument above is that
+ * `operationById` cannot resolve this id; a future operation that happened to
+ * carry the same name would make that sentence false silently, on a boundary
+ * whose whole value is that the sentence is true. So it takes the module down on
+ * import, where the stack names the id.
+ */
+for (const adjudication of ADJUDICATE_OPERATIONS) {
+  if (OPERATIONS.some((operation) => operation.id === adjudication.id)) {
+    throw new Error(
+      `Adjudication ${adjudication.id} collides with a brokered operation of the same id`,
+    );
+  }
+}

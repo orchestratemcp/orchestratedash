@@ -36,6 +36,7 @@ import { ignoreBrokenPipeErrors } from "../lib/shell/pipe-guard";
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
 
+import { startAdjudication } from "./adjudicate-host";
 import { exportBriefAsPdf } from "./brief-pdf";
 import { openAgentExport, openCollectedLink } from "./open-out";
 import { readUiScale, writeUiScale } from "./ui-scale";
@@ -1063,6 +1064,14 @@ export function registerCommandChannel(
       // anything DASH supervises. Main stamps the moment from its own clock —
       // `recordAgentLook`'s default — so a renderer cannot mark an agent as read
       // at a time it chose.
+      // MAR-863, ADR 0033. The one entry in this object that can turn a click
+      // into a document on a public network. Every resolution the renderer must
+      // not make — which briefing, which list it was written from, which chain —
+      // is inside `startAdjudication`, beside the publish it guards, for
+      // `refreshSampleAgent`'s reason. It returns before the judgement finishes;
+      // the store holds the stage and the page polls it.
+      adjudicateAction: (_action, target) =>
+        Promise.resolve(startAdjudication(target.agent_id, target.artifact_id)),
       glanceAction: (_action, target) => {
         recordAgentLook(target.agent_id);
         return Promise.resolve({ ok: true });

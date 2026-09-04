@@ -27,6 +27,21 @@ import {
    nothing but types and drags nothing into the renderer bundle. */
 import { DEEP_DIVE_HEADING, describeDeepDiveAuthor } from "../../lib/copy/deep-dive";
 import { humanizeAgentName } from "../../lib/copy/agent-name";
+/* MAR-863, ADR 0033. Value imports and safe on the same terms as the copy
+   modules above: `lib/copy/genlayer.ts` imports nothing but types, and
+   `lib/genlayer/record.ts` imports nothing but a type — so neither reaches a
+   Node builtin, and neither drags one into the renderer bundle. The storing
+   half is `lib/genlayer/store.ts`, which is not reachable from here. */
+import {
+  ADJUDICATE_COPY,
+  ADJUDICATION_NO_REASONS,
+  ADJUDICATION_REASONS_LABEL,
+  ADJUDICATION_RECEIPT_COPY,
+  describeAdjudication,
+  describeAdjudicationFailure,
+  describeAdjudicationStage,
+} from "../../lib/copy/genlayer";
+import type { Adjudication } from "../../lib/genlayer/record";
 import { describeDigestGaps, describeSourceFailure } from "../../lib/copy/recovery";
 /* A value import, and safe: `lib/copy/when.ts` has no imports at all, so it
    reaches no Node builtin and drags nothing into the renderer bundle — the rule
@@ -767,9 +782,19 @@ export function GroundingChip({
 export function BriefBody({
   artifact,
   citations,
+  adjudications = [],
 }: {
   artifact: BriefArtifact;
   citations: BriefCitations | null;
+  /**
+   * What became of asking a committee to judge this, newest first (MAR-863).
+   *
+   * Defaulted to none rather than required, so the two surfaces that render a
+   * brief through the exported PDF and through a test keep compiling — and
+   * because none is the honest rendering of *nobody looked*, which is a
+   * different thing from *nobody asked* only to a caller that did look.
+   */
+  adjudications?: readonly Adjudication[];
 }): ReactNode {
   /*
    * A resolver was never run, so nothing is claimed either way.
@@ -816,7 +841,138 @@ export function BriefBody({
           ))}
         </section>
       ))}
+
+      {/* Under the document, because it is a judgement *of* the document and a
+          reader who meets the verdict first reads the prose through it. */}
+      <AdjudicationReceipt attempts={adjudications} />
     </>
+  );
+}
+
+/**
+ * What a committee on GenLayer said about this briefing (MAR-863, ADR 0033).
+ *
+ * ## Why it is here and not in `OutputsPanel`
+ *
+ * Because **two renderers draw an artifact card**. `app/_components/outputs.tsx`
+ * draws DASH's own, and `app/_components/panel.tsx` draws the author's declared
+ * one; both call `BriefBody`, and a receipt written into one of them would be
+ * absent from the other with nothing to say it was missing. The verdict belongs
+ * beside the citations it is a judgement of, so it goes where the citations are.
+ *
+ * The **button** does not, and that asymmetry is deliberate. ADR 0008 bars
+ * controls from the author's panel, so asking for a judgement lives on DASH's
+ * own card in `OutputsPanel` and nowhere else. What is shared is the record;
+ * what is not shared is the act.
+ *
+ * ## The three things it draws, and the one it refuses to
+ *
+ * A **running** attempt draws its stage, because the measured span from press to
+ * verdict is forty-five seconds to five minutes and a page that says nothing for
+ * four of them is indistinguishable from a page that has hung.
+ *
+ * A **settled** attempt draws the verdict, the committee's own reasons, and the
+ * receipt — which network, which transaction, which model the network says
+ * wrote it. Every sentence around them is DASH's; every sentence inside the
+ * reasons is the committee's, and the label says so.
+ *
+ * What it will not draw is a **link**. The transaction hash is text, and copying
+ * it is how a person looks it up. DASH's window denies every anchor by design,
+ * and an address rendered beside model-authored prose is the exact thing
+ * `buildAdjudicationPayload` refuses to publish — the rule would be odd to keep
+ * on the way out and drop on the way back.
+ */
+function AdjudicationReceipt({
+  attempts,
+}: {
+  attempts: readonly Adjudication[];
+}): ReactNode {
+  const latest = attempts[0];
+  if (latest === undefined) {
+    /*
+     * Nobody has asked. Nothing is drawn — not an empty state and not an
+     * invitation, because the invitation is the button on DASH's own card and
+     * saying "this has not been judged" under every briefing would be DASH
+     * implying that being judged is the normal condition of a document.
+     */
+    return null;
+  }
+
+  if (latest.stage !== "settled") {
+    return (
+      <section className="brief-adjudication" aria-label={ADJUDICATE_COPY.receipt_heading}>
+        <p className="eyebrow">{ADJUDICATE_COPY.receipt_heading}</p>
+        <p className="muted">{describeAdjudicationStage(latest.stage)}</p>
+        <p className="muted">{ADJUDICATE_COPY.patience}</p>
+      </section>
+    );
+  }
+
+  /*
+   * A failure and a verdict are different sentences from different places, and
+   * the order matters: an attempt that never reached the committee has no
+   * verdict to describe, so the failure wins and `describeAdjudication` is not
+   * asked a question about a judgement that did not happen.
+   */
+  const said =
+    latest.failure === null
+      ? describeAdjudication(latest.outcome, latest.verdict)
+      : describeAdjudicationFailure(latest.failure);
+
+  return (
+    <section className="brief-adjudication" aria-label={ADJUDICATE_COPY.receipt_heading}>
+      <div className="section-heading">
+        <p className="eyebrow">{ADJUDICATE_COPY.receipt_heading}</p>
+        <span className={`chip chip-${said.tone}`}>{said.headline}</span>
+      </div>
+      <p>{said.meaning}</p>
+      {said.next_action === null ? null : (
+        <p className="next-action">{said.next_action}</p>
+      )}
+
+      {latest.verdict === null ? null : (
+        <>
+          <p className="eyebrow">{ADJUDICATION_REASONS_LABEL}</p>
+          {latest.reasons.length === 0 ? (
+            <p className="muted">{ADJUDICATION_NO_REASONS}</p>
+          ) : (
+            <ul className="brief-adjudication-reasons">
+              {latest.reasons.map((reason, index) => (
+                <li key={`${String(index)}:${reason.slice(0, 24)}`} className="wrap">
+                  {reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      <dl className="facts brief-adjudication-receipt">
+        <div>
+          <dt>{ADJUDICATION_RECEIPT_COPY.network}</dt>
+          <dd className="value">{latest.rpc_url}</dd>
+        </div>
+        {latest.evaluate_tx === null ? null : (
+          <div>
+            <dt>{ADJUDICATION_RECEIPT_COPY.transaction}</dt>
+            {/* Text, never an anchor. See this component's own note. */}
+            <dd className="value wrap">{latest.evaluate_tx}</dd>
+          </div>
+        )}
+        <div>
+          <dt>{ADJUDICATION_RECEIPT_COPY.judged_by}</dt>
+          <dd className="value">
+            {latest.leader_model ?? ADJUDICATION_RECEIPT_COPY.judged_by_unknown}
+          </dd>
+        </div>
+        {latest.settled_at === null ? null : (
+          <div>
+            <dt>{ADJUDICATION_RECEIPT_COPY.when}</dt>
+            <dd className="value">{plainMoment(latest.settled_at)}</dd>
+          </div>
+        )}
+      </dl>
+    </section>
   );
 }
 

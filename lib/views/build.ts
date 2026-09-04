@@ -145,6 +145,8 @@ import { buildAgentFeed, buildAgentTelemetry } from "./agent-feed";
 import { buildRunProgress } from "./run-progress";
 import { buildAgentHealth } from "./agent-health-build";
 import { buildArtifactCards, type ArtifactCardView } from "./artifacts";
+import type { Adjudication } from "../genlayer/record";
+import { readAdjudications } from "../genlayer/store";
 import { buildInputRoles } from "./inputs";
 import { buildPanelView, type PanelDashFacts, type PanelView } from "./panel";
 import {
@@ -516,6 +518,7 @@ export function runView(
       artifactRecords,
       (record) => availabilityForArtifact(record.artifact.artifact_id),
       citationResolverFor(artifactRecords),
+      adjudicationResolverFor(),
     ),
     // Only a digest is graded (MAR-458). A draft has no items and no
     // `sources_fetched`, so there is nothing to check its citations against —
@@ -1745,6 +1748,7 @@ export function workspaceView(
       return resolve(record.artifact.artifact_id);
     },
     citationResolverFor(agentRecords),
+    adjudicationResolverFor(),
   );
 
   /*
@@ -2337,6 +2341,36 @@ export function workInboxView(now: Date = new Date()): WorkInboxView {
  * grouping rebuilt inside that map would be quadratic on an agent with a long
  * history.
  */
+/**
+ * An adjudication resolver over one set of artifact records (MAR-863, ADR 0033).
+ *
+ * `citationResolverFor`'s sibling, and it is a store query where that one is a
+ * closure over a list — because the answer is not in the list. A judgement is a
+ * thing that happened to a brief *after* the run produced it, so there is no
+ * sibling artifact to find; `brief_adjudications` is where it lives.
+ *
+ * ## Why the query is per brief rather than one query for the page
+ *
+ * Because the population is tiny and the alternative is worse. A page has at
+ * most a handful of briefs on it and most DASHes will have none judged at all,
+ * so this is a handful of indexed lookups against a table with one row per
+ * attempt. Fetching every attempt this agent ever made and grouping in memory
+ * would be one query, and it would also be a query that grows with the history
+ * on a page that polls every five seconds.
+ *
+ * Empty for a digest and a draft, which is the field's own rule: only a brief is
+ * a document somebody could ask a committee to judge.
+ */
+function adjudicationResolverFor(): (record: RunArtifactRecord) => readonly Adjudication[] {
+  return (record) => {
+    const { artifact } = record;
+    if (!isBriefArtifact(artifact)) {
+      return [];
+    }
+    return readAdjudications(artifact.agent, artifact.artifact_id);
+  };
+}
+
 function citationResolverFor(
   records: readonly RunArtifactRecord[],
 ): (record: RunArtifactRecord) => BriefCitations | null {

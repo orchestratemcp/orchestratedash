@@ -565,7 +565,15 @@ function PanelArtifactBody({ card }: { card: ArtifactCardView }): ReactNode {
          drawing a brief as "Show what arrived" while DASH's card drew the
          document — one defect, two files, and only a photograph with both in
          frame has ever caught it. */
-      return <BriefBody artifact={card.artifact} citations={card.citations} />;
+      /* MAR-863. The verdict, on the author's panel too — the record is
+         shared and the control is not. See `AdjudicationReceipt`. */
+      return (
+        <BriefBody
+          artifact={card.artifact}
+          citations={card.citations}
+          adjudications={card.adjudications}
+        />
+      );
     default:
       // Unreachable through the union and deliberately not a throw: the schema
       // and the renderer are two authorities that can disagree across a version,

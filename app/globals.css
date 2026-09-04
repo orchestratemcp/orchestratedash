@@ -8634,3 +8634,38 @@ main:has(.agent-cockpit) {
   font-size: var(--text-sm);
   color: var(--warn);
 }
+
+/* ---------------------------------------------------------------------- *
+ * A verdict on a briefing (MAR-863, ADR 0033)
+ * ---------------------------------------------------------------------- */
+
+/* Set off from the prose above it by a rule rather than by a card, because it
+   is part of the same document's story and not a second card about it. Both
+   renderers of an artifact draw this — `OutputsPanel` and the author's panel —
+   so it has to sit correctly inside either one, which is why it claims no
+   background of its own. */
+.brief-adjudication {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* The committee's own sentences, and the one place on this surface where the
+   text is not DASH's. Indented and marked so a reader can see where the
+   quotation starts, on `.brief-cited`'s reasoning one layer out. */
+.brief-adjudication-reasons {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* A transaction hash is sixty-six characters of hex with no spaces in it, and
+   `.facts` is a two-up grid — so without this it is the one value on the page
+   that decides the card's minimum width. MAR-491's rule: cards reflow. */
+.brief-adjudication-receipt dd.wrap {
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+}

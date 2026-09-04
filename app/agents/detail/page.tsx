@@ -44,10 +44,14 @@ import { RunProgress } from "../../_components/run-progress";
 import { useSingleFlight } from "../../_components/single-flight";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { WorkingLine } from "../../_components/working";
+/* MAR-863, ADR 0033. A value import and safe: `lib/copy/genlayer.ts` imports
+   nothing but types. */
+import { ADJUDICATE_COPY } from "../../../lib/copy/genlayer";
 import { AGENT_WORKSPACE_PARAMS, agentStageHref, runDetailHref } from "../../_data/routes";
 import {
   dataSource,
   downloadOutput,
+  adjudicateBrief,
   exportBriefAsPdf,
   markAgentLooked,
   openExport,
@@ -1543,6 +1547,33 @@ function OutputsArea({
     }
   }
 
+/**
+   * Send one briefing for judgement on GenLayer (MAR-863, ADR 0033).
+   *
+   * `exportBrief`' neighbour, and it says a sentence on every path for the same
+   * reason: there is no dialog to cancel, so the press either started a
+   * judgement or could not, and both are worth saying.
+   *
+   * What the sentence must not claim is a verdict. This returns when the attempt
+   * is recorded and running — a judgement takes minutes — so the success wording
+   * names the wait, and the verdict arrives on the card underneath as the page
+   * polls. `ADJUDICATE_COPY.patience` is that sentence and it lives in the copy
+   * module rather than here.
+   */
+  async function adjudicate(card: ArtifactCardView): Promise<void> {
+    setFeedback(null);
+    const result = await adjudicateBrief({
+      agent_id: agent,
+      artifact_id: card.reference.artifact_id,
+    });
+    setFeedback({
+      ok: result.ok,
+      message: result.ok
+        ? ADJUDICATE_COPY.patience
+        : (result.detail ?? "DASH could not send this briefing to be judged."),
+    });
+  }
+
   /**
    * Open one of the files DASH saved (MAR-697).
    *
@@ -1596,6 +1627,7 @@ function OutputsArea({
         openId={openId}
         onDownload={canAct ? (card) => void save(card) : undefined}
         onExportBrief={canAct ? (card) => void exportBrief(card) : undefined}
+        onAdjudicate={canAct ? (card) => void adjudicate(card) : undefined}
         /* Per card, because this list spans runs now. The old page had one link
            under the whole panel saying "open the run these came from", which was
            true when every card came from one run and would have been a lie the

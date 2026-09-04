@@ -13,6 +13,7 @@ import type {
   CommandAuditRecord,
   ConnectionAction,
   FolderAction,
+  AdjudicateAction,
   GlanceAction,
   HostAction,
   AskAction,
@@ -198,6 +199,21 @@ describe("the audited command chokepoint", () => {
       // arrived since. The payload is one agent id and deliberately no time —
       // main stamps its own clock, so page script cannot mark an agent as read
       // at a moment it chose and silence its card for good.
+      // MAR-863, ADR 0033. A tenth family with one member, and the only command
+      // in this list that puts something **outside this machine where nobody
+      // can take it down**: it publishes one briefing, the rows it cites and the
+      // run's fetch receipts to a public test network, and a committee of models
+      // there judges it. `irreversible` is true, and it is true in a stronger
+      // sense than anywhere else in this catalogue — a revoked token can be
+      // reconnected, and this cannot be withdrawn by anybody.
+      //
+      // The payload is two opaque ids and nothing else. **No document crosses**:
+      // main resolves the ids against its own store, builds the payload itself,
+      // and refuses a briefing whose list of items it is not holding — so page
+      // script can name a briefing this agent already produced and can never
+      // choose what gets published. The endpoint and the contract address are
+      // absent from the payload too, so it cannot pick the chain either.
+      "adjudicate.start",
       "glance.looked",
       // MAR-589. A name DASH itself owns for one agent, separate from the
       // author's `display_name`. About the reader's own record, `glance.looked`'s
@@ -731,6 +747,14 @@ describe("dispatch", () => {
     // real one writes a row through `node:sqlite`, which this process has no
     // store for.
     const looks: Array<{ action: GlanceAction; target: { agent_id: string } }> = [];
+    // MAR-863, ADR 0033. Recorded rather than performed, `glanceAction`'s own
+    // reason: the real one publishes a document to a public network, and what
+    // these tests are about is that the command is reviewed, audited and routed
+    // to this seam rather than to another one.
+    const judgements: Array<{
+      action: AdjudicateAction;
+      target: { agent_id: string; artifact_id: string };
+    }> = [];
     // MAR-589, MAR-640. Recorded rather than performed, `glanceAction`'s own
     // reason: the real one writes a row through `node:sqlite`, which this
     // process has no store for.
@@ -825,6 +849,7 @@ describe("dispatch", () => {
       connections,
       samples,
       looks,
+      judgements,
       renames,
       standingAnswers,
       folders,
@@ -896,6 +921,13 @@ describe("dispatch", () => {
       // another one.
       glanceAction: (action: GlanceAction, target: { agent_id: string }) => {
         looks.push({ action, target });
+        return Promise.resolve({ ok: true });
+      },
+      adjudicateAction: (
+        action: AdjudicateAction,
+        target: { agent_id: string; artifact_id: string },
+      ) => {
+        judgements.push({ action, target });
         return Promise.resolve({ ok: true });
       },
       agentAction: (
