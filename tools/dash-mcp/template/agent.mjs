@@ -423,14 +423,42 @@ function log(line) {
 }
 
 const MANIFEST = (() => {
-  try {
-    return JSON.parse(readFileSync(path.join(projectDir, "agent.manifest.json"), "utf8"));
-  } catch {
-    return null;
+  /*
+   * Two locations, because DASH's copy is not the author's folder.
+   *
+   * On import DASH splits the project: the manifest is written to
+   * `<agents>/<name>/agent.manifest.json` and the program runs from
+   * `<agents>/<name>/code/`. Looking only beside this file finds the manifest
+   * in the author's own project and misses it inside DASH.
+   *
+   * That miss is not cosmetic. `AGENT_NAME` below is stamped on every event
+   * and every artifact, and `ingestArtifacts` in DASH rejects anything whose
+   * `/agent` does not match the agent DASH spawned. An agent that cannot read
+   * its own manifest therefore runs perfectly, writes its report, and has
+   * every artifact silently discarded — on screen, "Nothing has run yet",
+   * forever.
+   */
+  const candidates = [
+    path.join(projectDir, "agent.manifest.json"),
+    path.join(projectDir, "..", "agent.manifest.json"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(readFileSync(candidate, "utf8"));
+    } catch {
+      // Not this layout. Try the next one.
+    }
   }
+  return null;
 })();
 
 const AGENT_NAME = String(MANIFEST?.agent?.name ?? "agent");
+
+if (MANIFEST === null) {
+  // Said out loud, because the consequence is invisible otherwise: every
+  // artifact this run produces will be refused by DASH for a name mismatch.
+  log("could not read agent.manifest.json beside this file or one level up; running as \"agent\", and DASH will refuse this run's artifacts");
+}
 
 const ingestUrl = process.env.DASH_INGEST_URL;
 const ingestToken = process.env.DASH_INGEST_TOKEN;
