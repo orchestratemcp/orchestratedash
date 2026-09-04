@@ -3,8 +3,10 @@
 **Packet:** MAR-862, packet 1 of epic MAR-861. **Session:** Claude Code,
 `claude --model opus`, 2026-09-04.
 **Branch:** `000henrik/mar-862-dash-mcp-plugin` from `master` at `7f0329e`.
-**Lifecycle:** `merged` when the PR is green. **Not `proven`** — see
-[What is not done](#what-is-not-done).
+**Lifecycle:** `merged` when the PR is green. **The behavioural proof is now
+in** — Henrik pressed Add on 2026-09-04 and the agent is in the installed
+fleet; see [The proof](#the-proof-landed-2026-09-04). Promote to `proven` when
+the PR merges.
 
 ---
 
@@ -215,21 +217,74 @@ anything resolves it, in both `scaffoldAgent` and `installAgent`.
 
 ---
 
+## The proof, landed 2026-09-04
+
+Henrik added the staged agent through DASH's folder picker. Verified against the
+**installed** store, not a scratch one.
+
+The folder DASH wrote for itself, `%APPDATA%\orchestratedash\agents\mar862-proof-scout\`:
+
+```
+agent.manifest.json
+registration.json
+code/agent.mjs
+code/brief-fingerprint.mjs
+code/package.json
+code/sources.json
+code/README.md
+code/.gitignore
+code/scripts/open-in-dash.mjs
+code/reports/report-2026-09-04T13-24-08-583Z.md
+code/runs/events.jsonl
+```
+
+That is the installed shape this packet was briefed against, exactly, plus
+`brief-fingerprint.mjs`. `registration.json` is
+`{"command":"dash:node","args":["agent.mjs"],"cwd":"code"}` — DASH's own bundled-Node
+sentinel, so it is **startable**, not manifest-only.
+
+The stored manifest kept its route and its panel bindings through the import:
+
+```
+route       : public_feed_fetch -> brief_compose -> local_file_write
+panel roles : brief, digest, digest, metrics
+```
+
+And the fleet, read from a WAL-inclusive copy of the live `dash.sqlite`:
+
+```
+AGENTS IN THE FLEET:
+  - ai-news-scout-4                    | v2 | steps 2
+  - ai-news-scout-5                    | v2 | steps 2
+  - competitor-scout                   | v2 | steps 6
+  - mar862-proof-scout                 | v2 | steps 3   ← this packet
+  - synthetic-gmail-meeting-assistant  | v2 | steps 7
+```
+
+**Zero validation failures.** A manifest that failed would not have produced a
+folder or a row at all.
+
+`listRuns` and the artifact table hold **nothing** for it yet, which is the
+correct state: the agent starts idle by design and *Run now* is a press nobody
+has made. Pressing it is what would put a rendered brief on the panel beside its
+digest — worth doing, and not required by MAR-862's proof line.
+
+---
+
 ## What is NOT done
 
-**The packet stays at `merged`, not `proven`.** `proven` requires a fresh agent
-importing into the **installed** DASH build and appearing in the fleet. I got
-everything except the last two steps:
+`proven` also requires the PR to merge; it is `MERGEABLE`/`CLEAN` and green, and
+merging is Henrik's call. Beyond that:
 
-1. **The consent dialog is a person's press.** DASH asks before it stores
-   anything. I did not and will not answer that for Henrik — a tool built to
-   make a coding agent's output land reliably must not also make it land
-   unasked.
+1. **Nobody has pressed *Run now* on the imported agent.** It starts idle by
+   design, so the store holds no runs and no artifacts for it. One press would
+   put a rendered brief on the panel beside its digest — the richer screenshot,
+   and not something MAR-862's proof line asks for.
 2. **`dash://` on this machine belongs to a stale harness**, and starting DASH
    does not reclaim it — finding 1, which turned out to be a live defect in
-   `electron/handoff-host.ts` rather than a stale artifact. The proof is still
-   reachable through DASH's folder picker, which I verified; see the last
-   section.
+   `electron/handoff-host.ts` rather than a stale artifact. It did not block the
+   proof, because the folder picker is a real import door and is what was used.
+   It still breaks every deep link on this machine and **needs its own packet**.
 
 Also not done, and deliberately:
 
@@ -337,36 +392,14 @@ nonce is proof of possession, not a one-shot token.
 
 ## The one thing the next session should do first
 
-**In DASH — which is already running — add an agent by choosing the folder
-`C:\Users\henri\Desktop\projekt\MCP\mar862-proof-agent`, and press Add.**
+**File finding 1 as its own packet.** A dev-shell DASH never claims `dash://`,
+so every deep link on this machine — the Agent Kit's `open-in-dash`, this
+plugin's `dash_agent_install`, any handoff URL — reaches a month-old proof
+harness that runs its proofs and exits, and the link appears to do nothing. It
+is not this packet's to fix (`electron/**` is read-only here) and it silently
+breaks a flow MAR-428 already had to rescue once.
 
-Use the **folder picker**, not the `dash://` link: finding 1 means the link goes
-to the google-proof harness on this machine and appears to do nothing.
-
-That door is not a workaround, it is one of DASH's three real import doors, and
-I checked it rather than assuming. Running `inspectChosenFolder` — the function
-`electron/folder-import.ts` hands the bytes to — over that exact folder:
-
-```
-ACCEPTED
-  agent        : mar862-proof-scout
-  display_name : MAR-862 proof scout
-  startable    : true {"command":"dash:node","args":["agent.mjs"],"cwd":"code"}
-  files        : 10
-  prompt title : Add this agent?
-  prompt msg   : Add “MAR-862 proof scout” to DASH?
-```
-
-The folder is already scaffolded, validated, and proven to run — it produced a
-cited brief from ten live items. One press is the whole remaining distance
-between `merged` and `proven`: screenshot it in the fleet with its brief section
-on the panel, press **Run now**, and the packet closes.
-
-Then file finding 1 as its own packet. It is not this packet's to fix and it is
-breaking every deep link on this machine.
-
-(Small note if the folder-picker copy looks larger than expected: it counted 10
-files where `dash_agent_install` offers 8, because `lib/folder-import.ts` does
-not skip `reports/` and `runs/` the way this plugin's handoff does. Harmless —
-that is one live run's own output — but the two doors do disagree about what
-belongs to an agent.)
+Second, and smaller: press **Run now** on `mar862-proof-scout` in DASH. It has
+never run inside DASH — it starts idle by design — and one press puts a rendered
+brief on the panel beside its digest, which is the screenshot MAR-863's button
+will be built against.
