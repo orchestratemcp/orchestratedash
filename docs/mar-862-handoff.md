@@ -221,10 +221,15 @@ anything resolves it, in both `scaffoldAgent` and `installAgent`.
 importing into the **installed** DASH build and appearing in the fleet. I got
 everything except the last two steps:
 
-1. **The consent dialog is a person's press.** `dash_agent_install` opens
-   `dash://` and DASH asks. I did not and will not answer that for Henrik.
-2. **`dash://` on this machine is registered to something else.** See the
-   contradiction below.
+1. **The consent dialog is a person's press.** DASH asks before it stores
+   anything. I did not and will not answer that for Henrik — a tool built to
+   make a coding agent's output land reliably must not also make it land
+   unasked.
+2. **`dash://` on this machine belongs to a stale harness**, and starting DASH
+   does not reclaim it — finding 1, which turned out to be a live defect in
+   `electron/handoff-host.ts` rather than a stale artifact. The proof is still
+   reachable through DASH's folder picker, which I verified; see the last
+   section.
 
 Also not done, and deliberately:
 
@@ -240,22 +245,62 @@ Also not done, and deliberately:
 
 ## Contradictions and findings
 
-### 1. `dash://` is registered to a stale google-proof harness — blocks the proof
+### 1. DASH never claims `dash://` on the launch form a person uses
+
+This started as "the registration is stale". It is worse than that, and the
+correction matters, so here is the whole chain.
+
+The registration on this machine is:
 
 ```
 HKCU:\SOFTWARE\Classes\dash\shell\open\command
   "…\electron.exe" "C:\Users\henri\desktop\projekt\mcp\orchestratedash\dist\google-proof\main.mjs" "%1"
 ```
 
-`dist/google-proof/main.mjs` is dated **2026-08-07**. So on this machine today, a
-`dash://handoff` URL is handed to a month-old proof harness rather than to DASH.
-I did **not** re-register it — that is a system setting.
+`dist/google-proof/main.mjs` is dated **2026-08-07**. My first reading was that
+starting DASH would reclaim the scheme — `electron/handoff-host.ts` calls
+`app.setAsDefaultProtocolClient` — so I started DASH from Henrik's own
+`dash-launcher.cmd` and re-read the key.
 
-It is self-healing: `electron/handoff-host.ts:85` calls
-`app.setAsDefaultProtocolClient(HANDOFF_SCHEME)` at startup, so **starting DASH
-once reclaims the scheme**, and the install then works. This is the same family
-as the recorded "orphan google-proof runner blocks verify:shell" finding, one
-registry key over.
+**It did not change.** DASH is running and the harness still owns `dash://`.
+
+The reason is in `registerProtocolClient`. For an unpackaged build it guards on
+`isAppEntryPoint(process.argv[1])`, and `lib/shell/app-identity.ts` implements
+that as `["main.mjs", "main.js"].includes(entryBasename(entry))`. The running
+process is:
+
+```
+"…\electron.exe"  "C:\Users\henri\Desktop\projekt\MCP\orchestratedash"
+```
+
+`argv[1]` is the **app directory**, so `entryBasename` is `orchestratedash`, the
+guard is false, and the function returns having logged *"not claiming dash://…
+only the app's own entry point may be the handler"*.
+
+That guard is right for the caller it was written against — a smoke harness must
+not claim the scheme, which is a defect the docblock says already happened once.
+It is wrong here: the app directory is *precisely* how a person launches DASH
+(`isAppEntryPoint`'s own docblock says so — "an app directory — `electron .`,
+which is how a person launches DASH — is not matched and does not need to be",
+true for its MAR-656 name/store caller and false for this one). So on an
+unpackaged build, **the one launch form that should claim the scheme is the one
+form that never does**, and whatever last wrote the key keeps it. Since 2026-08-07
+that has been the google-proof harness.
+
+`app.isPackaged` registers unconditionally, so a packaged install (MAR-424) does
+not have this. Every dev-shell install does.
+
+**Consequence beyond this packet:** every `dash://handoff` on this machine —
+the Agent Kit's `npm run open-in-dash`, this plugin's `dash_agent_install`, any
+deep link — is handed to a month-old proof harness that runs its proofs and
+exits. The link appears to do nothing. That is the same failure the docblock
+describes as having "silently broke MAR-428's whole zero-file-picker flow until
+somebody looked in the registry", reached by a different route.
+
+I did not fix it: `electron/**` and `lib/**` are read-only for this packet, and
+re-registering the key by hand is a system setting. **It needs its own packet.**
+
+**It does not block the proof**, because there is a second door — see below.
 
 ### 2. The prompt says only the new package, ADR 0032 and the handoff — I touched one more file
 
@@ -292,10 +337,36 @@ nonce is proof of possession, not a one-shot token.
 
 ## The one thing the next session should do first
 
-**Start DASH once, then run `dash_agent_install` on
-`C:\Users\henri\Desktop\projekt\MCP\mar862-proof-agent` and press Add.**
+**In DASH — which is already running — add an agent by choosing the folder
+`C:\Users\henri\Desktop\projekt\MCP\mar862-proof-agent`, and press Add.**
 
-Starting DASH reclaims `dash://` from the google-proof harness (finding 1). The
-folder is already scaffolded, validated and staged. That single press is the
-whole remaining distance between `merged` and `proven` — screenshot the imported
-agent in the fleet, with its brief section on the panel, and the packet closes.
+Use the **folder picker**, not the `dash://` link: finding 1 means the link goes
+to the google-proof harness on this machine and appears to do nothing.
+
+That door is not a workaround, it is one of DASH's three real import doors, and
+I checked it rather than assuming. Running `inspectChosenFolder` — the function
+`electron/folder-import.ts` hands the bytes to — over that exact folder:
+
+```
+ACCEPTED
+  agent        : mar862-proof-scout
+  display_name : MAR-862 proof scout
+  startable    : true {"command":"dash:node","args":["agent.mjs"],"cwd":"code"}
+  files        : 10
+  prompt title : Add this agent?
+  prompt msg   : Add “MAR-862 proof scout” to DASH?
+```
+
+The folder is already scaffolded, validated, and proven to run — it produced a
+cited brief from ten live items. One press is the whole remaining distance
+between `merged` and `proven`: screenshot it in the fleet with its brief section
+on the panel, press **Run now**, and the packet closes.
+
+Then file finding 1 as its own packet. It is not this packet's to fix and it is
+breaking every deep link on this machine.
+
+(Small note if the folder-picker copy looks larger than expected: it counted 10
+files where `dash_agent_install` offers 8, because `lib/folder-import.ts` does
+not skip `reports/` and `runs/` the way this plugin's handoff does. Harmless —
+that is one live run's own output — but the two doors do disagree about what
+belongs to an agent.)
