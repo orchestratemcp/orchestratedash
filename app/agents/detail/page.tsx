@@ -47,6 +47,10 @@ import { WorkingLine } from "../../_components/working";
 /* MAR-863, ADR 0033. A value import and safe: `lib/copy/genlayer.ts` imports
    nothing but types. */
 import { ADJUDICATE_COPY } from "../../../lib/copy/genlayer";
+/* MAR-868. A value import and safe on the same standing: `lib/genlayer/record.ts`
+   has no import but a type, so `isRunning` never drags `node:sqlite` into this
+   bundle. See the module's own docblock. */
+import { isRunning } from "../../../lib/genlayer/record";
 import { AGENT_WORKSPACE_PARAMS, agentStageHref, runDetailHref } from "../../_data/routes";
 import {
   dataSource,
@@ -214,7 +218,25 @@ function AgentWorkspace(): ReactNode {
     state.status === "ready" &&
     state.data.found &&
     (state.data.snapshot?.runs ?? []).some((run) => isRunInFlight(run.status));
-  const following = running || asked > 0;
+  /*
+   * MAR-868. A judgement in flight is the same reason to poll a run in flight
+   * is — it changes what is on screen (the button's label, the receipt) with
+   * nobody pressing anything here.
+   *
+   * `adjudicate()` below never sets `asked`: a judgement is not a run, so
+   * `running` never becomes true for one and the grace window's exit — a run
+   * appearing — would never fire. This reads the record's own stage instead,
+   * which has a bounded exit of its own: `isRunning` is false the moment a
+   * row reaches `settled`, on a verdict, a `no_consensus`, or a failure alike
+   * (`lib/genlayer/adjudicate.ts`'s `settle`). Checked across every card
+   * rather than the one just pressed, on `running`'s own reasoning: any brief
+   * on this agent's page can have an attempt moving, not only the newest one.
+   */
+  const adjudicating =
+    state.status === "ready" &&
+    state.data.found &&
+    state.data.outputs.some((card) => card.adjudications.some((attempt) => isRunning(attempt)));
+  const following = running || asked > 0 || adjudicating;
   useEffect(() => {
     setLive(following);
   }, [following]);
@@ -1091,6 +1113,7 @@ function AgentWorkspace(): ReactNode {
           cards={view.outputs}
           exports={view.exports}
           grounding={view.latest_digest_grounding}
+          onAdjudicated={() => setRefreshKey((value) => value + 1)}
           onExported={() => setRefreshKey((value) => value + 1)}
           openId={openOutput}
           setFeedback={setFeedback}
@@ -1490,6 +1513,7 @@ function OutputsArea({
   cards,
   exports,
   grounding,
+  onAdjudicated,
   onExported,
   openId,
   setFeedback,
@@ -1500,6 +1524,19 @@ function OutputsArea({
   /** What DASH has saved for this agent (MAR-697). */
   exports: AgentExportView[];
   grounding: GroundingAnalysis | null;
+  /**
+   * Read this agent again, because a judgement has just been asked for
+   * (MAR-868).
+   *
+   * `onExported`'s twin, for a different reason than that one's own: the
+   * record `adjudicate` below just wrote is what the page's live predicate
+   * reads to decide whether to keep polling, so the first read of it must not
+   * wait for whatever unrelated poll happens to land next. Without this, the
+   * button and the receipt sit on whatever was on screen when the press
+   * happened until somebody leaves and comes back — the "only manual refresh
+   * shows it" defect this packet exists to close.
+   */
+  onAdjudicated: () => void;
   /**
    * Read this agent again, because a file has just been saved (MAR-697).
    *
@@ -1572,6 +1609,13 @@ function OutputsArea({
         ? ADJUDICATE_COPY.patience
         : (result.detail ?? "DASH could not send this briefing to be judged."),
     });
+    if (result.ok) {
+      // MAR-868. `adjudicateBrief`'s own contract: it returns once the attempt
+      // is recorded and running, so the row is there to read the moment this
+      // resolves. Same call `exportBrief` makes for the same reason — before
+      // the person looks down for the state the sentence just named.
+      onAdjudicated();
+    }
   }
 
   /**
