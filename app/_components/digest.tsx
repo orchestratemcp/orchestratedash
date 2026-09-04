@@ -39,6 +39,7 @@ import {
   ADJUDICATION_RECEIPT_COPY,
   describeAdjudication,
   describeAdjudicationFailure,
+  describeAdjudicationNetwork,
   describeAdjudicationStage,
 } from "../../lib/copy/genlayer";
 import type { Adjudication } from "../../lib/genlayer/record";
@@ -950,7 +951,10 @@ function AdjudicationReceipt({
       <dl className="facts brief-adjudication-receipt">
         <div>
           <dt>{ADJUDICATION_RECEIPT_COPY.network}</dt>
-          <dd className="value">{latest.rpc_url}</dd>
+          {/* The network's name, not its endpoint. A person reading their own
+              briefing is owed "GenLayer Studionet" rather than a URL — and the
+              row still holds the endpoint, which is the fact. */}
+          <dd className="value">{describeAdjudicationNetwork(latest.rpc_url)}</dd>
         </div>
         {latest.evaluate_tx === null ? null : (
           <div>

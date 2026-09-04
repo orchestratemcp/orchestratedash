@@ -47,6 +47,7 @@ import { fingerprintItems } from "../lib/brief/fingerprint";
 import {
   describeAdjudication,
   describeAdjudicationFailure,
+  describeAdjudicationNetwork,
   describeAdjudicationStage,
 } from "../lib/copy/genlayer";
 import { ADJUDICATION_STAGES } from "../lib/genlayer/record";
@@ -593,6 +594,17 @@ describe("the words", () => {
     expect(new Set(failures.map((one) => one.headline)).size).toBe(failures.length);
     // Every one leads somewhere, which is what makes them five and not one.
     expect(failures.every((one) => one.next_action !== null)).toBe(true);
+  });
+
+  it("names the network rather than printing its endpoint", () => {
+    // A person reading their own briefing is owed the network's name. DASH
+    // vouches for the one it ships and for no other, so anything else is the
+    // host of an endpoint somebody typed.
+    expect(describeAdjudicationNetwork("https://studio.genlayer.com/api")).toBe(
+      "GenLayer Studionet",
+    );
+    expect(describeAdjudicationNetwork("https://my-node.example/rpc")).toBe("my-node.example");
+    expect(describeAdjudicationNetwork("not a url")).toBe("not a url");
   });
 
   it("never renders an address of its own", () => {

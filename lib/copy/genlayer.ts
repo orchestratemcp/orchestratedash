@@ -24,6 +24,7 @@
  * so a component can call it.
  */
 
+import { STUDIONET_LABEL, STUDIONET_RPC_URL } from "../genlayer/connection";
 import type { AdjudicationOutcome } from "../genlayer/receipt";
 import type { AdjudicationFailure, AdjudicationStage } from "../genlayer/store";
 import type { PayloadRefusal } from "../genlayer/payload";
@@ -330,3 +331,30 @@ export const ADJUDICATION_RECEIPT_COPY = {
   /** When the network named no model. Its silence, not DASH's. */
   judged_by_unknown: "The network did not say which model wrote the verdict.",
 } as const;
+
+/**
+ * Which network a judgement happened on, in words rather than as an endpoint.
+ *
+ * The row stores the `rpc_url` because that is the fact — a receipt has to say
+ * which machine answered — and a person reading their own briefing wants the
+ * network's *name*. "GenLayer Studionet" is what DASH ships and can vouch for;
+ * anything else is the host of an endpoint somebody typed, and DASH does not
+ * claim to know which network that is.
+ *
+ * The same ruling `resolveGenLayerConnection` makes when it builds
+ * `network_label`, restated here because the label is not on the row: a stored
+ * name would be a second copy free to disagree with the endpoint beside it, and
+ * the endpoint is the thing that is actually true.
+ */
+export function describeAdjudicationNetwork(rpcUrl: string): string {
+  if (rpcUrl === STUDIONET_RPC_URL) {
+    return STUDIONET_LABEL;
+  }
+  try {
+    return new URL(rpcUrl).host;
+  } catch {
+    // A row from a build that stored something else. Shown as it is rather than
+    // replaced with a guess — `readRow`'s standing for a value it cannot read.
+    return rpcUrl;
+  }
+}
