@@ -236,11 +236,87 @@ beyond the verdict."* rather than drawing an empty list.
 
 ---
 
+## The behavioural run, on the real brief, through the function the button calls
+
+`electron/main.ts` wires `adjudicate.start` to
+`startAdjudication(agent_id, artifact_id)` and does nothing else. That function
+was called with the two ids the renderer would have supplied, against a store
+seeded from Henrik's live `%APPDATA%\orchestratedash` — which holds exactly one
+brief, `competitor-scout`'s, and its digest still matches.
+
+```
+2026-09-04T15:25:24.705Z  command returned {"ok":true}
+2026-09-04T15:25:29.721Z  stage=opening
+2026-09-04T15:26:xx        stage=submitting
+2026-09-04T15:27:xx        stage=judging
+2026-09-04T15:27:28.969Z  stage=settled
+```
+
+The row it wrote:
+
+```json
+{
+  "commission_id": "dash-e57149d0-…",
+  "brief_digest": "5f35ae0c238951f78be7c85c5eb1aee408acc8526ed490eea0d6d522488f6328",
+  "rpc_url": "https://studio.genlayer.com/api",
+  "contract_address": "0xD08455a5Cfc53E43731834d6C92a6FE4aA0b3B75",
+  "chain_id": 61999,
+  "open_tx":     "0x434e7b61e387a2fda855fcc208bc9eeb2a82dbb14e4d885006d0bd76268a5154",
+  "submit_tx":   "0xffbd84f15653f723e11a57a577d1e6aeae87999e4f168f1db7186b93a742a209",
+  "evaluate_tx": "0x749277722252c17c9afa7938832852fb347e99a002f2b7857953abe7f5727425",
+  "outcome": "applied",
+  "status_name": "FINALIZED",
+  "execution_result": "SUCCESS",
+  "consensus_result": "MAJORITY_AGREE",
+  "leader_model": "llm-router/policy:prd-gemini",
+  "verdict": "ACCEPTED"
+}
+```
+
+Five reasons came back, and they name the real evidence rows:
+
+> P1 accurately summarizes the subscription restrictions from E1, E2, E3, and
+> E7, including the reversal reported in E7. · P2 correctly identifies
+> OpenClaw's reception and identity history using E4, E5, E6, E8, E9, and E10. ·
+> P3 details specific feature requests for OpenClaw (watchdog timeout, denylist,
+> MathJax) supported by E23, E24, and E25. · P4 and P5 correctly synthesize
+> Hermes Agent discussion and the extensive list of feature requests from E11
+> through E22. · The deliverable follows the requested subject-based
+> organization and includes the required fetch receipts in the audit/metadata
+> section.
+
+**124 seconds** end to end. The payload was 21,007 bytes, 5 paragraphs, 25 of 53
+evidence rows, 8 fetch receipts, and **no address anywhere in it**.
+
+`BriefBody` — the component both artifact-card renderers call — then drew that
+row: *Judged on GenLayer*, an `ACCEPTED` chip, the committee's five reasons under
+*What the committee said*, and a receipt carrying the network, the transaction
+hash as text, the model the network says wrote it, and the moment.
+
+### What this is not
+
+**It is not the pointer event, and it is not the installed build.** The screen
+capture route did not open on this machine:
+`mcp__computer-use__request_access` resolved *Electron* to the main repository's
+binary rather than this worktree's, and the grant was declined. The window ran
+correctly — `electron . --user-data-dir=… DASH_SHELL_URL=dash-app://ui/` booted
+against the seeded store, migrated it to 38, and served commands — so what is
+missing is a photograph of it, not evidence that it works.
+
+The gap between what ran and a click is: the pointer event, and one IPC hop that
+`tests/shell.test.ts` covers by asserting `adjudicate.start` is reviewed,
+audited and routed to `adjudicateAction`.
+
+---
+
 ## What is NOT done
 
-- **The installed-build behavioural proof.** See below.
+- **The installed-build behavioural proof, and the screenshot.** The flow ran
+  end to end on the real brief (above) and the component drew the verdict; what
+  is missing is the same thing done through a click in the packaged app, with a
+  photograph.
 - **The no-verdict path has not been reproduced live.** It is 1-in-10 and did not
-  come up. It is driven in the test against the receipt shape the spike recorded
+  come up in either of this session's two live runs. It is driven in the test against the receipt shape the spike recorded
   as iteration 8 of `transcripts/stability.json`:
   `{"n":8,"verdict":null,"state_applied":false,"consensus":"MAJORITY_DISAGREE","acc":93637,"fin":123640}`.
 - **The `genlayer` connection has no card on the Connections page.** It is
