@@ -1954,15 +1954,15 @@
     },
     {
       "id": "MAR-862",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "279fc4e"
+      "lifecycle": "proven",
+      "linear_status": "Done",
+      "commit": "7c8c72a"
     },
     {
       "id": "MAR-863",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
-      "commit": "4a83520"
+      "lifecycle": "proven",
+      "linear_status": "Done",
+      "commit": "7c8c72a"
     },
     {
       "id": "MAR-864",
@@ -1978,6 +1978,12 @@
     },
     {
       "id": "MAR-866",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-868",
       "lifecycle": "planned",
       "linear_status": "Backlog",
       "commit": null
