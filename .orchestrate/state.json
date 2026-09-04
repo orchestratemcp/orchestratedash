@@ -1994,6 +1994,19 @@
     },
     {
       "id": "MAR-868",
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "bf68b3a",
+      "note": "The verdict did not arrive on the page's own poll. Root cause confirmed as diagnosed: app/agents/detail/page.tsx drives live polling from `following = running || asked > 0`, and an adjudication is not a run. Two independent gaps — nothing about a brief_adjudications row makes `running` true, and adjudicate() never called setAsked either. Closing only the second would have been WORSE than leaving it: RUN_APPEARS_WITHIN_MS is 20s against a 45-280s judgement, so it would work on a fast run and fail on a slow one, looking fixed. Fixed with a third term on `following` using isRunning() from lib/genlayer/record.ts — which MAR-863 wrote and left with zero callers. Grepping for a caller would have caught it before merge. Exit stays bounded by the record's own stage:\"settled\"; no new client timer. NOT proven: the proof is a screen recording, not a screenshot, and none was taken."
+    },
+    {
+      "id": "MAR-869",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-870",
       "lifecycle": "planned",
       "linear_status": "Backlog",
       "commit": null
