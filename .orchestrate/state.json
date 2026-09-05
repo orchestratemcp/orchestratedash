@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-09-04",
+  "updated_at": "2026-09-05",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
   "lifecycle_note": "2026-08-26 evening reconcile: MAR-795 (VPS packet B, ADR 0031) merged bf0feda; MAR-800 resolved (claim did not reproduce; the real masked-hint envelope bug fixed, a3986b0); MCP MAR-788 merged 12421c1. MAR-785 PROVEN: autostart fired twice today on real sign-ins with no DASH (autostart.log receipts). Schedule receipt sits in the un-checkpointed wal — readable at Henriks next DASH open, which is act one of the VPS sitting (packet A five presses + packet B reboot script, on MAR-794/795). dash.sqlite base integrity ok; external wal-attach reads fail benignly while un-checkpointed.",
   "authority": {
@@ -1978,13 +1978,19 @@
       "id": "MAR-864",
       "lifecycle": "planned",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": null,
+      "note": "SPIKE ANSWERED 2026-09-05, packet RE-SCOPED. Transport works with no new code (host woke on schedule, settlement drained home). Press exists (Run on Vultr box). Both press and scheduler refuse on waitingTask(state)===null (electron/host-run.ts:261) because the deployed copy is never STARTED: deploy verb `start` starts the runner not the child; runner/main.ts adopts with child:null and starts none; /agents/{id}/lifecycle is deliberately not crossable (carries typed secrets). Remote press performs only MAR-657's second act. Needs an ADR-0014-style admission of a narrow start-the-named-agent route, or host-side spawn-idle-at-adoption. Timezone finding split to MAR-872. collect has no caller in electron/."
     },
     {
       "id": "MAR-865",
-      "lifecycle": "planned",
-      "linear_status": "Backlog",
-      "commit": null
+      "lifecycle": "merged",
+      "linear_status": "In Progress",
+      "commit": "369451c",
+      "note": "First real enrolment and deploy the product has ever done. root@78.141.221.121 (Vultr, Ubuntu 24.04). Enrolled by Henrik via the wizard at 19:25; proof-scout-mar861 deployed by the session; host reports CONNECTED, running 1 agent, proof-scout-mar861 SEEN RUNNING (docs/mar-865-evidence/05). agent_deploys 0 -> 1. No key on the host. Correction to the brief: hosts was already 1 row when the session started, not 0. NINE page defects recorded and none fixed (correctly; none blocked enrolment) -- folded into MAR-871. Discord trigger (this issue's step 3) NOT done: blocked behind MAR-864's re-scope, because nothing can start the deployed copy yet. Kept at merged: the first-half proof line (an agent deployed and the host's own account of it) is met, the issue as a whole is not.",
+      "proof": {
+        "command": "wizard enrol + Put an agent here (proof-scout-mar861) on the installed build, then Check this server; docs/mar-865-evidence/05-connected-seen-running.png, 06-service-report-reboot.png",
+        "run": "Host 78.141.221.121 answered CONNECTED, running 1 agent, proof-scout-mar861 SEEN RUNNING at 21:45 2026-09-05. Partial: covers enrol+deploy only, not the Discord trigger."
+      }
     },
     {
       "id": "MAR-866",
@@ -2007,6 +2013,18 @@
     },
     {
       "id": "MAR-870",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-871",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-872",
       "lifecycle": "planned",
       "linear_status": "Backlog",
       "commit": null
