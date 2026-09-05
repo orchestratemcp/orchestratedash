@@ -294,6 +294,132 @@ shift, silently, on a press that says nothing about time zones.
 
 Nothing on the schedule panel mentions this, and D5 above makes it worse: the
 panel actively says *"on this computer"* while the server is the machine that
-will apply its own clock. **This belongs in MAR-864's UI packet** alongside
-"say which machine ran": saying which machine runs it is incomplete without
+will apply its own clock. Saying which machine runs it is incomplete without
 saying which clock it uses.
+
+**Proven, not inferred.** A schedule set to `20:10` produced nothing at 20:10
+Stockholm. The same schedule reset to `18:20` settled with
+`due_at = 2026-09-05T18:20:00.000Z` — the host applied the literal string
+against its own UTC clock, two hours from where the person set it.
+
+### Step 2: the answer — it runs on the host, and the evidence comes home
+
+**Yes, with no new code.** The settlement DASH drained at 20:21:
+
+```json
+{ "agent": "proof-scout-mar861",
+  "due_at":    "2026-09-05T18:20:00.000Z",
+  "settled_at":"2026-09-05T18:20:24.712Z",
+  "outcome":   "refused",
+  "detail": "The agent started but did not publish anything to run, so DASH had nothing to begin." }
+```
+
+That row is the whole transport working end to end: DASH pushed the set over the
+channel, **the host's own runner woke at its own due time**, acted, wrote a
+settlement, and DASH drained it home on the next Check. No code was written.
+
+### The run itself was refused, and the reason is not the model
+
+`runner/schedule.ts:614-628` makes the sequence readable from the one word
+`refused`. The host got **past** the two earlier gates:
+
+1. `supervisor.facts(agent)` was non-null — the agent **is registered on the host**;
+   otherwise the detail would read *"DASH has no registered setup for this agent
+   on this computer."*
+2. `supervisor.start(agent)` succeeded — **the agent process started on the host**.
+3. `#waitForPendingTask` polled `PENDING_TASK_LOOKS = 80` times over ~24s
+   (`settled_at` is 24.7s after `due_at`) for a task with `status: "pending"` and
+   no `run_id`, and found none.
+
+**This is not the model limitation.** A missing model would fail inside
+`brief_compose`, during a run. This is earlier: no run ever began.
+
+### The press fails identically, which is what makes this conclusive
+
+`RUN ON VULTR BOX` — the named per-server control, which **already exists** and is
+already wired (`app/_components/agent-header.tsx:530-563` →
+`app/agents/detail/page.tsx:700` → `electron/main.ts:2773` →
+`electron/host-run.ts`) — was pressed. It answered:
+
+> The copy of this agent on Vultr box is not waiting for anything to be started.
+> It may already be running.
+
+`electron/host-run.ts:256` refuses on `waitingTask(state) === null` — **the same
+predicate** the scheduler uses. And it refuses *after* succeeding at everything
+before it: the `channel` verb returned the runner's credential, `GET state`
+returned a snapshot, and the snapshot **parsed** (a bad one answers *"described
+itself in a way DASH could not read"*). DASH declined to post the command
+because there was nothing to point it at.
+
+So the control plane is proven end to end **up to the command post**, by two
+independent paths, on a real machine.
+
+### What this means for MAR-864 — it is not the packet the issue describes
+
+The issue's revised plan says: if the schedule works, *"this is a **UI packet**:
+route the press to the right machine and say on screen which machine ran."* Two
+of those three are already done:
+
+| MAR-864's assumption | what is actually true |
+| --- | --- |
+| The transport may not exist | It exists and is proven against a real host, both ways |
+| Route the press to the right machine | **Already built** — `RUN ON VULTR BOX` sits beside `RUN NOW` on the run stage |
+| Nothing says which machine | Partly false — the agent grid badges `CLOUD` vs `LOCAL`, the header chip says `LIVES ON Cloud` |
+
+**The real blocker is none of those.** It is that a freshly-deployed agent on a
+host publishes no pending task, so *both* ways of starting it refuse before
+anything runs. Until that is fixed, routing a press correctly routes it to a
+refusal.
+
+That is a deploy/runtime question — what a deployed bundle carries, or how the
+host runner initialises an agent that has never run there — not a UI question.
+**MAR-864 should be re-scoped accordingly**, and the surface work that genuinely
+remains is smaller than the issue assumes: D5 (the panel says the wrong machine),
+the timezone finding above, and saying which machine a *finished run* happened
+on.
+
+### What was not established
+
+- **No run has yet produced output on the host**, so no host-sourced run evidence
+  came home. `evidence_pulls` holds only `local` rows; the remote pull happens
+  *after* a successful command post, which never occurred.
+- **`collect` is unreachable from the app.** The verb is typed in
+  `lib/deploy/verbs.ts` and implemented in `scripts/host-helper/main.ts`, but
+  **nothing in `electron/` ever invokes it** — the invoked verbs are `install`,
+  `start`, `stop`, `status`, `channel`, `service`, `pack`, `install-key`,
+  `uninstall`. So the brief's proof line "the `status` and `collect` output"
+  can only be half-satisfied today: `status` is on the card, `collect` has no
+  caller and no control. Evidence instead travels by `pullEvidence` on the
+  control plane.
+- **No key was placed on the host**, per the scope limit.
+
+---
+
+## For Henrik — the one thing only you can do
+
+For boot survival the host account needs lingering enabled, so its user service
+keeps running with nobody signed in:
+
+```
+loginctl enable-linger root
+```
+
+This session did **not** run it. Note that the host already reports the stronger
+claim on its own — *"This server starts your agents when it reboots. It does this
+on its own, with DASH closed and with nobody signed in to the server."* — after
+the `service` verb installed the unit, so this may already be satisfied; running
+it is harmless either way and is the documented belt-and-braces step.
+
+## State left behind
+
+Live and deliberate — nothing here is scratch:
+
+- `hosts` 1 (unchanged, pre-existing), `agent_deploys` 1, `host_residency` 1
+  (**residency on**), `agent_schedules` 2.
+- `proof-scout-mar861` is **deployed to and running on** `78.141.221.121`, with a
+  daily schedule at `18:20` **which the host reads as 18:20 UTC**. It will refuse
+  again each day with the same detail until the pending-task gap is fixed. Turn
+  the schedule off from the agent's settings if the daily refusal row is unwanted.
+- Nothing was deleted. The `dash-google-proof` row is untouched (MAR-870).
+- One duplicate host record was **not** created: the wizard was walked to the
+  point of validation and cancelled.
