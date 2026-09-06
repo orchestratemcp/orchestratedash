@@ -8685,6 +8685,124 @@ main:has(.agent-cockpit) {
   margin: 0;
 }
 
+/* ==== MAR-875 begin ==== */
+/* ---------------------------------------------------------------------- *
+ * One result per run (MAR-875)
+ *
+ * Appended as one fenced block on purpose: three other lanes are editing this
+ * stylesheet in parallel, and a rule restyled in place is a conflict nobody
+ * reads carefully. Everything here is new selectors for new markup.
+ *
+ * Every colour is a token and every length is on the 4px scale, which
+ * `tests/panel-render.test.tsx` asserts over everything after the panel's own
+ * block — that is, over this one too.
+ * ---------------------------------------------------------------------- */
+
+/* The collected list, collapsed. It sits where the author's first yielding
+   section was, so it takes that section's spacing rather than a box of its
+   own — a bordered card here would read as a section DASH added to somebody
+   else's panel. */
+.agent-panel-sources {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.agent-panel-sources-disclosure {
+  margin-top: 0;
+}
+
+/* The count is the whole point of the summary, so it is set at reading size
+   rather than at `.card-more`'s small accent label. */
+.agent-panel-sources-disclosure > summary {
+  font-size: var(--text-base);
+}
+
+.agent-panel-sources-view {
+  margin-top: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--line);
+}
+
+/* Numbered, because a brief's citation marks index this list. `list-style` is
+   the platform's own counter — a hand-drawn one would drift from the marks the
+   moment a row was filtered. */
+.agent-panel-sources-items {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.agent-panel-sources-items li {
+  font-size: var(--text-base);
+  overflow-wrap: anywhere;
+}
+
+/* A citation mark in a paragraph's "Written from" line. Small, quiet and
+   never wider than the number in it — the sentence above is what a person is
+   reading. */
+.brief-citation {
+  white-space: nowrap;
+}
+
+.brief-citation a {
+  text-decoration: none;
+}
+
+.brief-citation a:hover,
+.brief-citation a:focus-visible {
+  text-decoration: underline;
+}
+
+/* The printed document's own source list. Never drawn on screen — see
+   `BriefPrintSources` — but the PDF inherits this stylesheet, so it is styled
+   here rather than inside the print wrapper. */
+.brief-sources-items {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+/* One run's outputs, in the rail and in the shared history wrapper. The label
+   is drawn only when there is more than one group, so these rules are inert on
+   the run detail page. */
+.rail-output-groups,
+.output-run-outputs {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-output-group {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.rail-output-day,
+.output-run-day {
+  margin: 0;
+  color: var(--text-faint);
+}
+
+.output-run-group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* The sentence above the author's panel when an earlier run is open. Quiet:
+   it is orientation rather than an alarm, and the run it names is one the
+   reader chose. */
+.agent-output-older-run {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--line-strong);
+  background: var(--surface-2);
+}
+/* ==== MAR-875 end ==== */
+
 /* ==== MAR-871 begin ==== */
 
 /* ---------------------------------------------------------------------- *

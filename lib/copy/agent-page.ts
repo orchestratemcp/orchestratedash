@@ -589,6 +589,32 @@ export const AGENT_OUTPUTS_COPY = {
    * `lib/views/artifacts.ts`.
    */
   open_run: "Open the full run",
+  /**
+   * Said above the author's panel when the reader has opened an earlier run
+   * (MAR-875).
+   *
+   * ## The silence it replaces
+   *
+   * The rail lets a person open any output this agent has made, and the stage
+   * obligingly drew the one they pressed. The author's declared panel underneath
+   * went on describing the **newest** run, because it was bound to the agent's
+   * whole history and read the first artifact of each role. So pressing Sunday's
+   * briefing produced one screen carrying two different runs, with nothing on it
+   * saying so: the metrics, the collected list and the table all belonged to
+   * Tuesday and looked exactly like Sunday's.
+   *
+   * That is now fixed rather than described — the panel binds to the selected
+   * run — and this sentence exists because the fix is invisible when it works.
+   * A reader who opened an older output needs to know the box underneath moved
+   * with them, or they will read Sunday's smaller numbers as a change in the
+   * agent rather than as a change in what they are looking at.
+   *
+   * DASH's own words, on DASH's own stage, **above** the region rather than
+   * inside it: it is a fact about where the reader is, which is the one thing
+   * an author's box may never be made to say.
+   */
+  older_run:
+    "You are reading an earlier result. Everything below describes that run, not the most recent one.",
 } as const;
 
 /**

@@ -71,11 +71,37 @@ export function citedItems(
   positions: readonly number[] | undefined,
   citations: BriefCitations,
 ): readonly ArtifactItem[] {
+  return citedEntries(positions, citations).map((entry) => entry.item);
+}
+
+/**
+ * One cited row **and where it sits in the list** (MAR-875).
+ *
+ * `citedItems` above is this function with the position thrown away, and the
+ * position is the thing MAR-875 needed: a paragraph now renders `[3]` rather
+ * than the whole headline, and the only reading of `3` that is worth anything
+ * is *the third row of the list this run collected*. A number counted per
+ * paragraph would mean a different source in every paragraph, which is worse
+ * than no number at all — it looks like a reference and is not one.
+ *
+ * So the number on the page is `position + 1`, and the one-based-ness is done
+ * **at the point of render** rather than here. This module stays the
+ * zero-based side of the seam that `citedItems`' own note describes, and the
+ * `+ 1` sits beside the `[` and `]` that make it a citation mark.
+ *
+ * Nothing else changes: the same drop-rather-than-clamp rule, the same refusal
+ * to hand anything over unless the join is `matched`, the same de-duplication
+ * of a row a model named twice.
+ */
+export function citedEntries(
+  positions: readonly number[] | undefined,
+  citations: BriefCitations,
+): readonly { position: number; item: ArtifactItem }[] {
   if (positions === undefined || citations.state !== "matched") {
     return [];
   }
   const seen = new Set<number>();
-  const cited: ArtifactItem[] = [];
+  const cited: { position: number; item: ArtifactItem }[] = [];
   for (const position of positions) {
     if (!Number.isInteger(position) || seen.has(position)) {
       continue;
@@ -85,7 +111,7 @@ export function citedItems(
       continue;
     }
     seen.add(position);
-    cited.push(item);
+    cited.push({ position, item });
   }
   return cited;
 }
