@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-06",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-06 UX planning: owner approved audit scope; MAR-875 through MAR-879 filed in Linear, MAR-871 and MAR-874 updated, MAR-861 plan comment published. Implementation remains planned. See docs/dash-ux-plan-2026-09-06.md and orchestrator prompt; no runtime proof or product changes this checkpoint.",
+  "lifecycle_note": "2026-09-06 UX wave dispatch: MAR-868 proven on the installed build (judgement 5, 18:54:59Z-18:57:15Z, page polled on its own). Five lanes dispatched in separate worktrees: MAR-875, MAR-877, MAR-871, MAR-878 (template prerequisite half), MAR-880 (new, from the proof). MAR-881 filed, serialized behind MAR-875. Planning docs PR #319 open (docs only). No merges: the orchestrator session cannot merge; Henrik merges on green.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2000,10 +2000,14 @@
     },
     {
       "id": "MAR-868",
-      "lifecycle": "merged",
-      "linear_status": "In Progress",
+      "lifecycle": "proven",
+      "linear_status": "Done",
       "commit": "bf68b3a",
-      "note": "The verdict did not arrive on the page's own poll. Root cause confirmed as diagnosed: app/agents/detail/page.tsx drives live polling from `following = running || asked > 0`, and an adjudication is not a run. Two independent gaps — nothing about a brief_adjudications row makes `running` true, and adjudicate() never called setAsked either. Closing only the second would have been WORSE than leaving it: RUN_APPEARS_WITHIN_MS is 20s against a 45-280s judgement, so it would work on a fast run and fail on a slow one, looking fixed. Fixed with a third term on `following` using isRunning() from lib/genlayer/record.ts — which MAR-863 wrote and left with zero callers. Grepping for a caller would have caught it before merge. Exit stays bounded by the record's own stage:\"settled\"; no new client timer. NOT proven: the proof is a screen recording, not a screenshot, and none was taken."
+      "note": "The verdict did not arrive on the page's own poll. Root cause confirmed as diagnosed: app/agents/detail/page.tsx drives live polling from `following = running || asked > 0`, and an adjudication is not a run. Two independent gaps — nothing about a brief_adjudications row makes `running` true, and adjudicate() never called setAsked either. Closing only the second would have been WORSE than leaving it: RUN_APPEARS_WITHIN_MS is 20s against a 45-280s judgement, so it would work on a fast run and fail on a slow one, looking fixed. Fixed with a third term on `following` using isRunning() from lib/genlayer/record.ts — which MAR-863 wrote and left with zero callers. Grepping for a caller would have caught it before merge. Exit stays bounded by the record's own stage:\"settled\"; no new client timer.  PROVEN 2026-09-06 by the orchestrator on the installed build; see proof.",
+      "proof": {
+        "command": "Judge it again pressed on the installed build (desktop launcher, master 0e52211, real store) at 2026-09-06T18:54:59Z; page watched on its own poll, timed frames at t+3s/+23s/+63s/+123s/+183s via the computer-use grant; store row read from a WAL-inclusive snapshot. Linear MAR-868 comment bed2c963 (2026-09-06).",
+        "run": "brief_adjudications dash-5c752a10-mtq68nac-p71z: started 18:54:59.556Z, settled 18:57:15.453Z, FINALIZED/SUCCESS/MAJORITY_AGREE, REJECTED, llm-router/policy:prd-sonnet, evaluate_tx 0x43ac85caac4591694904b1cf1b1cbe5e6d544e1b51ae3782d5e70fdaeece4cb4. Button read BEING JUDGED at t+3s; Watching for changes ticked 20:54:59 -> 20:57:05; receipt on screen at 20:57 with no refresh. Judgement 4 the same evening settled abandoned in 25s (MAR-880); the page scrolled to the top on a tick (MAR-881)."
+      }
     },
     {
       "id": "MAR-869",
@@ -2071,6 +2075,20 @@
       "lifecycle": "planned",
       "linear_status": "Backlog",
       "commit": null
+    },
+    {
+      "id": "MAR-880",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "one failed poll settles a live judgement as abandoned; retry transient errors (found proving MAR-868)"
+    },
+    {
+      "id": "MAR-881",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "agent page scrolls to top on a live poll tick during a judgement (found proving MAR-868); serialized behind MAR-875"
     }
   ]
 }

@@ -32,7 +32,7 @@ Historical first-run/agent-loop proofs remain in the index and archives.
 For Wave 3 read `docs/mar-861-orchestrator-handoff-2026-09-06.md` and live
 MAR-861. Reconcile historical release/deadline/network statements before
 runtime dispatch. MAR-862 builder and MAR-863 adjudication are recorded
-proven; MAR-868 poll and MAR-865 VPS still need remaining specified proofs.
+proven; MAR-868 is proven on the installed build (2026-09-06, judgement 5, page polled on its own; see Linear); MAR-865 VPS still needs its Discord half.
 MAR-873's merged handoff is documentation only, not working model fallback.
 
 ## Approved UX work — all planned
