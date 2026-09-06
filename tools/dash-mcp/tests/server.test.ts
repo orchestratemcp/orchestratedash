@@ -39,11 +39,17 @@ describe("initialize", () => {
 });
 
 describe("tools/list", () => {
-  it("offers exactly the three tools, each with a schema", () => {
+  it("offers exactly the five tools, each with a schema", () => {
     const result = ask("tools/list")?.result as {
       tools: { name: string; description: string; inputSchema: { type: string } }[];
     };
+    // In the order the loop runs (MAR-876). The interview is first because a
+    // model choosing a tool reads this list top down, and the failure this
+    // packet exists to prevent is scaffolding before anybody was asked
+    // anything.
     expect(result.tools.map((tool) => tool.name)).toEqual([
+      "dash_agent_interview",
+      "dash_agent_plan",
       "dash_agent_scaffold",
       "dash_agent_validate",
       "dash_agent_install",
@@ -52,6 +58,21 @@ describe("tools/list", () => {
       expect(tool.inputSchema.type).toBe("object");
       expect(tool.description.length).toBeGreaterThan(40);
     }
+  });
+
+  it("tells the caller to interview before it scaffolds", () => {
+    const result = ask("tools/list")?.result as { tools: { name: string; description: string }[] };
+    const interview = result.tools.find((tool) => tool.name === "dash_agent_interview");
+    // A description is the only thing a model reads before choosing, so the
+    // ordering rule has to be in it rather than only in SKILL.md.
+    expect(interview?.description).toContain("FIRST");
+    expect(interview?.description).toContain("dash_agent_scaffold");
+  });
+
+  it("promises no credential anywhere in the interview", () => {
+    const result = ask("tools/list")?.result as { tools: { name: string; description: string }[] };
+    const interview = result.tools.find((tool) => tool.name === "dash_agent_interview");
+    expect(interview?.description).toContain("never asks for a password or an API key");
   });
 });
 
@@ -134,6 +155,47 @@ describe("tools/call", () => {
     const result = response?.result as { isError: boolean; structuredContent: { refusal: string } };
     expect(result.isError).toBe(true);
     expect(result.structuredContent.refusal).toContain("openrouter, anthropic, openai");
+  });
+});
+
+describe("the interview over the wire", () => {
+  it("refuses a relative directory rather than writing a draft into the checkout", () => {
+    const response = ask("tools/call", {
+      name: "dash_agent_interview",
+      arguments: { directory: "my-agent" },
+    });
+    const result = response?.result as { isError: boolean; structuredContent: { refusal: string } };
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.refusal).toContain("full path");
+  });
+
+  it("refuses answers that are not text, because every answer is something a person said", () => {
+    const response = ask("tools/call", {
+      name: "dash_agent_interview",
+      arguments: { directory: "/tmp/x", answers: { trigger: 7 } },
+    });
+    const result = response?.result as { isError: boolean; structuredContent: { refusal: string } };
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.refusal).toContain('"answers.trigger" must be text');
+  });
+
+  it("refuses an action it does not have", () => {
+    const response = ask("tools/call", {
+      name: "dash_agent_interview",
+      arguments: { directory: "/tmp/x", action: "skip" },
+    });
+    const result = response?.result as { structuredContent: { refusal: string } };
+    expect(result.structuredContent.refusal).toContain("next, back, recap, reset");
+  });
+
+  it("refuses a plan with no interview behind it", () => {
+    const response = ask("tools/call", {
+      name: "dash_agent_plan",
+      arguments: { directory: "/tmp/x" },
+    });
+    const result = response?.result as { isError: boolean; structuredContent: { refusal: string } };
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.refusal).toContain('"draft_id" is required');
   });
 });
 

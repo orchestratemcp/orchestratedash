@@ -55,7 +55,7 @@ import { aiProviderById, type AiProviderId } from "../../../lib/ai/providers";
  * `competitor-scout` already uses for the same step, and the template emits
  * exactly it — which is the property that actually has to hold.
  */
-const BRIEF_COMPOSE_COMPONENT = "brief_compose";
+export const BRIEF_COMPOSE_COMPONENT = "brief_compose";
 
 /**
  * The provider named when a caller does not choose one.
