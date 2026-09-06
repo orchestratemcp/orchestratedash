@@ -71,6 +71,15 @@ approved scope comments. Global Settings is separate from MAR-874.
 
 ## Proof and dispatch
 
+2026-09-06 evening dispatch (Claude orchestrator): five lanes in separate
+worktrees, disjoint ownership, all branched from master 0e52211 - MAR-875
+(Opus), MAR-877 (Opus), MAR-871 (Opus), MAR-878 template-prerequisite half
+(Sonnet), MAR-880 (Sonnet, new: one failed poll settles a judgement as
+abandoned). MAR-881 (page scrolls to top on a poll tick) filed, serialized
+behind MAR-875. Prompts under docs/mar-<id>-session-prompt.md and
+docs/ux-lanes-common-2026-09-06.md. The orchestrator session cannot merge
+PRs (permission classifier); Henrik merges on green.
+
 Index after filing: 133 merged, 72 proven, 33 planned entries (not unique
 issues). **99 distinct issues have merged entries and no proven entry.**
 The AGENTS.md debt gate applies: next dispatch is proof/reconciliation,
