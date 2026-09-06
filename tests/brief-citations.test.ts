@@ -15,7 +15,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { citedItems } from "../lib/brief/citations";
+import { citedEntries, citedItems } from "../lib/brief/citations";
+import { briefCitationMark } from "../lib/copy/brief";
 import {
   canonicaliseItems,
   fingerprintItems,
@@ -207,5 +208,47 @@ describe("what one paragraph cites", () => {
   it("cites nothing for a paragraph that named nothing", () => {
     expect(citedItems(undefined, matched)).toEqual([]);
     expect(citedItems([], matched)).toEqual([]);
+  });
+});
+
+/**
+ * The positions, which MAR-875 made visible.
+ *
+ * A paragraph renders `[3]` now rather than the whole headline, and the only
+ * reading of that number worth printing is *the third row of the list this run
+ * collected*. A number counted per paragraph would look identical on the page
+ * and mean nothing — so the position has to survive the join, and `citedItems`
+ * is `citedEntries` with it dropped rather than a second implementation of the
+ * same rules.
+ */
+describe("where a cited row sits in the list", () => {
+  const matched = resolveBriefCitations(brief(), [digest()]);
+
+  it("carries the row's own position, not its place in the paragraph", () => {
+    // The model named the third row first. The mark on the page has to say
+    // three, or a reader following it lands on a different item.
+    expect(citedEntries([2, 0], matched).map((entry) => entry.position)).toEqual([2, 0]);
+  });
+
+  it("renders as the one-based mark a reader sees", () => {
+    // The `+ 1` happens at the point of render — see `briefCitationMark` — so
+    // this module stays the zero-based side of `readBrief`'s seam.
+    expect(citedEntries([0], matched).map((entry) => briefCitationMark(entry.position))).toEqual([
+      "[1]",
+    ]);
+    expect(briefCitationMark(29)).toBe("[30]");
+  });
+
+  it("is the same list `citedItems` returns, with the position kept", () => {
+    // Two functions that could disagree about which rows a paragraph cites is
+    // the failure this pair exists to make impossible.
+    expect(citedEntries([0, 99, 1.5, 1, 1], matched).map((entry) => entry.item)).toEqual(
+      citedItems([0, 99, 1.5, 1, 1], matched),
+    );
+  });
+
+  it("hands over nothing when the join is not sound", () => {
+    const mismatched = resolveBriefCitations(brief(), [digest({ items: ITEMS.slice(0, 2) })]);
+    expect(citedEntries([0, 1], mismatched)).toEqual([]);
   });
 });

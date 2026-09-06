@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { ArtifactCardView } from "../../lib/views/artifacts";
+import { groupCardsByRun, type ArtifactCardView } from "../../lib/views/artifacts";
 
 /**
  * One newest output in full, followed by a compact dated history (MAR-622).
@@ -35,21 +35,54 @@ export function OutputHistory({
   collapsed: boolean;
   renderCard: (card: ArtifactCardView, index: number) => ReactNode;
 }): ReactNode {
+  /*
+   * MAR-875. One run's outputs stay together.
+   *
+   * A run that produces a digest and a briefing written from it put two
+   * entries in this list a line apart with nothing saying they were one piece
+   * of work — the same defect the rail had, in the surface the rail is the
+   * index of. `groupCardsByRun` keeps the order and adds only the boundary.
+   *
+   * The group's day is drawn **only when there is more than one group**, for
+   * the reason the rail's is: the run detail page shows one run's outputs, so
+   * a caption there would be a date above a list that has exactly one date.
+   * That also keeps that page's markup unchanged, which is what
+   * `tests/outputs-render.test.tsx` has always pinned.
+   */
+  const groups = groupCardsByRun(cards);
+
   return (
     <ol className="output-list">
-      {cards.map((card, index) => (
-        <li key={`${card.reference.run_id}:${card.reference.artifact_id}`}>
-          {!collapsed || index === 0 ? (
-            renderCard(card, index)
-          ) : (
-            <details className="output-history-entry">
-              <summary>
-                <span className="output-history-day">{card.history_day}</span>
-                <span className="output-history-title">{card.artifact.title}</span>
-              </summary>
-              <div className="output-history-content">{renderCard(card, index)}</div>
-            </details>
+      {groups.map((group, at) => (
+        <li className="output-run-group" key={group.run_id}>
+          {/* Once per day rather than once per run — an agent run four times on
+              one day would otherwise carry the same date four times. See the
+              rail, which makes the same call for the same reason. */}
+          {groups.length === 1 || groups[at - 1]?.day === group.day ? null : (
+            <p className="eyebrow output-run-day">{group.day}</p>
           )}
+          <ol className="output-list output-run-outputs">
+            {group.cards.map((card, within) => {
+              /* The index in the flat list, so "the newest card is open" stays
+                 one card on the whole history rather than one per run. */
+              const index = group.from + within;
+              return (
+                <li key={`${card.reference.run_id}:${card.reference.artifact_id}`}>
+                  {!collapsed || index === 0 ? (
+                    renderCard(card, index)
+                  ) : (
+                    <details className="output-history-entry">
+                      <summary>
+                        <span className="output-history-day">{card.history_day}</span>
+                        <span className="output-history-title">{card.artifact.title}</span>
+                      </summary>
+                      <div className="output-history-content">{renderCard(card, index)}</div>
+                    </details>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
         </li>
       ))}
     </ol>

@@ -7,10 +7,15 @@ import {
   PANEL_COPY,
   PANEL_EMPTY_DISCLOSURE,
   PANEL_METRIC_EMPTY,
+  PANEL_SOURCES_COPY,
   type PanelCard,
   type PanelEmptyState,
 } from "../../lib/copy/panel";
-import { canPreview, type ArtifactCardView } from "../../lib/views/artifacts";
+import {
+  canPreview,
+  type ArtifactCardView,
+  type ArtifactShownAs,
+} from "../../lib/views/artifacts";
 import type {
   PanelMetricsView,
   PanelNoteView,
@@ -20,7 +25,9 @@ import type {
   PanelTableView,
   PanelView,
 } from "../../lib/views/panel";
+import type { DigestArtifact } from "../../lib/contracts";
 import { BriefBody, DigestBody, DraftBody } from "./digest";
+import { LinkOut } from "./link-out";
 import { OutputHistory } from "./output-history";
 
 /**
@@ -91,8 +98,8 @@ export function AgentPanel({
 }: {
   view: PanelView;
   /**
-   * Artifact ids the surface above this one has already drawn in full
-   * (MAR-668).
+   * What the surface above this one has already put on the screen, and how
+   * (MAR-668, widened by MAR-875).
    *
    * A prop rather than a field on `PanelView`, and the reason is that this is
    * not a fact about the panel. Which artifact is on the stage depends on the
@@ -101,12 +108,18 @@ export function AgentPanel({
    * question about the browser. The page knows, through `resolveOpenCard`, and
    * hands the answer down.
    *
+   * It became a map when the brief arrived. `resolveDrawnLineage` explains the
+   * two values in full; the short version is that an artifact whose body is on
+   * the stage and an artifact the thing on the stage was *written from* are
+   * both "already shown" and want opposite treatment from this region — one has
+   * had its rows drawn and the other has not.
+   *
    * Absent means nothing above has been drawn, which is the run detail page's
    * situation and every test that renders this component on its own. The
    * default is therefore "draw everything", so a caller that forgets is a
    * caller that gets today's behaviour rather than a silently emptied panel.
    */
-  alreadyShown?: ReadonlySet<string>;
+  alreadyShown?: PanelShown;
 }): ReactNode {
   /*
    * Absence renders nothing. Not an empty frame, not a "this agent declared no
@@ -132,9 +145,7 @@ export function AgentPanel({
 
       {view.kind === "declared" ? (
         <div className="agent-panel-sections">
-          {view.sections.map((section) => (
-            <PanelSection key={String(section.at)} section={section} shown={shown} />
-          ))}
+          <PanelSections sections={view.sections} shown={shown} />
         </div>
       ) : (
         /*
@@ -147,6 +158,245 @@ export function AgentPanel({
         <StatedCard card={view.card} />
       )}
     </section>
+  );
+}
+
+/**
+ * The author's sections, minus the ones that would draw the run again
+ * (MAR-875).
+ *
+ * ## The rule, in one sentence
+ *
+ * A section every one of whose artifacts is already on the screen renders
+ * **nothing**, and the first of them is replaced by one `Sources (n)`
+ * disclosure holding the rows those sections would have drawn.
+ *
+ * ## Why the position of the first one is kept
+ *
+ * The obvious placement — Sources at the top, or at the bottom — was rejected
+ * for the reason ADR 0008 gives about the whole region: the ordering is the
+ * author's, and the collapsed thing is *their* section, in their layout. So the
+ * disclosure appears exactly where the first yielding section was, and the
+ * sections that survive keep their places around it.
+ *
+ * ## Why a section that yields draws nothing at all
+ *
+ * MAR-668 left a two-line pointer in place of the body, which was right when
+ * there was one of them. On the proof scout there are three — a `report` bound
+ * to the digest, an `outputs` list over the same role and a thirty-row `table`
+ * of the same rows — and three pointers saying the same thing about the same
+ * list is the shape MAR-646 spent a packet deleting from this page. The pointer
+ * survives for the case it was written for: an `outputs` section holding a mix,
+ * where the reader would otherwise meet a list that silently skips an entry.
+ */
+function PanelSections({
+  sections,
+  shown,
+}: {
+  sections: readonly PanelSectionView[];
+  shown: PanelShown;
+}): ReactNode {
+  const sources = collectSources(sections, shown);
+  let placed = false;
+
+  return (
+    <>
+      {sections.map((section) => {
+        if (!sectionYields(section, shown)) {
+          return <PanelSection key={String(section.at)} section={section} shown={shown} />;
+        }
+        if (sources === null || placed) {
+          /* Nothing to say and nowhere to say it. A yielding section with no
+             rows behind it — a `report` bound to a brief the stage already drew
+             — leaves no trace, which is design point 4 of MAR-875 exactly:
+             an empty already-shown section renders nothing, not a pointer. */
+          return null;
+        }
+        placed = true;
+        return <SourcesDisclosure key={String(section.at)} sources={sources} />;
+      })}
+    </>
+  );
+}
+
+/**
+ * Whether the stage above has already drawn everything this section would.
+ *
+ * Four answers and each is about a different shape of binding. `metrics` and
+ * `note` are never in it: a metric is a number read *out of* an artifact rather
+ * than a second drawing of it, and a note is the author's own words.
+ *
+ * The `outputs` case is `every` rather than `some` on purpose. A section that
+ * lists an agent's whole history is not made redundant by one of its entries
+ * being on screen — the reader wants the rest — so it yields only when there is
+ * genuinely nothing left in it.
+ */
+function sectionYields(section: PanelSectionView, shown: PanelShown): boolean {
+  switch (section.kind) {
+    case "report":
+      return section.card !== null && shown.has(section.card.reference.artifact_id);
+    case "outputs":
+      return (
+        section.cards.length > 0 &&
+        section.cards.every((card) => shown.has(card.reference.artifact_id))
+      );
+    case "table":
+      /*
+       * `empty === null` is exactly "this table drew rows" — `buildTable` sets
+       * one from the other. A table that drew nothing was never a second copy
+       * of anything, and its stated empty state is a fact about the *shape* of
+       * the agent's output rather than about the duplication: "the latest
+       * output for this table is not a list of rows" is the sentence a person
+       * building an agent needs, and it survives the artifact being on screen.
+       */
+      return (
+        section.empty === null &&
+        section.source_artifact_id !== null &&
+        shown.has(section.source_artifact_id)
+      );
+    case "metrics":
+    case "note":
+      return false;
+  }
+}
+
+/**
+ * The rows the yielding sections would have drawn, as at most two readings of
+ * one list.
+ *
+ * `list` comes from the first yielding section that resolves a **digest the
+ * stage did not draw** — one the stage's own card was written *from*. That
+ * qualification is the whole difference between the two readings being useful
+ * and one of them being the defect again: when the digest itself is the open
+ * card, every one of its rows is already on the screen two hundred pixels
+ * above, and a "Read them as a list" behind a disclosure would be MAR-875's own
+ * complaint wearing the shape of its fix. When a brief is the open card the
+ * rows are on the screen nowhere at all, and this is the only place a citation
+ * mark has to point at.
+ *
+ * A brief has prose and a draft has a message; neither is a collected list, so
+ * a panel whose only yielding section resolves one of those contributes nothing
+ * here.
+ *
+ * `table` comes from the first yielding `table` section that actually resolved
+ * rows, whichever way its artifact reached the screen. The author declared its
+ * columns and DASH draws exactly those — a grid read across is a reading a flat
+ * list genuinely cannot give, which is `TableSection`'s own argument, so it is
+ * kept rather than deleted and put one press away.
+ */
+interface PanelSources {
+  count: number;
+  items: DigestArtifact["items"] | null;
+  table: PanelTableView | null;
+}
+
+function collectSources(
+  sections: readonly PanelSectionView[],
+  shown: PanelShown,
+): PanelSources | null {
+  let items: DigestArtifact["items"] | null = null;
+  let table: PanelTableView | null = null;
+
+  for (const section of sections) {
+    if (!sectionYields(section, shown)) {
+      continue;
+    }
+    if (items === null) {
+      for (const card of cardsOf(section)) {
+        const { artifact } = card;
+        if (
+          artifact.kind === "digest" &&
+          shown.get(card.reference.artifact_id) === "source"
+        ) {
+          items = artifact.items;
+          break;
+        }
+      }
+    }
+    if (table === null && section.kind === "table" && section.empty === null) {
+      table = section;
+    }
+  }
+
+  if (items === null && table === null) {
+    return null;
+  }
+  return { count: items === null ? (table?.rows.length ?? 0) : items.length, items, table };
+}
+
+/** The artifact cards one section holds, in the order it would draw them. */
+function cardsOf(section: PanelSectionView): readonly ArtifactCardView[] {
+  if (section.kind === "report") {
+    return section.card === null ? [] : [section.card];
+  }
+  return section.kind === "outputs" ? section.cards : [];
+}
+
+/**
+ * One closed disclosure holding the run's collected rows, in DASH's words
+ * (MAR-875).
+ *
+ * ## Two `<details>`, and never a switch
+ *
+ * List and table are two readings of one list, and the obvious control for that
+ * is a pair of buttons or a segmented switch. ADR 0008 forbids both inside this
+ * region and is right to: a control in a box somebody else frames is the one
+ * affordance that could be made to look like it belonged to DASH when it did
+ * not. Two nested disclosures cost one extra press and are keyboard-reachable,
+ * announce their own state and remember nothing — which is the whole of what
+ * amendment 1 admits.
+ *
+ * The list ships **open** inside the closed outer disclosure, and that is not a
+ * contradiction: opening `Sources` should show the sources. What stays closed
+ * is the author's table, which is the heavier of the two readings and the one
+ * MAR-491's containment rule exists for.
+ */
+function SourcesDisclosure({ sources }: { sources: PanelSources }): ReactNode {
+  return (
+    <article className="agent-panel-sources">
+      <details className="card-more agent-panel-sources-disclosure">
+        <summary>{PANEL_SOURCES_COPY.summary(sources.count)}</summary>
+        {/* Why this is collapsed at all, said once and above both readings. */}
+        <p className="muted wrap">{PANEL_SOURCES_COPY.meaning}</p>
+
+        {sources.items === null ? null : (
+          <details className="card-more agent-panel-sources-view" open>
+            <summary>{PANEL_SOURCES_COPY.list_summary}</summary>
+            {/*
+              An ordered list, and the numbers are load-bearing rather than
+              decorative: a brief's paragraphs cite these rows as `[1]`, `[2]`
+              and so on, and the number a reader is chasing is this list's own
+              position. `digest-items` is deliberately NOT the class — that
+              selector is how DASH's own card is found on this page, by the
+              installed smoke and by the capture harness alike, and a second
+              list wearing it would make both of them answer about this
+              disclosure instead.
+            */}
+            <ol className="agent-panel-sources-items">
+              {sources.items.map((item, index) => (
+                <li key={`${item.headline}:${String(index)}`}>
+                  {/* The headline is the link text and the address is the row's
+                      own `item_url` — the agent's collected value, never
+                      anything a model wrote. `DigestItem`'s rule. */}
+                  {item.item_url === undefined ? (
+                    <span className="wrap">{item.headline}</span>
+                  ) : (
+                    <LinkOut href={item.item_url}>{item.headline}</LinkOut>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+
+        {sources.table === null ? null : (
+          <details className="card-more agent-panel-sources-view">
+            <summary>{PANEL_SOURCES_COPY.table_summary}</summary>
+            <TableSection section={sources.table} />
+          </details>
+        )}
+      </details>
+    </article>
   );
 }
 
@@ -164,7 +414,7 @@ function PanelSection({
   shown,
 }: {
   section: PanelSectionView;
-  shown: ReadonlySet<string>;
+  shown: PanelShown;
 }): ReactNode {
   return (
     <article className="agent-panel-section">
@@ -180,7 +430,7 @@ function SectionBody({
   shown,
 }: {
   section: PanelSectionView;
-  shown: ReadonlySet<string>;
+  shown: PanelShown;
 }): ReactNode {
   switch (section.kind) {
     case "report":
@@ -188,10 +438,15 @@ function SectionBody({
     case "outputs":
       return <OutputsSection section={section} shown={shown} />;
     case "table":
-      /* MAR-668 stops at the two section types that draw an artifact *body*.
-         A table of the same digest's headlines is a different reading of the
-         same record — it is what the author declared the table for, and it is
-         not the thing that was on screen three times. */
+      /* MAR-668 stopped at the two section types that draw an artifact *body*,
+         on the reading that a table of the same digest's headlines is a
+         different presentation of the same record rather than a second copy of
+         it. MAR-875 is Henrik reading the screen that reasoning produced: the
+         same thirty headlines under the paragraphs, again as a list, again as
+         thirty rows. So the yielding decision moved up to `PanelSections`,
+         where it can see every section at once and collapse them into one
+         `Sources` disclosure — and this component draws a table that is still
+         the author's own presentation of something nothing else has shown. */
       return <TableSection section={section} />;
     case "metrics":
       return <MetricsSection section={section} />;
@@ -200,8 +455,17 @@ function SectionBody({
   }
 }
 
-/** No caller passed a set, so nothing above has been drawn. */
-const EMPTY: ReadonlySet<string> = new Set<string>();
+/**
+ * What the stage has drawn, keyed by artifact id (MAR-875).
+ *
+ * The alias exists so the ten signatures below say the same thing and change
+ * together. `ArtifactShownAs` and the reasoning behind the two values live in
+ * `lib/views/artifacts.ts`, next to the function that produces one.
+ */
+type PanelShown = ReadonlyMap<string, ArtifactShownAs>;
+
+/** No caller passed a map, so nothing above has been drawn. */
+const EMPTY: PanelShown = new Map<string, ArtifactShownAs>();
 
 /**
  * The newest output of one role, with its receipt.
@@ -217,7 +481,7 @@ function ReportSection({
   shown,
 }: {
   section: PanelReportView;
-  shown: ReadonlySet<string>;
+  shown: PanelShown;
 }): ReactNode {
   if (section.card === null) {
     return <StatedEmpty empty={section.empty} />;
@@ -237,7 +501,7 @@ function OutputsSection({
   shown,
 }: {
   section: PanelOutputsView;
-  shown: ReadonlySet<string>;
+  shown: PanelShown;
 }): ReactNode {
   if (section.cards.length === 0) {
     return <StatedEmpty empty={section.empty} />;
@@ -398,7 +662,7 @@ function PanelArtifactCard({
   shown,
 }: {
   card: ArtifactCardView;
-  shown: ReadonlySet<string>;
+  shown: PanelShown;
 }): ReactNode {
   const { artifact, role, receipt, recovery } = card;
   /*

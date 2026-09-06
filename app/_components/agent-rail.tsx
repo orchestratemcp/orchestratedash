@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AGENT_COCKPIT_COPY } from "../../lib/copy/agent-page";
-import type { ArtifactCardView } from "../../lib/views/artifacts";
+import { groupCardsByRun, type ArtifactCardView } from "../../lib/views/artifacts";
 import type { InboxItem } from "../../lib/workspace";
 import { agentStageHref } from "../_data/routes";
 
@@ -82,43 +82,82 @@ export function AgentRail({
              argument about the same fact at full width. */
           <p className="muted">{AGENT_COCKPIT_COPY.outputs_empty}</p>
         ) : (
-          <ol className="rail-output-list">
-            {outputs.map((card, index) => {
-              const id = card.reference.artifact_id;
-              /*
-               * The accent edge marks the **newest**, and the wireframe asks for
-               * it to pair with `ready_for_review`.
-               *
-               * It cannot be an unread mark here, and that is a fact about this
-               * page rather than a shortcut: MAR-586 stamps a look the moment
-               * this page opens, so "new since you last opened this agent" —
-               * which is what `new_output` means on a fleet card — is answered
-               * by arriving. A mark that erased itself as it was drawn would be
-               * a claim nobody could ever check. Newest is the honest half, and
-               * it is the entry `ready_for_review` is about.
-               */
-              const newest = index === 0;
-              const open = openId === null ? newest : openId === id;
-              const classes = ["rail-output"];
-              if (newest) classes.push("is-newest");
-              if (open) classes.push("is-open");
-              return (
-                <li className={classes.join(" ")} key={`${card.reference.run_id}:${id}`}>
-                  <Link
-                    aria-current={open ? "true" : undefined}
-                    href={agentStageHref(agent, "output", { output: id })}
-                  >
-                    <span className="rail-output-title">{card.artifact.title}</span>
-                    <span className="rail-output-when muted">{card.history_day}</span>
-                    {newest ? (
-                      <span className="visually-hidden">
-                        . {AGENT_COCKPIT_COPY.outputs_newest}
-                      </span>
-                    ) : null}
-                  </Link>
-                </li>
-              );
-            })}
+          /*
+           * MAR-875. Grouped by the run that made them.
+           *
+           * A run that writes a digest and then a briefing from it put two
+           * unrelated-looking entries in this column, and pressing between them
+           * read as moving between runs. The group label is the run's day —
+           * the one fact that distinguishes one run of a daily agent from
+           * another — and it appears only when there is more than one group,
+           * because a single day repeated above a single list is a caption
+           * saying what the list already says.
+           */
+          <ol className="rail-output-groups">
+            {groupCardsByRun(outputs).map((group, at, groups) => (
+              <li className="rail-output-group" key={group.run_id}>
+                {/*
+                 * The day, once per day rather than once per run.
+                 *
+                 * An agent run four times on Tuesday produces four groups, and
+                 * a label on each of them is the word "Tuesday" four times in a
+                 * 300px column — an index repeating itself, which is the thing
+                 * this rail exists not to do. The runs are still separate
+                 * groups; what the label marks is where the day changes.
+                 */}
+                {groups.length === 1 || groups[at - 1]?.day === group.day ? null : (
+                  <p className="eyebrow rail-output-day">{group.day}</p>
+                )}
+                <ol className="rail-output-list">
+                  {group.cards.map((card, within) => {
+                    const index = group.from + within;
+                    const id = card.reference.artifact_id;
+                    /*
+                     * The accent edge marks the **newest**, and the wireframe
+                     * asks for it to pair with `ready_for_review`.
+                     *
+                     * It cannot be an unread mark here, and that is a fact
+                     * about this page rather than a shortcut: MAR-586 stamps a
+                     * look the moment this page opens, so "new since you last
+                     * opened this agent" — which is what `new_output` means on
+                     * a fleet card — is answered by arriving. A mark that
+                     * erased itself as it was drawn would be a claim nobody
+                     * could ever check. Newest is the honest half, and it is
+                     * the entry `ready_for_review` is about.
+                     *
+                     * MAR-875. `index` is the position in the flat list rather
+                     * than in the group, which is what keeps "the newest" one
+                     * entry on the whole rail after the grouping rather than
+                     * one per run.
+                     */
+                    const newest = index === 0;
+                    const open = openId === null ? newest : openId === id;
+                    const classes = ["rail-output"];
+                    if (newest) classes.push("is-newest");
+                    if (open) classes.push("is-open");
+                    return (
+                      <li
+                        className={classes.join(" ")}
+                        key={`${card.reference.run_id}:${id}`}
+                      >
+                        <Link
+                          aria-current={open ? "true" : undefined}
+                          href={agentStageHref(agent, "output", { output: id })}
+                        >
+                          <span className="rail-output-title">{card.artifact.title}</span>
+                          <span className="rail-output-when muted">{card.history_day}</span>
+                          {newest ? (
+                            <span className="visually-hidden">
+                              . {AGENT_COCKPIT_COPY.outputs_newest}
+                            </span>
+                          ) : null}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </li>
+            ))}
           </ol>
         )}
       </section>

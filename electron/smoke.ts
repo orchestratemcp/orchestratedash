@@ -1969,6 +1969,17 @@ if (recorded !== null) {
            * what a person *lands* on, and it therefore keeps the address with
            * no stage in it: whatever `resolveAgentStage` decides an ordinary
            * link to an agent means, the news has to be on it.
+           *
+           * ## What MAR-875 changed about what 6n can see
+           *
+           * The scaffold declares three sections and two of them bind the
+           * digest the Output stage draws in full directly above the panel.
+           * Those two now collapse into a single closed `Sources` disclosure
+           * holding the rows once, with the author's table as a second reading
+           * of them — so the region has one declared section left and one
+           * disclosure. 6n asserts that arrangement rather than the three
+           * labels it used to count; the rows are still the thing that can only
+           * exist because 6g produced a run.
            */
           const workspaceRoot =
             `${parsedRenderer.protocol}//${parsedRenderer.host}` +
@@ -1980,6 +1991,13 @@ if (recorded !== null) {
             sections: number;
             labels: string[];
             table_rows: number;
+            /* MAR-875. The disclosure the yielding sections collapsed into,
+               and whether it ships closed. Null when there is none. */
+            sources_summary: string | null;
+            sources_open: boolean;
+            /* MAR-875. Any artifact body still drawn inside the author's
+               region. Zero is the fixed answer on this route. */
+            panel_digest_bodies: number;
             controls_inside: number;
             raw_instants: number;
           } | null = null;
@@ -2036,16 +2054,39 @@ if (recorded !== null) {
                        (s) => s.querySelector(":scope > h3")?.textContent ?? "",
                      ),
                      table_rows: region.querySelectorAll("tbody tr").length,
+                     /*
+                      * MAR-875. The disclosure the yielding sections collapsed
+                      * into. Its rows are still in the DOM inside a closed
+                      * <details>, which is why \`table_rows\` above goes on
+                      * being the proof that the role resolved.
+                      */
+                     sources_summary:
+                       region.querySelector(".agent-panel-sources-disclosure > summary")
+                         ?.textContent ?? null,
+                     sources_open: region.querySelector(
+                       ".agent-panel-sources-disclosure[open]",
+                     ) !== null,
+                     panel_digest_bodies: region.querySelectorAll(".digest-items").length,
                      controls_inside: region.querySelectorAll("button, input, select, textarea").length,
                      raw_instants: (region.textContent ?? "").split(/\\d{4}-\\d{2}-\\d{2}T[\\d:.]+Z/).length - 1,
                    };
                  })()`,
               )) as typeof panel;
-              // The page reads its view in an effect, so a missing region is
-              // "not yet". Waiting for all three declared sections is what makes
-              // this an assertion about the panel rather than about a heading
-              // that happened to paint first.
-              return seen !== null && seen.sections === 3 ? seen : null;
+              /*
+               * The page reads its view in an effect, so a missing region is
+               * "not yet".
+               *
+               * MAR-875 changed what "drawn" looks like here and the wait had
+               * to change with it. The scaffold declares three sections, two of
+               * which bind the digest the Output stage is already showing, so
+               * they collapse into one \`Sources\` disclosure and one author
+               * section survives. Waiting for the disclosure as well as the
+               * section is what keeps this an assertion about a panel that has
+               * finished rather than about a heading that painted first.
+               */
+              return seen !== null && seen.sections === 1 && seen.sources_summary !== null
+                ? seen
+                : null;
             }, "the workspace to draw the sample's declared panel");
           } catch (error: unknown) {
             panel = null;
@@ -2060,22 +2101,43 @@ if (recorded !== null) {
               "6g produced no run whose outputs a panel could bind against",
             );
           } else {
+            /*
+             * MAR-875 rewrote this assertion, and the rewrite is the packet.
+             *
+             * Until now the proof was that all three declared labels reached
+             * the installed window. Two of those three — "The latest digest"
+             * and "Every headline in the latest digest" — bind the artifact the
+             * Output stage is already drawing in full above them, which is the
+             * duplication MAR-875 was filed on. They now collapse into one
+             * closed `Sources` disclosure that holds the same rows and offers
+             * the author's own table as a second reading of them.
+             *
+             * So the proof asserts the new truth rather than being deleted: the
+             * region is still the author's and still says so, the one section
+             * that describes something else survives by name, the disclosure is
+             * there and closed, and the rows are behind it — which is still the
+             * only way `table_rows` can be non-zero, so 6g's run is still what
+             * this proof stands on.
+             */
             check(
               "6n. the workspace draws the panel the sample's manifest declared",
               panel !== null &&
                 panel.heading === "What the scout found" &&
-                // The author's three labels, in the order they were declared.
-                // By value rather than by count, which is what would have caught
-                // the descendant-selector defect above on the first run.
+                // The one declared section that binds no artifact the stage has
+                // shown. By value rather than by count, which is what caught the
+                // descendant-selector defect on this proof's first two runs.
                 JSON.stringify(panel.labels) ===
-                  JSON.stringify([
-                    "The latest digest",
-                    "How this agent has been doing",
-                    "Every headline in the latest digest",
-                  ]) &&
-                // The table binds `digest`, so rows exist only because the run
-                // above actually produced one and the role resolved against it.
-                panel.table_rows > 0,
+                  JSON.stringify(["How this agent has been doing"]) &&
+                // The two that did collapse, in one place, closed.
+                panel.sources_summary !== null &&
+                panel.sources_summary.startsWith("Sources (") &&
+                !panel.sources_open &&
+                // The rows are behind it. They exist only because the run above
+                // actually produced a digest and the role resolved against it.
+                panel.table_rows > 0 &&
+                // And no second copy of the briefing anywhere in the region,
+                // which is MAR-875's own number on the installed shell.
+                panel.panel_digest_bodies === 0,
               panel,
             );
           }

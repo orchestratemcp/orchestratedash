@@ -165,7 +165,12 @@ export async function exportBriefAsPdf(
   const document = briefPrintDocument({
     title: brief.title,
     subtitle: `${brief.agent} · ${describeReceiptMoment(brief.generated_at)}`,
-    body: renderToStaticMarkup(BriefBody({ artifact: brief, citations })),
+    /* MAR-875. `print` appends the collected list at the end and changes
+       nothing else. On screen a paragraph's citations are numbers into a list
+       one press away in the author's own `Sources` disclosure; a PDF has
+       nothing to press, so without this the marks would point at a list that
+       is not in the document. */
+    body: renderToStaticMarkup(BriefBody({ artifact: brief, citations, print: true })),
   });
 
   let window: BrowserWindow | null = null;

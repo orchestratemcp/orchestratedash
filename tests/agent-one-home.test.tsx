@@ -57,7 +57,11 @@ import { OutputsPanel } from "../app/_components/outputs";
 import { AgentPanel } from "../app/_components/panel";
 import { AGENT_COCKPIT_COPY } from "../lib/copy/agent-page";
 import { PANEL_ALREADY_SHOWN } from "../lib/copy/panel";
-import { buildArtifactCards, resolveOpenCard } from "../lib/views/artifacts";
+import {
+  buildArtifactCards,
+  resolveDrawnLineage,
+  resolveOpenCard,
+} from "../lib/views/artifacts";
 import { buildPanelView } from "../lib/views/panel";
 import type { DigestArtifact } from "../lib/contracts";
 import type { RunArtifactRecord } from "../lib/store";
@@ -338,10 +342,12 @@ const DECLARED = [
 const BODY = "Chip makers brace for new tariffs";
 
 function authorPanel(openId: string | null, sections: unknown[] = DECLARED): string {
-  const drawn = resolveOpenCard(CARDS, openId);
   return renderToStaticMarkup(
     <AgentPanel
-      alreadyShown={new Set(drawn === null ? [] : [drawn.reference.artifact_id])}
+      /* MAR-875. The lineage rather than the id, resolved by the one function
+         the page uses — a second construction here would let this file pass
+         while the page shipped a different answer. */
+      alreadyShown={resolveDrawnLineage(resolveOpenCard(CARDS, openId))}
       view={buildPanelView(
         { agent: { name: AGENT }, agent_dom: { panel: { panel_version: 1, sections } } },
         {
@@ -366,14 +372,31 @@ describe("a manifest cannot draw the briefing a second time", () => {
     expect(panel).not.toContain(BODY);
   });
 
-  it("keeps the author's label, and says where the briefing went", () => {
+  /**
+   * MAR-875 changed this assertion, and the change is the packet.
+   *
+   * MAR-668's answer was that a yielding section keeps its label, its title and
+   * a pointer sentence, losing only the body. That is right for one section and
+   * wrong for three: on the real scout it drew *Latest briefing* → "shown at the
+   * top", *Every headline in the latest digest* → the same rows as a table, and
+   * *Everything it produced* → "shown at the top" again, which is three blocks
+   * saying the same thing about the same list.
+   *
+   * So a section with nothing left to draw now draws nothing, and the pointer
+   * survives exactly where it was written for: a *mixed* list, where a reader
+   * would otherwise meet an entry silently missing between two others.
+   */
+  it("drops a section with nothing left in it, and keeps a mixed one", () => {
     const panel = authorPanel(null);
-    // Their layout survives. What they lose is a duplicate, not a section.
-    expect(panel).toContain("Latest briefing");
+    // The `report` bound to the open digest has nothing of its own to say.
+    expect(panel).not.toContain("Latest briefing");
+    // The `outputs` list still holds three the stage did not draw, so it stays
+    // whole — label, order, and a pointer where the fourth entry would be.
     expect(panel).toContain("Everything it produced");
     expect(panel).toContain("Tuesday digest");
-    // DASH's own fixed sentence, naming DASH's own heading.
     expect(panel).toContain(PANEL_ALREADY_SHOWN);
+    // And exactly one pointer: one card was elsewhere, so one sentence.
+    expect(panel.split(PANEL_ALREADY_SHOWN)).toHaveLength(2);
   });
 
   it("still draws the outputs the stage did not", () => {

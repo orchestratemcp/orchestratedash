@@ -23,6 +23,7 @@ import {
   PANEL_COPY,
   PANEL_METRIC_EMPTY,
   PANEL_NEWER_VERSION,
+  PANEL_SOURCES_COPY,
   PANEL_UNREADABLE,
   describeEmptyOutputSection,
   describeEmptyTable,
@@ -34,6 +35,9 @@ import {
 import { plainMoment } from "../lib/copy/when";
 import { PANEL_SECTION_TYPES_V1 } from "../lib/panel-spec";
 import { PANEL_ROW_CAP, buildPanelView, type PanelDashFacts } from "../lib/views/panel";
+/* MAR-875. Its own module for a bundle reason `lib/views/panel-run.ts` states:
+   the page is a client component and this module has type imports only. */
+import { panelForRun } from "../lib/views/panel-run";
 import type { DigestArtifact, DraftArtifact } from "../lib/contracts";
 import type { RunArtifactRecord } from "../lib/store";
 
@@ -664,6 +668,132 @@ describe("the component vocabulary is a by-value pin", () => {
 });
 
 /* ---------------------------------------------------------------------- *
+ * One run at a time (MAR-875)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The mixing this section exists to stop.
+ *
+ * The panel binds against the agent's whole history and reads the newest
+ * artifact of each role, which is right for a standing account of an agent and
+ * wrong the moment the surface above it is showing one selected run. Pressing
+ * Sunday's briefing in the rail changed DASH's own card and left the author's
+ * box describing Tuesday — one screen, two runs, and nothing saying so.
+ */
+describe("the same declaration, bound to one run", () => {
+  const tuesday = digest([{ headline: "Tuesday only" }]);
+  const sunday = {
+    ...digest([{ headline: "Sunday only" }, { headline: "And another" }]),
+    run_id: "run-sunday",
+    artifact_id: "digest-sunday",
+    generated_at: "2026-08-02T21:14:02.000Z",
+  } as unknown as DigestArtifact;
+
+  /* Newest first, which is the order `artifactRecordsForAgent` returns and the
+     order every binding in this module reads. */
+  const history = [record(tuesday), record(sunday, "2026-08-02T21:14:08.412Z")];
+  const built = declared(
+    build(panelV1([report(), table(HEADLINE_COLUMNS)], "Newsroom"), history),
+  );
+
+  it("keeps the agent-wide binding as the standing one", () => {
+    // Unchanged behaviour for every caller that has no run in mind — the run
+    // detail page, and every test that renders this component alone.
+    const report0 = built.sections[0];
+    expect(report0?.kind === "report" && report0.card?.artifact.title).toBe(
+      "AI agent news for 5 August",
+    );
+    const table0 = built.sections[1];
+    expect(table0?.kind === "table" && table0.rows[0]?.[0]?.text).toBe("Tuesday only");
+  });
+
+  it("carries one entry per run that produced something", () => {
+    expect(Object.keys(built.by_run).sort()).toEqual([RUN_ID, "run-sunday"].sort());
+  });
+
+  it("narrows every binding to that run rather than to the newest", () => {
+    const sections = built.by_run["run-sunday"];
+    const reported = sections?.[0];
+    const tabled = sections?.[1];
+    expect(reported?.kind === "report" && reported.card?.reference.artifact_id).toBe(
+      "digest-sunday",
+    );
+    // The rows are that run's rows, and there are two of them rather than one.
+    expect(tabled?.kind === "table" && tabled.rows.map((row) => row[0]?.text)).toEqual([
+      "Sunday only",
+      "And another",
+    ]);
+  });
+
+  it("hands a run DASH holds nothing for the standing panel rather than an empty one", () => {
+    /*
+     * `resolveOpenCard`'s rule one layer along: a selection that has outlived
+     * its records should land on what DASH does hold rather than on a box with
+     * nothing in it.
+     */
+    expect(panelForRun(built, "run-that-never-existed")).toBe(built);
+    expect(panelForRun(built, null)).toBe(built);
+  });
+
+  it("returns the three section-less cases untouched", () => {
+    // A stated card about a version DASH cannot draw says the same thing
+    // whichever run is open, and there are no sections to narrow.
+    const none = build({ agent: { name: AGENT } });
+    expect(panelForRun(none, RUN_ID)).toBe(none);
+    const skew = build(manifestWith({ panel_version: 9, sections: [] }));
+    expect(panelForRun(skew, RUN_ID)).toBe(skew);
+  });
+
+  it("swaps the sections and keeps everything else about the panel", () => {
+    const narrowed = panelForRun(built, "run-sunday");
+    if (narrowed.kind !== "declared") {
+      throw new Error(`expected a declared panel, got ${narrowed.kind}`);
+    }
+    // The author's title is a property of the declaration, not of a run.
+    expect(narrowed.title).toBe("Newsroom");
+    expect(narrowed.sections).toBe(built.by_run["run-sunday"]);
+  });
+});
+
+/**
+ * Where a table's rows came from, which nothing carried before (MAR-875).
+ *
+ * MAR-668 exempted tables from its de-duplication because a `PanelTableView`
+ * held its rows and nothing about the record they were read out of — so a
+ * renderer could not tell a first drawing from a second. That exemption is why
+ * the proof scout still put thirty headlines on the screen a third time.
+ */
+describe("a table says which artifact it read", () => {
+  it("names the record its rows came from", () => {
+    const built = declared(
+      build(panelV1([table(HEADLINE_COLUMNS)]), [record(digest())]),
+    );
+    const section = built.sections[0];
+    expect(section?.kind === "table" && section.source_artifact_id).toBe("digest-2026-08-05");
+  });
+
+  it("is null when the role resolved nothing, which is what makes it empty", () => {
+    const built = declared(build(panelV1([table(HEADLINE_COLUMNS)]), []));
+    const section = built.sections[0];
+    expect(section?.kind === "table" && section.source_artifact_id).toBe(null);
+  });
+
+  it("is null for an artifact whose body is not a list of rows", () => {
+    // `not_rows`: the record is there and the table still draws nothing, so the
+    // renderer must not be told it drew that artifact.
+    const built = declared(
+      build(
+        panelV1([{ id: "t", type: "table", label: "Rows", source_role: "draft", columns: HEADLINE_COLUMNS }]),
+        [record(draft)],
+      ),
+    );
+    const section = built.sections[0];
+    expect(section?.kind === "table" && section.empty?.kind).toBe("not_rows");
+    expect(section?.kind === "table" && section.source_artifact_id).toBe("draft-2026-08-05");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
  * The copy
  * ---------------------------------------------------------------------- */
 
@@ -685,6 +815,14 @@ describe("every fixed string is plain language", () => {
     describeSkippedRows(1) ?? "",
     describeSkippedRows(3) ?? "",
     describeOutputsCap(2, 9) ?? "",
+    /* MAR-875. Enumerated the moment the export existed, which is the rule
+       `tests/copy-agent-page.test.ts`' own docblock states: a gate only sees
+       the fields somebody remembered to list. */
+    PANEL_SOURCES_COPY.summary(1),
+    PANEL_SOURCES_COPY.summary(30),
+    PANEL_SOURCES_COPY.meaning,
+    PANEL_SOURCES_COPY.list_summary,
+    PANEL_SOURCES_COPY.table_summary,
     describeRunVerdict("completed") ?? "",
     describeRunVerdict("failed") ?? "",
     describeRunVerdict("running") ?? "",
