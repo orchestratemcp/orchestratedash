@@ -2078,10 +2078,10 @@
     },
     {
       "id": "MAR-880",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "one failed poll settles a live judgement as abandoned; retry transient errors (found proving MAR-868)"
+      "commit": "d37768c",
+      "note": "One throwing poll settled judgement 4 as abandoned in 25s while Studionet finalized in 6s (found proving MAR-868). PR #322: DASH owns the poll loop, retries a throwing poll 5x with backoff, new network_lost failure with copy, error bound and logged. Fixture tests only; installed half of the proof line queued for the orchestrator."
     },
     {
       "id": "MAR-881",
