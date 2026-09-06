@@ -404,3 +404,346 @@ describe("what each kind of step runs on", () => {
     expect(draw(levelsFor([]))).not.toContain("What each kind of step runs on");
   });
 });
+
+/* ---------------------------------------------------------------------- *
+ * Task-first AI (MAR-877, UX-3)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The two states this tab now has, and what each one leads with.
+ *
+ * The audit's finding was an order rather than a wording: the tab put repair
+ * before setup and drew three routing cards on a DASH that could not route
+ * anything. Every sentence below is the same sentence it was; the claims here
+ * are all about **which of them a person meets without pressing something**.
+ *
+ * The one that must never regress is the adoption press. ADR 0013's third
+ * moment — an agent imported after a key was connected, given that key by a
+ * deliberate press — is what MAR-874 and MAR-878 both build on, and a fold that
+ * hid it would break them silently.
+ */
+describe("a DASH with no model key (MAR-877)", () => {
+  const NOTHING_HELD = view();
+
+  it("asks one question and offers one card", () => {
+    const html = drawAi(NOTHING_HELD);
+    expect(html).toContain("Connect a model provider");
+    // All three are still offered — as a chooser rather than as three stacked
+    // paragraphs of consequence.
+    expect(html).toContain("OpenRouter");
+    expect(html).toContain("Anthropic");
+    expect(html).toContain("OpenAI");
+    expect(html).toContain("ai-first-key-provider");
+  });
+
+  it("draws nothing about defaults, routing or repair", () => {
+    /*
+     * There is nothing yet to route, default or repair. A page that led with
+     * recovery prose above a setup it had not offered is the defect; a page
+     * that draws a folded *Troubleshoot* here would be the same defect one
+     * press deep.
+     */
+    const html = drawAi(NOTHING_HELD);
+    expect(html).not.toContain("The model new agents use");
+    expect(html).not.toContain("Advanced routing");
+    expect(html).not.toContain("Troubleshoot");
+    expect(html).not.toContain("What each kind of step runs on");
+  });
+
+  it("still says what each provider will be able to do, before its button", () => {
+    // ADR 0002 amendment 2's rule survives the rearrangement: the chosen card
+    // is `FleetConnectorCard` unchanged, consequences and all.
+    const html = drawAi(NOTHING_HELD);
+    expect(html).toContain("What DASH would be able to do");
+    expect(html.indexOf("What DASH would be able to do")).toBeLessThan(
+      html.indexOf("button-primary"),
+    );
+  });
+});
+
+describe("a DASH that holds a key (MAR-877)", () => {
+  const held = (): ConnectionsView =>
+    view({
+      fleet: [
+        connector(),
+        key("openrouter", "OpenRouter", { held: HELD }),
+        key("anthropic", "Anthropic"),
+        key("openai", "OpenAI"),
+      ],
+      model_default: defaultView({
+        provider_id: "openrouter",
+        model_id: "openai/gpt-5-mini",
+        in_force: describeFleetDefault("OpenRouter", "openai/gpt-5-mini", 1).in_force,
+      }),
+      level_models: levelsFor(["openrouter"]),
+    });
+
+  it("leads with the one line that says what is in force", () => {
+    const html = drawAi(held());
+    const inForce = html.indexOf("through your OpenRouter key");
+    const advanced = html.indexOf("Advanced routing");
+    expect(inForce).toBeGreaterThan(-1);
+    expect(advanced).toBeGreaterThan(-1);
+    expect(inForce).toBeLessThan(advanced);
+  });
+
+  it("folds the level rows and the key cards, and offers a way in", () => {
+    const html = drawAi(held());
+    // Present — nothing is deleted — and behind a shut disclosure.
+    expect(html).toContain("What each kind of step runs on");
+    expect(html).toContain("Your keys");
+    const at = html.indexOf("Advanced routing");
+    const opening = html.lastIndexOf("<details", at);
+    expect(html.slice(opening, at)).not.toContain("open");
+    // And a person who came to change the model has a control that says so.
+    expect(html).toContain("Change");
+  });
+
+  it("says the in-force sentence once, not once above the fold and once inside", () => {
+    /*
+     * Hidden text is still in the markup: a heading, a detail and an in-force
+     * sentence repeated inside a shut disclosure is the same words twice for
+     * anybody reading with a screen reader, and twice for the copy gates.
+     * `ModelDefault`'s `standing` prop is what the page passes to say so.
+     */
+    const html = drawAi(held());
+    expect(html.split("through your OpenRouter key")).toHaveLength(2);
+    expect(html.split("The model new agents use")).toHaveLength(2);
+  });
+
+  it("opens the fold when no default has been chosen yet", () => {
+    // The picker under it is the whole reason somebody who has just pasted a
+    // key is on this page.
+    const html = drawAi(
+      view({
+        fleet: [connector(), key("openrouter", "OpenRouter", { held: HELD }), ...KEYS.slice(1)],
+        level_models: levelsFor(["openrouter"]),
+      }),
+    );
+    const at = html.indexOf("Advanced routing");
+    const opening = html.lastIndexOf("<details", at);
+    expect(html.slice(opening, at)).toContain("open");
+  });
+});
+
+describe("the adoption press stays findable (MAR-877, ADR 0013 moment 3)", () => {
+  const WAITING = (): ConnectionsView =>
+    view({
+      fleet: [
+        connector(),
+        key("openrouter", "OpenRouter", { held: HELD, waiting: ["Proof Scout"] }),
+        key("anthropic", "Anthropic"),
+        key("openai", "OpenAI"),
+      ],
+      model_default: defaultView({
+        provider_id: "openrouter",
+        model_id: "openai/gpt-5-mini",
+        in_force: describeFleetDefault("OpenRouter", "openai/gpt-5-mini", 1).in_force,
+      }),
+      level_models: levelsFor(["openrouter"]),
+    });
+
+  it("says above the fold that somebody is waiting", () => {
+    expect(drawAi(WAITING())).toContain(
+      "1 agent is waiting to be given a key DASH already holds",
+    );
+  });
+
+  it("opens the fold so the press is on screen without a click", () => {
+    /*
+     * The press itself is `FleetConnectorCard`'s and its semantics are
+     * untouched — this opens the fold rather than drawing a second button,
+     * because two controls doing one thing is how a page comes to disagree with
+     * itself about whether it was pressed.
+     */
+    const html = drawAi(WAITING());
+    const at = html.indexOf("Advanced routing");
+    const opening = html.lastIndexOf("<details", at);
+    expect(html.slice(opening, at)).toContain("open");
+    expect(html).toContain("Give it to Proof Scout");
+    // And it is still the primary control on that card.
+    const press = html.indexOf("Give it to Proof Scout");
+    expect(html.lastIndexOf("button-primary", press)).toBeGreaterThan(
+      html.lastIndexOf("button-secondary", press),
+    );
+  });
+});
+
+describe("a key DASH cannot read (MAR-877)", () => {
+  const UNREADABLE = {
+    ...HELD,
+    secret_readable: false,
+    unreadable: {
+      headline: "DASH cannot read your OpenRouter key.",
+      actor: "user" as const,
+      meaning: "The key is stored, and this computer refused to hand it back.",
+      next_action: "Try Refresh connections, then add the key again if that does not help.",
+    },
+  };
+
+  it("says so above the fold, in a line that points at the recovery", () => {
+    const html = drawAi(
+      view({
+        fleet: [
+          connector(),
+          key("openrouter", "OpenRouter", { held: UNREADABLE }),
+          ...KEYS.slice(1),
+        ],
+        model_default: defaultView({
+          provider_id: "openrouter",
+          model_id: "openai/gpt-5-mini",
+          in_force: describeFleetDefault("OpenRouter", "openai/gpt-5-mini", 1).in_force,
+        }),
+        level_models: levelsFor(["openrouter"]),
+      }),
+    );
+    expect(html).toContain("There is 1 key DASH holds and cannot read right now.");
+    // The card's own three-part explanation is untouched and still under its
+    // chip — MAR-676's placement, which MAR-877 does not get to move.
+    expect(html).toContain("DASH cannot read your OpenRouter key.");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * Services first, lapses summarised (MAR-877)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The Connections page's order.
+ *
+ * Henrik's machine drew five per-agent lapse blocks, each with its own heading
+ * and its own fold, before the word *Gmail* appeared. Every one was true; the
+ * *list* of them was not what anybody opened this page for.
+ */
+describe("the Connections page leads with services (MAR-877)", () => {
+  const LAPSING = (): AgentConnections[] => [
+    {
+      name: "ai-news-scout-4",
+      title: "AI news scout",
+      avatar: null,
+      rows: [],
+      lapses: [
+        {
+          kind: "dash_closed",
+          sentence: "DASH was closed for part of this window.",
+          qualifier: null,
+          from_at: "2026-08-02T09:00:00.000Z",
+          until_at: "2026-08-02T10:00:00.000Z",
+        },
+      ],
+    },
+    {
+      name: "proof-scout",
+      title: "Proof Scout",
+      avatar: null,
+      rows: [],
+      lapses: [
+        {
+          kind: "dropped_by_runner",
+          sentence: "The background service discarded 2 requests.",
+          qualifier: null,
+          from_at: "2026-08-03T09:00:00.000Z",
+          until_at: "2026-08-03T09:00:02.000Z",
+        },
+      ],
+    },
+  ];
+
+  const drawList = (agents: AgentConnections[]): string =>
+    renderToStaticMarkup(
+      <ServiceList view={view({ agents })} canAct onChanged={() => undefined} />,
+    );
+
+  it("puts the first service above anything about lapses", () => {
+    const html = drawList(LAPSING());
+    const service = html.indexOf("Gmail");
+    const lapses = html.indexOf("DASH cannot account for");
+    expect(service).toBeGreaterThan(-1);
+    expect(lapses).toBeGreaterThan(-1);
+    expect(service).toBeLessThan(lapses);
+  });
+
+  it("rolls five headings into one line with both numbers", () => {
+    const html = drawList(LAPSING());
+    expect(html).toContain("DASH cannot account for 2 periods across 2 agents.");
+    // One disclosure, not one per agent.
+    expect(html.match(/broker-lapse-summary/gu)).toHaveLength(1);
+  });
+
+  it("keeps every period, every window and the caveat", () => {
+    const html = drawList(LAPSING());
+    expect(html).toContain("DASH was closed for part of this window.");
+    expect(html).toContain("The background service discarded 2 requests.");
+    expect(html).toContain("These are not decisions.");
+    // One row per agent, named the way a person reads a name.
+    expect(html).toContain("AI news scout");
+    expect(html).toContain("Proof Scout");
+  });
+
+  it("draws nothing at all when no agent has one", () => {
+    // The ordinary case. An "everything is accounted for" panel would be a page
+    // reassuring somebody about a thing they had not asked about.
+    const html = drawList([]);
+    expect(html).not.toContain("broker-lapse");
+    expect(html).not.toContain("cannot account for");
+  });
+});
+
+/**
+ * Nothing is deleted, only moved (MAR-877).
+ *
+ * The first draft of `ModelDefault`'s `standing` prop suppressed the whole
+ * three-line block, and with it `setting.detail` — the sentence saying that
+ * choosing a model on an agent's own page always wins and that changing the
+ * default never moves an agent that has chosen. That is a consequence rather
+ * than a repetition of the summary line, and dropping it was a copy removal
+ * wearing a layout change.
+ *
+ * It was caught by comparing the capture harness's own word counters across the
+ * two builds, not by any test that existed. This is that finding, pinned.
+ */
+describe("the standing prop suppresses two lines, not three (MAR-877)", () => {
+  const KEYS_HELD = [key("openrouter", "OpenRouter", { held: HELD }), ...KEYS.slice(1)];
+  const SETTING = defaultView({
+    provider_id: "openrouter",
+    model_id: "openai/gpt-5-mini",
+    in_force: describeFleetDefault("OpenRouter", "openai/gpt-5-mini", 1).in_force,
+  });
+
+  const draw = (standing: boolean): string =>
+    renderToStaticMarkup(
+      <ModelDefault
+        setting={SETTING}
+        levels={levelsFor(["openrouter"])}
+        keys={KEYS_HELD}
+        canAct
+        onChanged={() => undefined}
+        standing={standing}
+      />,
+    );
+
+  it("keeps the sentence about whose decision this is", () => {
+    // A fragment with no apostrophe in it: `renderToStaticMarkup` escapes them,
+    // so comparing the whole sentence would fail on the entity rather than on
+    // the claim.
+    const detail = "changing this never moves an agent that has chosen";
+    expect(SETTING.detail).toContain(detail);
+    expect(draw(true)).toContain(detail);
+    expect(draw(false)).toContain(detail);
+  });
+
+  it("drops only the heading and the in-force line", () => {
+    const off = draw(false);
+    expect(off).not.toContain(SETTING.headline);
+    expect(off).not.toContain(SETTING.in_force);
+    // And the picker it exists to hold is untouched.
+    expect(off).toContain("model-default-select");
+  });
+
+  it("says all three when nothing above it is saying them", () => {
+    const on = draw(true);
+    expect(on).toContain(SETTING.headline);
+    expect(on).toContain(SETTING.in_force);
+    expect(on).toContain("changing this never moves an agent that has chosen");
+  });
+});

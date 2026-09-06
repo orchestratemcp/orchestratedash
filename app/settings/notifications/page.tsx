@@ -10,6 +10,13 @@ import {
   describeChiefDiscordStanding,
   describeChiefRunnerHolds,
 } from "../../../lib/chief/discord";
+import {
+  ALERTS_MANAGE_DETAIL,
+  ALERTS_SECTION_HEADING,
+  CHIEF_MANAGE_DETAIL,
+  CHIEF_SECTION_HEADING,
+  MANAGE_SUMMARY,
+} from "../../../lib/copy/settings-notifications";
 import { plainDay, plainMoment } from "../../../lib/copy/when";
 import {
   NOTIFY_CONTENTS,
@@ -84,7 +91,7 @@ export default function NotificationsPage(): ReactNode {
         it. MAR-639 axes the lede that used to spell that out below the
         heading; the settings themselves say it in the doing.
       */}
-      <h1>Discord alerts</h1>
+      <h1>Discord alerts and chat</h1>
       <HostNotice host={host} />
 
       {state.status === "loading" ? (
@@ -171,6 +178,19 @@ export function NotificationSettings({
   return (
     <>
       {/*
+        The alerts half, named (MAR-877).
+
+        The page holds two arrangements with two credentials, two revocations
+        and two channels, and it used to run them together under one title —
+        so the loudest control on a page about being *told* things was *Replace
+        the bot token*, which belongs to the other half entirely. A heading each
+        is what lets each half be read on its own, and the two now have the same
+        grammar: one line of state, one thing to do, and everything that
+        replaces, pauses or ends it one press away under **Manage**.
+      */}
+      <section aria-labelledby="notify-alerts">
+      <h2 id="notify-alerts">{ALERTS_SECTION_HEADING}</h2>
+      {/*
         The whole state, in a row (MAR-642).
 
         What was here was a section called "Right now" with a sentence, and a
@@ -217,40 +237,38 @@ export function NotificationSettings({
         everybody scrolls past.
       */}
       <div className="button-row">
-        <button
-          type="button"
-          className="button-primary"
-          disabled={!canAct || busy}
-          onClick={() => {
-            run(connectNotifications);
-          }}
-        >
-          {view.configured ? "Replace the address" : "Add a channel address"}
-        </button>
         {view.configured ? (
-          <>
-            <button
-              type="button"
-              className="button-secondary"
-              disabled={!canAct || busy}
-              onClick={() => {
-                run(testNotifications);
-              }}
-            >
-              {busy ? "Sending…" : "Send a test message"}
-            </button>
-            <button
-              type="button"
-              className="button-danger"
-              disabled={!canAct || busy}
-              onClick={() => {
-                run(disconnectNotifications);
-              }}
-            >
-              Stop posting
-            </button>
-          </>
-        ) : null}
+          /*
+           * One primary press per half (MAR-877).
+           *
+           * On a channel DASH already has, the thing a person came to do is
+           * check it still works. *Replace the address* is a credential
+           * replacement and *Stop posting* ends the arrangement — both are
+           * still one press away, under Manage below, and neither is the first
+           * control on a page about being told things.
+           */
+          <button
+            type="button"
+            className="button-primary"
+            disabled={!canAct || busy}
+            onClick={() => {
+              run(testNotifications);
+            }}
+          >
+            {busy ? "Sending…" : "Send a test message"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button-primary"
+            disabled={!canAct || busy}
+            onClick={() => {
+              run(connectNotifications);
+            }}
+          >
+            Add a channel address
+          </button>
+        )}
         {/*
           Beside the buttons rather than under them (MAR-642). A test message
           takes a second and its answer is one mark plus main's own sentence; a
@@ -269,6 +287,48 @@ export function NotificationSettings({
         The address is a credential.
         <InfoNote>{NOTIFY_CUSTODY}</InfoNote>
       </p>
+
+      {/*
+        Manage: the presses that replace or end this (MAR-877).
+
+        Closed, and never a second fold deep. Stop posting is what somebody
+        reaches for while something is going wrong, so it is exactly one press
+        from the state line that told them — the fold is what keeps a
+        credential replacement from being the first thing on the page, not a
+        place to put controls out of reach.
+
+        Drawn only once there is something to manage: on a DASH with no address,
+        every one of these presses would be about an arrangement that does not
+        exist.
+      */}
+      {view.configured ? (
+        <details className="card-more section-disclosure">
+          <summary>{MANAGE_SUMMARY}</summary>
+          <p className="muted wrap">{ALERTS_MANAGE_DETAIL}</p>
+          <div className="button-row">
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={!canAct || busy}
+              onClick={() => {
+                run(connectNotifications);
+              }}
+            >
+              Replace the address
+            </button>
+            <button
+              type="button"
+              className="button-danger"
+              disabled={!canAct || busy}
+              onClick={() => {
+                run(disconnectNotifications);
+              }}
+            >
+              Stop posting
+            </button>
+          </div>
+        </details>
+      ) : null}
 
       {view.configured ? (
         <section aria-labelledby="notify-kinds">
@@ -307,6 +367,7 @@ export function NotificationSettings({
       ) : null}
 
       {view.configured ? <NotificationNotes view={view} /> : null}
+      </section>
 
       {/*
         MAR-743, ADR 0028. The other half of DASH's Discord, on the same page.
@@ -384,7 +445,7 @@ function ChiefDiscordSection({
 
   return (
     <section aria-labelledby="chief-discord">
-      <h2 id="chief-discord">Talk to the chief in Discord</h2>
+      <h2 id="chief-discord">{CHIEF_SECTION_HEADING}</h2>
 
       <p className="notify-standing">
         <span className={standing.on ? "chip chip-ok" : "chip chip-muted"}>{standing.chip}</span>{" "}
@@ -438,61 +499,133 @@ function ChiefDiscordSection({
         </>
       )}
 
-      <p className="field">
-        <label htmlFor="chief-channel">Channel id</label>
-        <input
-          id="chief-channel"
-          type="text"
-          inputMode="numeric"
-          value={channelId}
-          disabled={!canAct || busy}
-          onChange={(event) => {
-            setChannelId(event.target.value);
-          }}
-        />
-      </p>
-      <p className="field">
-        <label htmlFor="chief-user">Your Discord user id</label>
-        <input
-          id="chief-user"
-          type="text"
-          inputMode="numeric"
-          value={allowedUserId}
-          disabled={!canAct || busy}
-          onChange={(event) => {
-            setAllowedUserId(event.target.value);
-          }}
-        />
-      </p>
+      {/*
+        One answer slot for this half, above what produced it (MAR-877).
 
-      <div className="button-row">
-        <button
-          type="button"
-          className="button-primary"
-          disabled={!canAct || busy}
-          onClick={() => {
-            run(() =>
-              connectChiefDiscord({
-                channel_id: channelId.trim(),
-                allowed_user_id: allowedUserId.trim(),
-              }),
-            );
-          }}
-        >
-          {view.configured ? "Replace the bot token" : "Add a bot token"}
-        </button>
-        {view.configured ? (
-          <>
+        It used to sit inside the button row, which was right while every press
+        was in that row. Half of them are under Manage now, and an answer that
+        appeared inside a fold would be invisible to somebody who pressed and
+        then closed it. `role="status"` is what announces it either way.
+      */}
+      {outcome === null ? null : (
+        <p className={outcome.ok ? "notice-ok" : "notice-warn"} role="status">
+          <span aria-hidden="true">{outcome.ok ? "✓ " : "✗ "}</span>
+          {outcome.detail}
+        </p>
+      )}
+
+      {/*
+        The two ids, and where they sit (MAR-743, moved by MAR-877).
+
+        Unchanged in what they are: the token goes into
+        `electron/credential-prompt.ts`'s window like every credential in DASH,
+        and these two do not, because they are not secrets, they are the two
+        values most likely to be pasted wrong, and somebody who cannot see what
+        DASH holds cannot work out why the chief is ignoring them.
+
+        What moved is that on a *configured* bridge they are inside Manage,
+        beside the press that saves them. `chiefDiscord.connect` is the only
+        command that writes them and it always opens the token window first
+        (`electron/chief-discord.ts`), so a visible field with no visible save
+        would be an edit a person could make and not commit. The facts they
+        carry do not disappear: `describeChiefDiscordStanding` says the channel
+        and the account above the fold, in words.
+      */}
+      {view.configured ? null : <ChiefIdFields
+        channelId={channelId}
+        allowedUserId={allowedUserId}
+        disabled={!canAct || busy}
+        onChannelId={setChannelId}
+        onAllowedUserId={setAllowedUserId}
+      />}
+
+      {view.configured && view.enabled ? null : (
+        <div className="button-row">
+          {view.configured ? (
+            /*
+             * A paused bridge has one thing worth doing and it is not a
+             * credential press. Starting it again is above the fold; stopping
+             * it again is under Manage, with the rest of what ends things.
+             */
+            <button
+              type="button"
+              className="button-primary"
+              disabled={!canAct || busy}
+              onClick={() => {
+                run(() => setChiefDiscordEnabled({ enabled: true }));
+              }}
+            >
+              Start listening
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button-primary"
+              disabled={!canAct || busy}
+              onClick={() => {
+                run(() =>
+                  connectChiefDiscord({
+                    channel_id: channelId.trim(),
+                    allowed_user_id: allowedUserId.trim(),
+                  }),
+                );
+              }}
+            >
+              Add a bot token
+            </button>
+          )}
+        </div>
+      )}
+
+      {/*
+        Manage, the same word and the same depth as the alerts half above.
+
+        Replace, pause and forget, each one press from the state line that would
+        send somebody looking for them. Nothing here is a second fold deep and
+        nothing about what these presses do has changed — `disconnectChiefDiscord`
+        still forgets the token and `setChiefDiscordEnabled` still only pauses.
+      */}
+      {view.configured ? (
+        <details className="card-more section-disclosure">
+          <summary>{MANAGE_SUMMARY}</summary>
+          <p className="muted wrap">{CHIEF_MANAGE_DETAIL}</p>
+
+          <ChiefIdFields
+            channelId={channelId}
+            allowedUserId={allowedUserId}
+            disabled={!canAct || busy}
+            onChannelId={setChannelId}
+            onAllowedUserId={setAllowedUserId}
+          />
+
+          <div className="button-row">
             <button
               type="button"
               className="button-secondary"
               disabled={!canAct || busy}
               onClick={() => {
-                run(() => setChiefDiscordEnabled({ enabled: !view.enabled }));
+                run(() =>
+                  connectChiefDiscord({
+                    channel_id: channelId.trim(),
+                    allowed_user_id: allowedUserId.trim(),
+                  }),
+                );
               }}
             >
-              {view.enabled ? "Stop listening" : "Start listening"}
+              Replace the bot token
             </button>
+            {view.enabled ? (
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={!canAct || busy}
+                onClick={() => {
+                  run(() => setChiefDiscordEnabled({ enabled: false }));
+                }}
+              >
+                Stop listening
+              </button>
+            ) : null}
             <button
               type="button"
               className="button-danger"
@@ -503,15 +636,10 @@ function ChiefDiscordSection({
             >
               Forget the bot
             </button>
-          </>
-        ) : null}
-        {outcome === null ? null : (
-          <p className={outcome.ok ? "notice-ok" : "notice-warn"} role="status">
-            <span aria-hidden="true">{outcome.ok ? "✓ " : "✗ "}</span>
-            {outcome.detail}
-          </p>
-        )}
-      </div>
+          </div>
+        </details>
+      ) : null}
+
       <p className="muted wrap">
         The bot token is a credential.
         <InfoNote>{CHIEF_DISCORD_CUSTODY}</InfoNote>
@@ -545,6 +673,65 @@ function ChiefDiscordSection({
         </section>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The channel and the person the chief will answer (MAR-743, extracted by
+ * MAR-877).
+ *
+ * One component drawn in one of two places — above the fold while there is
+ * nothing configured, inside Manage once there is — so the fields themselves
+ * cannot drift between the two states. `NotificationNotes` below is the same
+ * shape for the same reason.
+ *
+ * The ids are typed here, shown back here and correctable here, which is
+ * MAR-743's decision and is not changed: they are not secrets, they are the two
+ * values most likely to be pasted wrong, and a person who cannot see what DASH
+ * holds cannot work out why the chief is ignoring them.
+ */
+function ChiefIdFields({
+  channelId,
+  allowedUserId,
+  disabled,
+  onChannelId,
+  onAllowedUserId,
+}: {
+  channelId: string;
+  allowedUserId: string;
+  disabled: boolean;
+  onChannelId: (value: string) => void;
+  onAllowedUserId: (value: string) => void;
+}): ReactNode {
+  return (
+    <>
+      <p className="field">
+        <label htmlFor="chief-channel">Channel id</label>
+        <input
+          id="chief-channel"
+          type="text"
+          inputMode="numeric"
+          value={channelId}
+          disabled={disabled}
+          onChange={(event) => {
+            onChannelId(event.target.value);
+          }}
+        />
+      </p>
+      <p className="field">
+        <label htmlFor="chief-user">Your Discord user id</label>
+        <input
+          id="chief-user"
+          type="text"
+          inputMode="numeric"
+          value={allowedUserId}
+          disabled={disabled}
+          onChange={(event) => {
+            onAllowedUserId(event.target.value);
+          }}
+        />
+      </p>
+    </>
   );
 }
 
