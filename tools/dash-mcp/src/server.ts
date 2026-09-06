@@ -98,6 +98,13 @@ const TOOLS: ToolDefinition[] = [
             },
           },
         },
+        model_provider: {
+          enum: ["openrouter", "anthropic", "openai"],
+          description:
+            "Which model provider the agent's connection names, so it can be asked a question " +
+            "even though its own steps never need one. Match whatever the person has already " +
+            "connected under DASH → Settings → AI; omit for OpenRouter, DASH's default.",
+        },
       },
     },
     run: (args) =>
@@ -107,6 +114,7 @@ const TOOLS: ToolDefinition[] = [
         display_name: optionalString(args, "display_name"),
         summary: requireString(args, "summary"),
         sources: readSources(args["sources"]),
+        model_provider: optionalString(args, "model_provider"),
       }),
   },
   {

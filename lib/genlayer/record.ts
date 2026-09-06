@@ -69,7 +69,36 @@ export type AdjudicationFailure =
   /** DASH refused to build the payload. See `PayloadRefusal` for which. */
   | "payload_refused"
   /** The wait was abandoned — the window closed, or DASH was asked to stop. */
-  | "abandoned";
+  | "abandoned"
+  /**
+   * DASH lost the network while it was watching a transaction that had
+   * already been sent, and never got another answer out of it (MAR-880).
+   *
+   * Distinct from `abandoned`: an abandoned wait ran out of budget while the
+   * chain kept answering, so the transaction is probably fine and DASH simply
+   * stopped watching it. This one means DASH stopped *hearing from the
+   * network at all* partway through — `lib/genlayer/client.ts`'s poll retry
+   * budget was exhausted on consecutive transport errors, not on time.
+   */
+  | "network_lost";
+
+/**
+ * One poll lost the network, not the chain (MAR-880).
+ *
+ * Thrown by `lib/genlayer/client.ts` after `POLL_RETRY_LIMIT` consecutive
+ * attempts to check one transaction's status all threw — `getTransaction`
+ * rejecting, a non-JSON body, `data.error`, or a not-yet-indexed hash that
+ * never resolves. `lib/genlayer/adjudicate.ts` catches it by type and settles
+ * the row `"network_lost"` rather than `"abandoned"`.
+ *
+ * Defined here rather than in either of those two files: `client.ts` already
+ * imports `GenLayerChain` from `adjudicate.ts`, and a class this specific to
+ * one failure kind belongs beside the failure kind it names, not inside the
+ * module that implements the chain or the module that decides what a receipt
+ * means. Importing it from here keeps `client.ts` and `adjudicate.ts` from
+ * ever needing to import from each other.
+ */
+export class GenLayerNetworkLostError extends Error {}
 
 /**
  * One attempt, exactly as the row holds it.

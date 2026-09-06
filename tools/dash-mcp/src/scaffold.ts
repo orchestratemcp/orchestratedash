@@ -20,12 +20,28 @@
  * be adjudicated on its first run rather than after somebody remembers to make
  * it so. ADR 0032 records that the two templates now differ and that closing
  * the gap is somebody's later packet, so it is not discovered as a surprise.
+ *
+ * ## The second divergence (MAR-878)
+ *
+ * The kit's own template — and this one, until now — emitted `connections: []`
+ * so DASH's ask composer (`lib/views/ask.ts`) refuses every agent this tool
+ * builds with `no_provider`: there is no `connection_id` to spend against, so
+ * every plugin-built agent is READY and unable to answer a single question.
+ * `lib/sample-agent.ts`'s `declareModelProvider` already amends DASH's own
+ * sample this way for exactly this reason (MAR-619); this file now does the
+ * same thing for the agent a coding assistant builds, on the same ADR 0013
+ * shape, `optional: true` so import never depends on a key existing. Only the
+ * capability differs — the sample's step curates a digest and declares a
+ * curate operation; this template's steps do not use a model at all, so the
+ * connection exists purely for the "ask this agent a question" feature and
+ * declares that operation instead. See `modelProviderConnection` below.
  */
 
 import path from "node:path";
 
 import { FEED_FETCH_COMPONENT, DIGEST_WRITE_COMPONENT, SOURCES_FILE_NAME } from "../../../lib/agent-sources";
 import { isSafeAgentId } from "../../../lib/handoff";
+import { aiProviderById, type AiProviderId } from "../../../lib/ai/providers";
 
 /**
  * Composing the brief.
@@ -41,6 +57,121 @@ import { isSafeAgentId } from "../../../lib/handoff";
  */
 const BRIEF_COMPOSE_COMPONENT = "brief_compose";
 
+/**
+ * The provider named when a caller does not choose one.
+ *
+ * OpenRouter for `lib/sample-agent.ts`'s own reason: it is the only one of the
+ * three that prices its own answer, so a run's cost can be shown without DASH
+ * holding a price list.
+ */
+export const DEFAULT_MODEL_PROVIDER: AiProviderId = "openrouter";
+
+/** The connection id every agent this tool scaffolds uses for its model. */
+const MODEL_PROVIDER_CONNECTION_ID = "model_provider";
+
+/** The one field that connection asks for. */
+const MODEL_PROVIDER_FIELD_ID = "api_key";
+
+/**
+ * The spend operation this connection's capability names.
+ *
+ * `${provider}.chat.completion` — the same id `lib/broker/operations.ts`'s
+ * `completionOperation` builds for the ask feature (MAR-545) and the same one
+ * `lib/chief/manifest.ts`'s `chiefOperationId` derives for the chief
+ * principal. No import of either: this connection is neither the chief's nor
+ * a curate step's, and importing a helper scoped to one of those to build a
+ * string this file can build itself would say something about ownership that
+ * is not true. What matters is that the three places agree on the literal
+ * format, and `tools/dash-mcp/tests/scaffold.test.ts` pins this file's side of
+ * that agreement by value.
+ */
+function chatCompletionOperationId(providerId: AiProviderId): string {
+  return `${providerId}.chat.completion`;
+}
+
+/**
+ * The one connection every agent this tool scaffolds declares (MAR-878).
+ *
+ * `dash_managed`, `optional: true`, and a `chat.completion` capability rather
+ * than a curate one: this template's own steps never use a model
+ * (`planned_route[].model_tier` is `"none"` throughout), so the only thing
+ * this connection is for is the "ask this agent a question" feature — the one
+ * DASH's ask composer refuses under `no_provider` when `agent_dom.connections`
+ * is empty. See this file's own docblock for the fuller story.
+ *
+ * No `technical.environment_name`, deliberately: DASH holds this key and
+ * spends it itself, and a manifest naming a delivery variable for a
+ * model-provider field is refused at connect (`brokered_provider_delivery`,
+ * ADR 0013 amendment 5).
+ */
+function modelProviderConnection(providerId: AiProviderId): Record<string, unknown> {
+  return {
+    id: MODEL_PROVIDER_CONNECTION_ID,
+    provider: providerId,
+    label: "Your model provider",
+    purpose:
+      "Lets you ask this agent questions about what it found. Any step you add later that " +
+      "needs a model can use this same connection too.",
+    ownership: "dash_managed",
+    capabilities: [
+      {
+        id: chatCompletionOperationId(providerId),
+        label: "Answer a question about what this agent found",
+        access: "spend",
+      },
+    ],
+    fields: [
+      {
+        id: MODEL_PROVIDER_FIELD_ID,
+        label: "API key",
+        purpose: "So DASH can reach this agent's model provider on its behalf.",
+        kind: "secret",
+        required: true,
+        help: keySourceHelp(providerId),
+        // No `technical.environment_name` — see the docblock above.
+      },
+    ],
+    validation_action: {
+      id: "test_model_key",
+      label: "Check the key",
+      behavior: "test",
+    },
+  };
+}
+
+/** Where to get a key, in the provider's own words. */
+function keySourceHelp(providerId: AiProviderId): string {
+  const label = aiProviderById(providerId)?.label ?? providerId;
+  return `Your ${label} account has a keys page; a key made there is what DASH needs.`;
+}
+
+/**
+ * The next action beside the inventory above: what still needs connecting,
+ * and why pressing it is worth doing even though nothing is broken without it.
+ *
+ * `optional: true` is load-bearing, not polite (`lib/sample-agent.ts` makes the
+ * same point about its own copy of this field): this agent fetches, composes a
+ * brief and writes a digest with no model at all, and declaring this required
+ * would show it as broken on a machine where it works exactly as documented.
+ */
+function modelProviderRequirement(): Record<string, unknown> {
+  return {
+    requirements_version: 1,
+    requirements: [
+      {
+        id: MODEL_PROVIDER_CONNECTION_ID,
+        name: "Your model provider",
+        connector_kind: "api_key",
+        connection_id: MODEL_PROVIDER_CONNECTION_ID,
+        optional: true,
+        why:
+          "Without it this agent still collects what it finds and writes its digest; it just " +
+          "cannot answer questions about what it found.",
+      },
+    ],
+  };
+}
+
 export interface ScaffoldRequest {
   /** Absolute path of the project directory. */
   directory: string;
@@ -53,6 +184,15 @@ export interface ScaffoldRequest {
   /** What it should read. Empty falls back to the template's own list. */
   sources: readonly FeedSource[];
   now: Date;
+  /**
+   * Which provider the manifest's `model_provider` connection names (MAR-878).
+   *
+   * Defaults to `DEFAULT_MODEL_PROVIDER`. Match this to whatever the person has
+   * already connected under DASH → Settings → AI — the connection adopts a
+   * fleet key by provider id, so naming the wrong one means the fleet's
+   * "Give it to N waiting agents" button never counts this agent.
+   */
+  model_provider?: AiProviderId;
 }
 
 export interface FeedSource {
@@ -254,11 +394,17 @@ export function scaffoldManifest(request: ScaffoldRequest): Record<string, unkno
           },
         ],
       },
-      // Empty, and that is this template's most useful property: it can be
-      // added to DASH and watched working without anybody having a credential.
-      // ADR 0032 decision 1 — a scaffold that needed a key before it could show
-      // anything would be a scaffold nobody finishes.
-      connections: [],
+      // One connection, `optional: true` (MAR-878): the agent can still be
+      // added to DASH and watched working with zero keys held, because nothing
+      // it does needs a model — ADR 0032 decision 1's point holds exactly as it
+      // did when this was `[]`. What changed is that a person who wants to ask
+      // it a question now has a connection to press Connect on, instead of a
+      // refusal with nothing behind it.
+      connections: [modelProviderConnection(request.model_provider ?? DEFAULT_MODEL_PROVIDER)],
+      // The next-action half of the same connection (MAR-569) — what puts a
+      // line with a Connect button on the Connections page for somebody who
+      // has not connected one yet.
+      connection_requirements: modelProviderRequirement(),
       permissions: {
         read: [
           {

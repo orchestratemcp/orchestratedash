@@ -120,6 +120,21 @@ describe("tools/call", () => {
     const result = response?.result as { structuredContent: { refusal: string } };
     expect(result.structuredContent.refusal).toContain("rss, atom, hn_algolia");
   });
+
+  it("refuses a model provider DASH holds no key for, rather than scaffolding one it cannot resolve", () => {
+    const response = ask("tools/call", {
+      name: "dash_agent_scaffold",
+      arguments: {
+        directory: "/tmp/x",
+        name: "example",
+        summary: "a summary",
+        model_provider: "azure",
+      },
+    });
+    const result = response?.result as { isError: boolean; structuredContent: { refusal: string } };
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent.refusal).toContain("openrouter, anthropic, openai");
+  });
 });
 
 describe("the reader", () => {
