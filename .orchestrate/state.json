@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-06",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-08-26 evening reconcile: MAR-795 (VPS packet B, ADR 0031) merged bf0feda; MAR-800 resolved (claim did not reproduce; the real masked-hint envelope bug fixed, a3986b0); MCP MAR-788 merged 12421c1. MAR-785 PROVEN: autostart fired twice today on real sign-ins with no DASH (autostart.log receipts). Schedule receipt sits in the un-checkpointed wal — readable at Henriks next DASH open, which is act one of the VPS sitting (packet A five presses + packet B reboot script, on MAR-794/795). dash.sqlite base integrity ok; external wal-attach reads fail benignly while un-checkpointed.",
+  "lifecycle_note": "2026-09-06 UX planning: owner approved audit scope; MAR-875 through MAR-879 filed in Linear, MAR-871 and MAR-874 updated, MAR-861 plan comment published. Implementation remains planned. See docs/dash-ux-plan-2026-09-06.md and orchestrator prompt; no runtime proof or product changes this checkpoint.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2038,6 +2038,36 @@
     },
     {
       "id": "MAR-874",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-875",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-876",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-877",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-878",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null
+    },
+    {
+      "id": "MAR-879",
       "lifecycle": "planned",
       "linear_status": "Backlog",
       "commit": null
