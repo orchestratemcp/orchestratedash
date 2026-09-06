@@ -15,11 +15,13 @@ import {
    stays an anchor and why this file may still be rendered in the main process
    for the exported PDF. */
 import { LinkOut } from "./link-out";
-import { citedItems } from "../../lib/brief/citations";
+import { citedEntries } from "../../lib/brief/citations";
 import type { BriefCitations } from "../../lib/brief/citations";
 import {
   BRIEF_CITED_LABEL,
+  BRIEF_PRINT_SOURCES_HEADING,
   BRIEF_UNCITED_LABEL,
+  briefCitationMark,
   describeBriefAuthor,
   describeBriefCitations,
 } from "../../lib/copy/brief";
@@ -784,9 +786,23 @@ export function BriefBody({
   artifact,
   citations,
   adjudications = [],
+  print = false,
 }: {
   artifact: BriefArtifact;
   citations: BriefCitations | null;
+  /**
+   * Whether this is being rendered for the exported PDF (MAR-875).
+   *
+   * Defaulted to false, so every screen caller is unchanged and the one caller
+   * that prints has to say so. What it adds is `BriefPrintSources` at the end —
+   * see that component for why a printed page cannot make do with the marks
+   * alone. It adds nothing else, and in particular it does not change a single
+   * word of the document: `electron/brief-pdf.ts` prints the same React output
+   * the screen draws, which is ADR 0025 decision 4's whole argument, and a
+   * `print` branch that rewrote the prose would be the second escaper that
+   * argument exists to refuse.
+   */
+  print?: boolean;
   /**
    * What became of asking a committee to judge this, newest first (MAR-863).
    *
@@ -842,6 +858,11 @@ export function BriefBody({
           ))}
         </section>
       ))}
+
+      {/* MAR-875. The list the marks index, on the printed page only. Above the
+          verdict because it is part of the document rather than a judgement of
+          it. */}
+      {print ? <BriefPrintSources citations={resolved} /> : null}
 
       {/* Under the document, because it is a judgement *of* the document and a
           reader who meets the verdict first reads the prose through it. */}
@@ -998,7 +1019,7 @@ function BriefParagraphBody({
   paragraph: BriefArtifact["document"]["sections"][number]["paragraphs"][number];
   citations: BriefCitations;
 }): ReactNode {
-  const cited = citedItems(paragraph.items, citations);
+  const cited = citedEntries(paragraph.items, citations);
 
   return (
     <>
@@ -1015,22 +1036,84 @@ function BriefParagraphBody({
         <p className="muted brief-cited">
           {BRIEF_CITED_LABEL}
           {": "}
-          {cited.map((item, index) => (
-            <span key={`${item.headline}:${String(index)}`}>
-              {index === 0 ? null : " · "}
-              {/* The headline is the link text and the address is what the
-                  anchor carries — `DigestItem`'s rule, and the address here
-                  came from the agent's own collected row rather than from
-                  anything the model wrote. */}
+          {cited.map(({ item, position }, index) => (
+            /*
+             * MAR-875. A mark rather than a headline.
+             *
+             * The `title` sits on this wrapper rather than on the anchor
+             * because `LinkOut` takes no such prop and this component may not
+             * reach into it — and a `title` on an ancestor is what the browser
+             * shows on hover of its descendants anyway, so the tooltip is the
+             * headline for a link and for a bare mark alike.
+             *
+             * The accessible name comes from the visually hidden headline
+             * inside the mark rather than from an `aria-label` over it, which
+             * is the stronger of the two: an `aria-label` would REPLACE the
+             * number a sighted reader is chasing, and a person moving by links
+             * would hear the headline with no way to tell which citation it
+             * was.
+             */
+            <span
+              className="brief-citation"
+              key={`${item.headline}:${String(index)}`}
+              title={item.headline}
+            >
+              {index === 0 ? null : " "}
+              {/* The address is the row's own `item_url` — collected by the
+                  agent, checked against the fingerprint, and never a string
+                  the model produced. `DigestItem`'s rule. */}
               {item.item_url === undefined ? (
-                item.headline
+                <span>
+                  {briefCitationMark(position)}
+                  <span className="visually-hidden">{` ${item.headline}`}</span>
+                </span>
               ) : (
-                <LinkOut href={item.item_url}>{item.headline}</LinkOut>
+                <LinkOut href={item.item_url}>
+                  {briefCitationMark(position)}
+                  <span className="visually-hidden">{` ${item.headline}`}</span>
+                </LinkOut>
               )}
             </span>
           ))}
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * Every collected row the document points at, spelled out (MAR-875).
+ *
+ * **Print only.** On screen the marks are numbers and the list they index is one
+ * press away in the `Sources` disclosure the author's panel draws; in a PDF
+ * there is nothing to press, so a document whose citations were numbers alone
+ * would carry citations nobody could follow. The list is therefore printed once,
+ * at the end, in the position a reader already looks for it.
+ *
+ * The whole collected list rather than only the cited subset, and the numbering
+ * is the list's own — a mark reading `[12]` has to find row twelve, which it
+ * cannot do if the list has been compacted down to the rows somebody cited.
+ */
+function BriefPrintSources({ citations }: { citations: BriefCitations }): ReactNode {
+  if (citations.state !== "matched" || citations.items.length === 0) {
+    // Nothing was joined, so there is no list to print and no claim to make
+    // about one. The notice above the document has already said why.
+    return null;
+  }
+  return (
+    <section className="brief-sources">
+      <h3>{BRIEF_PRINT_SOURCES_HEADING}</h3>
+      <ol className="brief-sources-items">
+        {citations.items.map((item, index) => (
+          <li key={`${item.headline}:${String(index)}`}>
+            {item.item_url === undefined ? (
+              <span className="wrap">{item.headline}</span>
+            ) : (
+              <LinkOut href={item.item_url}>{item.headline}</LinkOut>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

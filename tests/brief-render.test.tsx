@@ -158,14 +158,47 @@ describe("the brief on DASH's own card", () => {
   });
 
   it("links a cited paragraph to the row DASH collected, not to model text", () => {
-    const html = outputsHtml();
+    /*
+     * The brief's card alone, which MAR-875 made load-bearing rather than
+     * merely tidy: the digest card on the same page carries these addresses
+     * legitimately, so a whole-page assertion would go on passing after the
+     * citations stopped being links at all.
+     */
+    const html = briefOnlyHtml([DIGEST]);
     expect(html).toContain(BRIEF_CITED_LABEL);
     // The address comes from the digest item's own `item_url`. Nothing in
     // `document` carries one — `readBrief` drops any paragraph that does.
     expect(html).toContain('href="https://news.test/prices"');
     expect(html).toContain('href="https://news.test/supervision"');
-    // The headline is the link text; a bare address is never printed.
-    expect(html).toContain(">Providers cut prices</a>");
+  });
+
+  /**
+   * MAR-875. The citation is a mark now, and the mark has to be followable.
+   *
+   * What it replaced was the full headline of every cited row printed under
+   * every paragraph — on the proof scout, thirty headlines under a paragraph of
+   * four sentences, and the same thirty again under the next one.
+   *
+   * Three things have to survive the compression, and each fails separately:
+   * the number has to be the row's own position (so `[2]` means the same row in
+   * every paragraph and in the Sources list), the anchor has to still be a real
+   * anchor to the row's collected address, and a person who cannot see the
+   * number has to be told what it points at.
+   */
+  it("cites by the row's own position rather than by reprinting its headline", () => {
+    const html = briefOnlyHtml([DIGEST]);
+    // Position 0 and position 1 of the digest, one-based on the page.
+    expect(html).toContain("[1]");
+    expect(html).toContain("[2]");
+    // The headline is no longer the visible link text.
+    expect(html).not.toContain(">Providers cut prices</a>");
+    // It is still the accessible name and still the hover text, so the mark can
+    // be followed without opening it.
+    expect(html).toContain('title="Providers cut prices"');
+    expect(html).toContain('<span class="visually-hidden"> Providers cut prices</span>');
+    // A real anchor, not a span with a click handler: keyboard order follows
+    // reading order because the mark is where the sentence is.
+    expect(html).toMatch(/<a[^>]*href="https:\/\/news\.test\/prices"[^>]*>\[1\]/);
   });
 
   it("marks a paragraph the model attached to nothing", () => {
@@ -251,7 +284,9 @@ describe("the author's own panel", () => {
     // `alreadyShown` deliberately empty: MAR-668 has this region yield its body
     // when DASH's own card drew the same artifact above it, and a fixture that
     // passed the id would be testing the yield rather than the renderer.
-    const html = decode(renderToStaticMarkup(<AgentPanel view={view} alreadyShown={new Set()} />));
+    const html = decode(
+      renderToStaticMarkup(<AgentPanel view={view} alreadyShown={new Map()} />),
+    );
     expect(html).toContain("Two providers cut their rates this week.");
     expect(html).toContain('href="https://news.test/prices"');
   });

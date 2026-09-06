@@ -294,6 +294,60 @@ export const PANEL_ALREADY_SHOWN =
   "Shown in full at the top of this page, under Generated assets.";
 
 /**
+ * The one place a run's collected items are drawn on the Output stage
+ * (MAR-875).
+ *
+ * ## What was on the screen before this existed
+ *
+ * MAR-668's pointer above fixed the case it could see — an author's `report`
+ * bound to the artifact the stage had just drawn — and left the case it could
+ * not. On the proof scout the stage draws a **brief**, whose paragraphs cite
+ * the run's digest by position; the digest is a different artifact with a
+ * different id, so the panel drew it in full under "The latest digest" *and*
+ * as a thirty-row table under "Every headline in the latest digest", while
+ * every paragraph above printed the full headline of everything it cited. The
+ * same thirty rows, three times, on one screen, with no rule broken anywhere.
+ *
+ * ## Why one disclosure rather than three pointers
+ *
+ * A pointer per section would be three lines saying the same thing about the
+ * same list, which is the shape MAR-646 spent a packet removing from this page.
+ * What a reader actually wants of a collected list under a written result is
+ * *the option of it*: closed by default, opened when a citation number needs
+ * checking, and offering the two readings the author declared — the list and
+ * the table — as two views of one set of rows rather than as two sections.
+ *
+ * ## Why these strings may sit inside the author's region
+ *
+ * `PANEL_ALREADY_SHOWN`'s own footing, unchanged: they are DASH's, fixed, and
+ * no manifest can replace them. The affordance is a `<details>`, which ADR 0008
+ * amendment 1 already admits here and which submits nothing, changes no record
+ * and navigates nowhere. It is deliberately **not** a pair of buttons switching
+ * one view for another — a control inside a box somebody else frames is the one
+ * thing ADR 0008 will not have, and two disclosures cost nothing but a press.
+ */
+export const PANEL_SOURCES_COPY = {
+  /**
+   * The count is the point, and it is DASH's own count of rows rather than
+   * anything the author declared. A disclosure labelled only "Sources" asks a
+   * person to open it to find out whether it is worth opening.
+   */
+  summary: (count: number): string =>
+    count === 1 ? "Sources (1)" : `Sources (${String(count)})`,
+  /**
+   * Said before the two views rather than after them, because it is the answer
+   * to "why is this collapsed" and a reader who has already opened both views
+   * has stopped asking.
+   */
+  meaning:
+    "These are the items this agent collected on this run. The result above was written from them, so they are kept here once instead of being repeated under every section.",
+  /** One reading of the rows. Never a button — see this block's own note. */
+  list_summary: "Read them as a list",
+  /** The other, and the author's own columns decide what it shows. */
+  table_summary: "Read them as a table",
+} as const;
+
+/**
  * What a `report` or an `outputs` section says when nothing has arrived.
  *
  * Said about the agent, never about the person reading it: an agent that has not

@@ -184,6 +184,23 @@ export interface PanelOutputsView extends PanelSectionBaseView {
 
 export interface PanelTableView extends PanelSectionBaseView {
   kind: "table";
+  /**
+   * The artifact these rows were read out of, or null when there was none
+   * (MAR-875).
+   *
+   * **Not for rendering, and it must never be rendered** — it is a raw
+   * identifier and `tests/panel-render.test.tsx` fails the whole surface if one
+   * reaches the markup. It is carried so a renderer can answer the one question
+   * it could not answer before: *are these rows a second drawing of something
+   * the stage above has already shown?* A `report` section carries a card and
+   * could always be asked; a table carried its rows and nothing about where
+   * they came from, which is exactly why MAR-668 exempted tables and why the
+   * scout still drew thirty headlines a third time.
+   *
+   * The parallel is `ArtifactReference` in `lib/views/artifacts.ts`: the one
+   * place an internal name is kept is a named field a reviewer can grep for.
+   */
+  source_artifact_id: string | null;
   columns: PanelTableColumn[];
   /** Row-major, one entry per declared column, in declared order. */
   rows: PanelCellView[][];
@@ -236,6 +253,30 @@ export type PanelView =
       /** The author's title, or DASH's own when they declared none. */
       title: string;
       sections: PanelSectionView[];
+      /**
+       * The same declaration bound to one run at a time, keyed by run id
+       * (MAR-875).
+       *
+       * ## The mixing this exists to stop
+       *
+       * `sections` above binds against **every** artifact this agent has
+       * produced, newest first, which is right for a panel that is a standing
+       * account of an agent. It is wrong the moment the surface above it is
+       * showing one selected run: pressing Sunday's briefing in the rail
+       * changed which card DASH drew and left the author's panel describing
+       * Tuesday's, so one screen carried two runs and said so nowhere.
+       *
+       * Each entry is `resolution.sections` re-bound against that run's records
+       * alone. A `dash_fact` metric is unchanged — `run_count` is a fact about
+       * the agent and stays one — and an `artifact_field` metric, a `report`, an
+       * `outputs` list and a `table` all narrow to what that run made.
+       *
+       * Empty for a panel whose agent has produced nothing, and a key exists
+       * only for a run that produced an artifact, so `panelForRun` falls back
+       * to `sections` rather than drawing an empty panel for a run with
+       * nothing in it.
+       */
+      by_run: Record<string, PanelSectionView[]>;
     }
   /** One stated card and nothing else. See `PANEL_NEWER_VERSION`. */
   | { kind: "newer_version"; title: string; card: PanelCard }
@@ -288,9 +329,75 @@ export function buildPanelView(manifest: unknown, context: PanelContext): PanelV
         kind: "declared",
         title: resolution.title ?? PANEL_COPY.heading,
         sections: resolution.sections.map((section, at) => buildSection(section, at, context)),
+        /*
+         * MAR-875. The same sections, once per run that produced something.
+         *
+         * Built here rather than by the page, because the page has no manifest
+         * and must not acquire one: `resolvePanel` is the only door into this
+         * module (see the header) and a second binding path is the thing that
+         * argument exists to prevent. The cost is bounded by the caller's own
+         * record list, which `lib/views/build.ts` already caps.
+         */
+        by_run: sectionsByRun(resolution.sections, context),
       };
   }
 }
+
+/**
+ * One set of bound sections per run, over the records the caller passed in.
+ *
+ * The grouping preserves order inside a run, because the records arrive newest
+ * first and `newestOfRole` reads the first match — the same rule the
+ * agent-wide binding follows, applied to a smaller list.
+ */
+function sectionsByRun(
+  sections: readonly PanelSectionV1[],
+  context: PanelContext,
+): Record<string, PanelSectionView[]> {
+  const runs = new Map<string, RunArtifactRecord[]>();
+  for (const record of context.artifacts) {
+    const runId = record.artifact.run_id;
+    if (runId.length === 0) {
+      continue;
+    }
+    const held = runs.get(runId);
+    if (held === undefined) {
+      runs.set(runId, [record]);
+    } else {
+      held.push(record);
+    }
+  }
+
+  const built: Record<string, PanelSectionView[]> = {};
+  for (const [runId, records] of runs) {
+    // `facts` and `resolveCitations` travel unchanged: a DASH fact is about the
+    // agent whatever run is selected, and the citation join is per artifact.
+    const scoped: PanelContext = { ...context, artifacts: records };
+    built[runId] = sections.map((section, at) =>
+      /*
+       * An `outputs` section is the exception, and the exception is about what
+       * the author asked for.
+       *
+       * Every other binding is singular — *the* latest digest, *the* rows of
+       * it, *the* number in it — and each of them silently meant "the newest
+       * run" while the stage showed an older one. That is the mixing this whole
+       * field exists to stop.
+       *
+       * An `outputs` section is not singular. `lib/panel-spec.ts` defines it as
+       * every output of a role, capped by the author, and narrowing it to one
+       * run would answer a question nobody asked: the section labelled
+       * "Everything it produced" would produce one run's worth. So it keeps the
+       * agent-wide records, and the entries in it that the stage has already
+       * drawn are the ones `PanelArtifactCard` points at rather than redraws.
+       */
+      section.type === "outputs"
+        ? buildSection(section, at, context)
+        : buildSection(section, at, scoped),
+    );
+  }
+  return built;
+}
+
 
 function buildSection(
   section: PanelSectionV1,
@@ -362,14 +469,17 @@ function buildTable(
   at: number,
   context: PanelContext,
 ): PanelTableView {
+  const record = newestOfRole(context.artifacts, section.source_role);
   const base = {
     kind: "table" as const,
     at,
     label: section.label,
     columns: section.columns,
+    // MAR-875. Where the rows came from, so a renderer can tell a second
+    // drawing from a first. Never rendered — see the field's own note.
+    source_artifact_id: record === null ? null : record.artifact.artifact_id,
   };
 
-  const record = newestOfRole(context.artifacts, section.source_role);
   if (record === null) {
     return {
       ...base,
