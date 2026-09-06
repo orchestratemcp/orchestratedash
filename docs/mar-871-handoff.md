@@ -3,7 +3,8 @@
 Client: Claude Code `--model opus`, worker lane D of the wave-3 UX fan-out.
 Worktree `C:\Users\henri\AppData\Local\Temp\wt-ux871-s1`, branch
 `000henrik/mar-871-server-page` from `origin/master` `0e52211`, merged forward
-to `ccfe220` before push. PR #325.
+to `ccfe220` before push. PR #325. Five commits: the packet, this handoff, two
+fixes that a capture run and a re-read found, and the frames.
 
 **Nothing here is machine-affecting.** No Electron shell smoke was run, no
 installed store was opened, no host was reached, nothing was deployed, and no
@@ -38,7 +39,8 @@ sentences here would be MAR-605's defect with more words.
 | `not_set_up` | `awaiting_key_install`, `helper_not_installed`, `key_not_on_server`, `runner_refused_credential` | Set up this server / Set it up again |
 | `checking` | `probing` | none; the control says `Checking...` |
 | `never_checked` | `not_checked` | Check now |
-| `needs_your_ok` | `confirm_host_key`, `host_key_not_trusted` | Yes, this is my server |
+| `needs_your_ok` | `confirm_host_key` | Yes, this is my server |
+| `needs_your_ok` | `host_key_not_trusted` | Check now — there is no code to compare yet |
 | `up` | `no_runner_there`, `reachable` naming nothing | Put an agent here |
 | `in_use` | `reachable` naming something | Check now |
 | `unreachable` | the five walls where DASH never got in | Check now |
@@ -114,20 +116,50 @@ pnpm vitest run tests/server-card.test.ts tests/server-card-render.test.tsx
                       -> Test Files 10 passed (10)
                          Tests 239 passed | 2 skipped (241)
 
-pnpm test             -> Test Files 1 failed | 265 passed (266)
-                         Tests 4 failed | 5050 passed | 13 skipped (5067)
+pnpm test             -> Test Files 2 failed | 266 passed (268)
+                         Tests 4 failed | 5069 passed | 13 skipped (5086)
 ```
 
-The four failures are all in `tools/dash-mcp/tests/template-run.test.ts` and are
-**not this lane's files**. Re-run alone, as the standing note about that suite
+The focused line above is the final one, taken after both fixes below. The four
+failures in the full run are in `tools/dash-mcp/tests/template-run.test.ts` and
+`tests/store-damage.test.ts` — **neither is this lane's file**, and
+`store-damage` imports only `lib/copy/recovery`, which this packet does not
+touch. Both were re-run alone, as the standing note about parallel load
 requires:
 
 ```
 pnpm vitest run tools/dash-mcp/tests/template-run.test.ts
                       -> Test Files 1 passed (1); Tests 11 passed (11)
+pnpm vitest run tests/store-damage.test.ts
+                      -> Test Files 1 passed (1); Tests 28 passed (28)
 ```
 
-So they are the known parallel-load flake in that suite, not a regression.
+`store-damage`'s failure was a 5000ms test timeout, on a machine that had just
+run three Electron capture scenes. Both are the known load flake, not a
+regression.
+
+### Two defects the capture run itself found
+
+Worth recording, because neither would have been caught by a test:
+
+1. **The recipe pushed the page sideways.** The first capture run photographed a
+   horizontal scrollbar on the window with the disclosure clipped at the right
+   edge — while its own measurement reported `page_overflows: false` on every
+   frame. Two faults, and the second is why the first survived: the measurement
+   ran *before* the recipe was opened, and the recipe holds the only thing on
+   this card that will not reflow. A grid or flex item's automatic minimum size
+   is its content width, so the `<pre>` holding the shell snippet refused to
+   shrink however many `overflow-x` rules sat on it. `min-width: 0` fixes it,
+   and the harness now measures a second time with the recipe open. Screenshots
+   find what measurements cannot — and then the measurement is widened so that
+   next time they do not have to.
+2. **A dead confirm button.** The state fold sent both `confirm_host_key` and
+   `host_key_not_trusted` to `needs_your_ok` and gave both the same control, but
+   only the first carries a fingerprint — so on the second the press had no
+   value behind it and did nothing. It gets **Check now** instead, which is what
+   can actually fetch the code, and its guidance sentence stays above the
+   button. Whether that sentence is suppressed is now decided by the control
+   rather than by the state.
 
 ### Screenshots
 
@@ -146,6 +178,25 @@ scratch `--user-data-dir` and `DASH_CAPTURE_SCENE`, after
   path.
 - `deployed` — one record DASH has already sent an agent to: the only scene in
   which "what is on this server" and the page's own table draw anything.
+
+35 files landed under `qa-screenshots-mar-871/`: six per scene at 1280/768/375
+in light and dark, six recipe frames per scene with a card, and two
+`servers-checked-*`. What the run said:
+
+```
+[servers] seeded scene saved: 1 server
+[servers]   comfortable {... "card_state":"is-never-checked",
+                              "primary_actions":["Check now"], ...}
+[servers]   recipe: 5 steps on screen
+[servers] checked: the card now reads "No answer, at this address"
+[servers] wrote 14 images and layout.json
+[servers] no frame overflowed sideways
+```
+
+The checked frame is a real refusal: the probe went renderer -> preload -> main
+-> `ssh` against the seeded TEST-NET-1 address and spent the connect timeout.
+The banner and the card agree on it, which is D1's invariant in the direction
+the old code happened to get right.
 
 Every scene with a card also opens the **recipe** by pressing the real controls
 — the overflow's summary, the setup control, then the button that fetches the
