@@ -26,13 +26,45 @@ checkout and builds itself on first use.
 
 | Tool | What it does |
 | -- | -- |
+| `dash_agent_interview` | Asks the person what they want, one or two questions at a time, before anything is built. Reads a detailed opening answer and skips whatever it settled. Names what a DASH agent cannot do, with the nearest thing that works. Holds no credential and calls no model. |
+| `dash_agent_plan` | Turns a finished interview into a recap a person can read and the exact `dash_agent_scaffold` arguments behind it. Refuses while anything is unanswered. |
 | `dash_agent_scaffold` | Writes the whole folder. Validates the manifest **before** writing anything, so either the folder imports or nothing exists. |
 | `dash_agent_validate` | Runs `validateManifest` + `checkManifestConstraints` and returns each problem with the JSON pointer, the constraint at it, and the allowed values. |
 | `dash_agent_install` | Validates, writes a single-use handoff, and opens DASH. **DASH asks the person**; this tool cannot answer for them. |
 
-All three refuse rather than advise. A refusal comes back as `isError` with a
+All of them refuse rather than advise. A refusal comes back as `isError` with a
 `refusal` string and, where there is one, a `problems` array — never prose to
 be interpreted.
+
+## The interview
+
+The mechanism that stopped wrong manifests reaching the import dialog does
+nothing about the other half of the problem: an agent that imports perfectly
+and is not what anybody asked for. "Keep an eye on AI news for me" does not say
+which sites, how often, what comes back, or where it lands — and most of what
+people assume a DASH agent can do (post to Slack, send email, write a document,
+act on their behalf, run every hour) it cannot.
+
+So the server asks. It holds the question order, decides what is still unknown
+from what has been answered, and reads a detailed opening answer for whatever it
+settles — by written-out rules, never by a model, because a server that
+acquired an LLM call would be a connection DASH brokers rather than a tool a
+coding agent holds (ADR 0032 decision 7). Anything a sentence says two ways
+comes back as ambiguous and is asked.
+
+Every question offers the unsupported answers by name. That is the point of it:
+somebody who wanted Slack finds out during the interview, with Discord and the
+agent's own page named as what does work, rather than after the agent is
+installed and silent.
+
+The draft lives in the author's own project directory
+(`<project>/.dash/interview-<id>.json`), never in DASH's data directory, and
+passing the id back resumes it.
+
+**Asking for something is not switching it on.** A person who asks for a 7am
+daily run gets a manual agent whose recap says the daily time is written down as
+what they wanted and is theirs to switch on in DASH after the first run. Nothing
+here sets a schedule, connects Discord, posts anywhere, or deploys.
 
 ## What it will not do
 
@@ -76,7 +108,8 @@ launch.mjs                   builds if stale, then runs the server
 build.mjs                    esbuild -> dist/ (gitignored)
 src/
   server.ts       JSON-RPC over stdio; transport only, no policy
-  agent-tools.ts  the three tools
+  interview.ts    the interview state machine; pure, and holds no model
+  agent-tools.ts  the five tools
   scaffold.ts     the file plan
   validate.ts     DASH's verdict, plus the fix for each problem
   handoff.ts      writing dash-handoff.json and opening dash://
