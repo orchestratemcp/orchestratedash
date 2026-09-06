@@ -8773,4 +8773,30 @@ main:has(.agent-cockpit) {
   color: var(--text-muted);
 }
 
+
+/*
+ * A summary holding an h3, which the shared rule only covers for h2.
+ *
+ * The .section-disclosure > summary > h2 rule above sets display:inline so the
+ * platform's triangle sits on the heading's line. The chief bridge's three
+ * disclosures use h3 — they are subordinate to that section's own h2 — so they
+ * fell through it, and each drew a bare triangle on its own line with its
+ * heading orphaned underneath.
+ *
+ * Visible on master in
+ * qa-screenshots-mar-877/before/notifications-1280-light-comfortable.png, and
+ * found by looking at the frame rather than by any measurement: nothing
+ * overflowed, no counter moved and no test could see it.
+ *
+ * Added here rather than beside the h2 rule so that no shared selector is
+ * restyled in place while other lanes are live on this file. The Notifications
+ * page is the only surface in the app that puts an h3 in a disclosure summary.
+ */
+.section-disclosure > summary > h3 {
+  display: inline;
+}
+
+.section-disclosure > summary:hover > h3 {
+  color: var(--accent);
+}
 /* ==== MAR-877 end ==== */
