@@ -32,7 +32,7 @@ Historical first-run/agent-loop proofs remain in the index and archives.
 For Wave 3 read `docs/mar-861-orchestrator-handoff-2026-09-06.md` and live
 MAR-861. Reconcile historical release/deadline/network statements before
 runtime dispatch. MAR-862 builder and MAR-863 adjudication are recorded
-proven; MAR-868 poll and MAR-865 VPS still need remaining specified proofs.
+proven; MAR-868 is proven on the installed build (2026-09-06, judgement 5, page polled on its own; see Linear); MAR-865 VPS still needs its Discord half.
 MAR-873's merged handoff is documentation only, not working model fallback.
 
 ## Approved UX work — all planned
@@ -70,6 +70,15 @@ approved scope comments. Global Settings is separate from MAR-874.
   new connector work is authorized by this UX scope.
 
 ## Proof and dispatch
+
+2026-09-06 evening dispatch (Claude orchestrator): five lanes in separate
+worktrees, disjoint ownership, all branched from master 0e52211 - MAR-875
+(Opus), MAR-877 (Opus), MAR-871 (Opus), MAR-878 template-prerequisite half
+(Sonnet), MAR-880 (Sonnet, new: one failed poll settles a judgement as
+abandoned). MAR-881 (page scrolls to top on a poll tick) filed, serialized
+behind MAR-875. Prompts under docs/mar-<id>-session-prompt.md and
+docs/ux-lanes-common-2026-09-06.md. The orchestrator session cannot merge
+PRs (permission classifier); Henrik merges on green.
 
 Index after filing: 133 merged, 72 proven, 33 planned entries (not unique
 issues). **99 distinct issues have merged entries and no proven entry.**
