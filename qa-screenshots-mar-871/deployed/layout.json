@@ -1,0 +1,227 @@
+{
+  "captured_at": "2026-09-06T23:28:43.686Z",
+  "measurements": [
+    {
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 171
+    },
+    {
+      "viewport": 1279,
+      "theme": "light",
+      "density": "comfortable",
+      "recipe_open": true,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 284
+    },
+    {
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 171
+    },
+    {
+      "viewport": 767,
+      "theme": "light",
+      "density": "comfortable",
+      "recipe_open": true,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 515
+    },
+    {
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 171
+    },
+    {
+      "viewport": 374,
+      "theme": "light",
+      "density": "comfortable",
+      "recipe_open": true,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 892
+    },
+    {
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 171
+    },
+    {
+      "viewport": 1279,
+      "theme": "dark",
+      "density": "comfortable",
+      "recipe_open": true,
+      "page_scroll_width": 1279,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 284
+    },
+    {
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 171
+    },
+    {
+      "viewport": 767,
+      "theme": "dark",
+      "density": "comfortable",
+      "recipe_open": true,
+      "page_scroll_width": 767,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 515
+    },
+    {
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 171
+    },
+    {
+      "viewport": 374,
+      "theme": "dark",
+      "density": "comfortable",
+      "recipe_open": true,
+      "page_scroll_width": 374,
+      "page_overflows": false,
+      "server_cards": 1,
+      "wizard_cards": 0,
+      "hosting_notes": 0,
+      "page_summary": "One agent copy DASH sent, on one server. Each row opens that agent's own settings, where the sending happens.",
+      "card_state": "is-never-checked",
+      "primary_actions": [
+        "Check now"
+      ],
+      "standing_chip": "Not checked",
+      "host_contents": 1,
+      "widest_overflow": 892
+    }
+  ]
+}
