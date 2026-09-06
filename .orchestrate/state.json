@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-06",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-06 UX wave dispatch: MAR-868 proven on the installed build (judgement 5, 18:54:59Z-18:57:15Z, page polled on its own). Five lanes dispatched in separate worktrees: MAR-875, MAR-877, MAR-871, MAR-878 (template prerequisite half), MAR-880 (new, from the proof). MAR-881 filed, serialized behind MAR-875. Planning docs PR #319 open (docs only). No merges: the orchestrator session cannot merge; Henrik merges on green.",
+  "lifecycle_note": "2026-09-07 00:15: MAR-868 proven; MAR-880 (#322), MAR-878 template half (#320), MAR-876 (#324) merged. Lanes MAR-875/877/871 resumed after the usage-limit cutoff; MAR-874, MAR-878b, MAR-879 prompts ready, dispatch after MAR-875 lands.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2054,9 +2054,10 @@
     },
     {
       "id": "MAR-876",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "29542c1",
+      "note": "PR #324: dash_agent_interview + dash_agent_plan in tools/dash-mcp; pure state machine, no model call, drafts under <project>/.dash, recap route read from scaffoldManifest planned_route; schedules stay intent. Fixture tests + hand-driven stdio server transcripts. Proof owed: end-to-end host session, DASH import, first manual run."
     },
     {
       "id": "MAR-877",
