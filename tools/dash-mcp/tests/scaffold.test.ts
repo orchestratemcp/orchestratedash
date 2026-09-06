@@ -90,9 +90,58 @@ describe("the scaffolded manifest", () => {
     expect(roles).toContain("digest");
   });
 
-  it("asks for no connection, so it can be added without a credential", () => {
-    const manifest = scaffoldManifest(request()) as { agent_dom: { connections: unknown[] } };
-    expect(manifest.agent_dom.connections).toEqual([]);
+  /**
+   * MAR-878: the scaffold now declares a `model_provider` connection so the
+   * agent can be asked a question at all — `lib/views/ask.ts` refuses
+   * `no_provider` on an agent whose manifest declares none. `optional: true`
+   * is the reason "asks for" and "can be added without a credential" are not a
+   * contradiction: nothing here blocks import with zero keys held.
+   */
+  it("declares one optional model-provider connection, so it can still be added without a credential", () => {
+    const manifest = scaffoldManifest(request()) as {
+      agent_dom: {
+        connections: {
+          id: string;
+          provider: string;
+          ownership: string;
+          capabilities: { id: string; access: string }[];
+          fields: { id: string; kind: string; required: boolean }[];
+        }[];
+        connection_requirements: { requirements: { id: string; connection_id: string; optional: boolean }[] };
+      };
+    };
+    expect(manifest.agent_dom.connections).toHaveLength(1);
+    const [connection] = manifest.agent_dom.connections;
+    expect(connection).toMatchObject({
+      id: "model_provider",
+      provider: "openrouter",
+      ownership: "dash_managed",
+    });
+    expect(connection.capabilities).toEqual([
+      expect.objectContaining({ id: "openrouter.chat.completion", access: "spend" }),
+    ]);
+    expect(connection.fields).toEqual([
+      expect.objectContaining({ id: "api_key", kind: "secret", required: true }),
+    ]);
+
+    expect(manifest.agent_dom.connection_requirements.requirements).toEqual([
+      expect.objectContaining({ id: "model_provider", connection_id: "model_provider", optional: true }),
+    ]);
+  });
+
+  it("declares the connection for whichever provider was asked for", () => {
+    const manifest = scaffoldManifest(request({ model_provider: "anthropic" })) as {
+      agent_dom: { connections: { provider: string; capabilities: { id: string }[] }[] };
+    };
+    expect(manifest.agent_dom.connections[0]?.provider).toBe("anthropic");
+    expect(manifest.agent_dom.connections[0]?.capabilities[0]?.id).toBe("anthropic.chat.completion");
+  });
+
+  it("never puts a delivery variable on the model-provider field, since DASH spends it itself", () => {
+    const manifest = scaffoldManifest(request()) as {
+      agent_dom: { connections: { fields: { technical?: unknown }[] }[] };
+    };
+    expect(manifest.agent_dom.connections[0]?.fields[0]?.technical).toBeUndefined();
   });
 });
 

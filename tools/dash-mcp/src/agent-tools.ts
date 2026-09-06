@@ -17,8 +17,10 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
+import { AI_PROVIDER_IDS, type AiProviderId } from "../../../lib/ai/providers";
 import { refuseStagingDirectory, templateRoot } from "./paths";
 import {
+  DEFAULT_MODEL_PROVIDER,
   deriveAgentId,
   planScaffold,
   scaffoldManifest,
@@ -42,6 +44,21 @@ export interface ScaffoldInput {
   display_name?: string;
   summary: string;
   sources?: readonly FeedSource[];
+  /**
+   * Which model provider the manifest's `model_provider` connection should
+   * name (MAR-878). One of `lib/ai/providers.ts`'s closed list, by value —
+   * `AI_PROVIDER_IDS` below. Defaults to `scaffoldManifest`'s own default
+   * (currently OpenRouter) when omitted. An unrecognised value is refused
+   * rather than passed through, the same rule `readSources` applies to a
+   * malformed source: a caller told about its mistake writes a correct
+   * manifest next time, a caller silently overridden does not.
+   */
+  model_provider?: string;
+}
+
+/** Is this string one of the providers DASH will hold a model key for? */
+function isAiProviderId(value: string): value is AiProviderId {
+  return (AI_PROVIDER_IDS as readonly string[]).includes(value);
 }
 
 export type ToolResult =
@@ -73,6 +90,19 @@ export function scaffoldAgent(input: ScaffoldInput, now: Date = new Date()): Too
     return { ok: false, refusal: staging };
   }
   const directory = path.resolve(input.directory);
+
+  let modelProvider: AiProviderId | undefined;
+  if (input.model_provider !== undefined) {
+    if (!isAiProviderId(input.model_provider)) {
+      return {
+        ok: false,
+        refusal:
+          `"${input.model_provider}" is not a model provider DASH holds a key for. ` +
+          `Use one of: ${AI_PROVIDER_IDS.join(", ")}.`,
+      };
+    }
+    modelProvider = input.model_provider;
+  }
 
   const agentId = deriveAgentId(input.name);
   if (agentId !== input.name) {
@@ -107,6 +137,7 @@ export function scaffoldAgent(input: ScaffoldInput, now: Date = new Date()): Too
     summary: input.summary.trim(),
     sources: input.sources ?? [],
     now,
+    model_provider: modelProvider,
   };
 
   // Judged before written. See the docblock.
@@ -164,6 +195,7 @@ export function scaffoldAgent(input: ScaffoldInput, now: Date = new Date()): Too
     agent: agentId,
     directory,
     renamed: agentId === input.name ? undefined : { asked: input.name, using: agentId },
+    model_provider: modelProvider ?? DEFAULT_MODEL_PROVIDER,
     files: plan.files.map((file) => file.path),
     manifest_valid: true,
     emits: ["digest", "brief"],

@@ -181,9 +181,18 @@ connection the user set up, and DASH holds the sign-in and performs it. The most
 a compromised agent can do is ask for an operation on a list and be refused for
 anything else.
 
-A scaffold with `connections: []` needs no credential at all, which is what lets
-it be added and watched working immediately. Keep it that way until the agent
-genuinely needs a provider.
+`dash_agent_scaffold` always declares one connection, `model_provider`, so the
+agent can be asked a question about what it found even though its own steps
+never use a model. It is `optional: true` and needs no credential to be added
+and watched working: nothing DASH does with a fresh scaffold depends on a key
+existing. What the connection buys is somewhere for a key to go. When the
+person has already connected a provider under DASH → Settings → AI, pressing
+"Give it to N waiting agents" there hands this agent that key with no further
+setup — that is the fleet adoption ADR 0013 describes, not something this tool
+does itself. Connecting it on the agent's own row works the same way. Pass
+`model_provider` (`openrouter`, `anthropic` or `openai`; defaults to
+`openrouter`) to match whichever the person already has, so the same key
+covers this agent too.
 
 ## When an import fails
 
