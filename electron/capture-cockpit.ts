@@ -760,18 +760,38 @@ async function measure(target: BrowserWindow): Promise<unknown> {
          const repeated = railTitles.filter((title) => stageText.includes(title));
 
          /*
-          * MAR-668's number: how many artifact **bodies** the author's declared
-          * region draws. Henrik's report was *"Now it renders the output 3
-          * times"* — one card from DASH and two from the manifest — and the
-          * body is the thing that was three times, not the title.
+          * MAR-668's number, re-aimed by MAR-875 at the claim it was always a
+          * proxy for.
           *
-          * Zero is the fixed state for an artifact the stage already drew. A
-          * digest the stage did *not* draw still renders in full here, which is
-          * the author keeping their ability to present.
+          * Henrik's report was *"Now it renders the output 3 times"* — one card
+          * from DASH and two from the manifest — and the body is the thing that
+          * was three times, not the title. The first version of this counted
+          * every readable \`.digest-items\` inside the author's region, which is
+          * a *proxy* for the claim rather than the claim: the panel is allowed
+          * to draw a body, and does whenever the open card is not the newest
+          * artifact. It read zero on the sweep because the sweep's frames open
+          * the newest, so a legitimate body would have failed this check as
+          * loudly as a duplicated one and nothing said so.
+          *
+          * MAR-875 removes a whole class of duplicate — a section that would
+          * redraw the run's collected rows is collapsed rather than pointed at
+          * — so the number is worth aiming at the sentence itself: a body
+          * inside the panel whose own text is ALSO in DASH's part of the stage.
+          * A digest the stage did not draw contributes nothing, which is the
+          * author keeping their ability to present; the same digest drawn twice
+          * contributes one, whichever section drew it.
+          *
+          * \`stageText\` is the stage with every \`.agent-panel\` removed — see
+          * \`own\` above — so this cannot match itself.
           */
          const panelBodies = stage === null
            ? 0
-           : [...stage.querySelectorAll(".agent-panel .digest-items")].filter(readable).length;
+           : [...stage.querySelectorAll(".agent-panel .digest-items, .agent-panel .brief-section")]
+               .filter(readable)
+               .filter((node) => {
+                 const sample = (node.textContent || "").trim().slice(0, 120);
+                 return sample.length > 0 && stageText.includes(sample);
+               }).length;
 
          /*
           * MAR-658. The fifth header cell, scoped to the action grid so the
@@ -810,6 +830,19 @@ async function measure(target: BrowserWindow): Promise<unknown> {
             * that resolve the same artifact are pointers to it.
             */
            panel_bodies: panelBodies,
+           /*
+            * MAR-875's own number beside MAR-668's: how many collapsed-source
+            * disclosures the author's region drew, and whether any of them
+            * shipped open. One or zero, and never open — the whole point of
+            * the disclosure is that the collected rows are an option rather
+            * than the first thing under the result.
+            */
+           panel_sources: stage === null
+             ? 0
+             : stage.querySelectorAll(".agent-panel-sources-disclosure").length,
+           panel_sources_open: stage === null
+             ? 0
+             : stage.querySelectorAll(".agent-panel-sources-disclosure[open]").length,
            stage_headings: stage === null
              ? []
              : [...stage.querySelectorAll("h2, h3")].filter(readable).map(text),
@@ -2106,8 +2139,12 @@ async function run(): Promise<void> {
    *
    * The author's region may draw a body — an artifact the stage did not show is
    * theirs to present in full. What it may not do is draw the body of the one
-   * the stage is already showing, and on this seed the stage always shows the
-   * newest, so the fixed number here is zero on every frame.
+   * the stage is already showing.
+   *
+   * MAR-875 made that sentence the measurement rather than a proxy for it: the
+   * counter matches a panel body against DASH's own part of the stage, so a
+   * legitimate body contributes nothing and a repeated one contributes whichever
+   * section drew it. Zero on every frame, and now zero for the stated reason.
    */
   const restated = measurements.filter(
     (entry) => ((entry as Record<string, number>)["panel_bodies"] ?? 0) > 0,

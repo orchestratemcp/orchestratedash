@@ -241,6 +241,133 @@ export function resolveOpenCard(
 }
 
 /**
+ * One run's outputs, kept together (MAR-875).
+ *
+ * ## What a flat list could not say
+ *
+ * `buildArtifactCards` returns the agent's whole history newest first, and the
+ * rail and the panel's history both drew it as one column of titles. A run that
+ * produced a digest *and* a brief written from it therefore appeared as two
+ * unrelated entries a day apart in wording — "Everything it collected",
+ * "What the week adds up to" — with nothing on the surface saying they were one
+ * piece of work. Pressing one and then the other looked like moving between two
+ * runs when it was moving inside one.
+ *
+ * ## Why grouping is the whole of it
+ *
+ * The order is not touched. Runs come out in the order their first card
+ * appeared, which is newest-first because the cards are, and the cards inside a
+ * group keep the order they arrived in — the rule `buildArtifactCards`' own note
+ * states and the reason it does not re-sort either.
+ *
+ * `from` is the group's first card's index in the flat list, so a caller that
+ * has a rule about position — the rail's accent edge on the newest, the
+ * history's one open card — can keep applying it without re-deriving anything.
+ */
+export interface ArtifactRunGroup {
+  run_id: string;
+  /** The day of the group's first card, as a person reads it. */
+  day: string;
+  /** Where this group starts in the flat list it was grouped from. */
+  from: number;
+  cards: ArtifactCardView[];
+}
+
+export function groupCardsByRun(cards: readonly ArtifactCardView[]): ArtifactRunGroup[] {
+  const groups: ArtifactRunGroup[] = [];
+  const at = new Map<string, ArtifactRunGroup>();
+  cards.forEach((card, index) => {
+    const runId = card.reference.run_id;
+    const held = at.get(runId);
+    if (held === undefined) {
+      const group: ArtifactRunGroup = {
+        run_id: runId,
+        day: card.history_day,
+        from: index,
+        cards: [card],
+      };
+      at.set(runId, group);
+      groups.push(group);
+      return;
+    }
+    held.cards.push(card);
+  });
+  return groups;
+}
+
+/**
+ * Everything of the selected run that the stage above has already put on
+ * screen (MAR-875).
+ *
+ * ## Why one id was not enough
+ *
+ * MAR-668 handed the author's panel a set of one — the artifact the Output
+ * stage drew — and that was the whole of what the stage could claim to have
+ * shown. ADR 0025's brief broke the claim without changing a line of it: a
+ * brief is *written from* a digest, its paragraphs cite that digest's rows by
+ * position, and DASH's own card rendered those rows under every paragraph. So
+ * the run's collected list was on the screen, in full, thirty headlines at a
+ * time — and the panel's `report` section bound to the digest role could not
+ * tell, because the digest's own `artifact_id` was not the brief's. Henrik saw
+ * the consequence rather than the cause: the same thirty headlines under the
+ * paragraphs, again in "The latest digest", again in a thirty-row table.
+ *
+ * The set is therefore the selected artifact **and the artifact it says it was
+ * derived from**. One hop and not a walk: `derived_from` is a declared parent
+ * rather than a graph, and a transitive closure over agent-authored ids is a
+ * loop waiting for the first agent that names its own artifact as its parent.
+ *
+ * ## Why the answer is a map and not a set
+ *
+ * Because the two members are on the screen in two different ways, and the
+ * difference decides what the panel should offer instead of them. The selected
+ * artifact's **body** is on the stage — every row of a digest, every paragraph
+ * of a brief. Its parent is there only as something the result was *written
+ * from*: the rows themselves are not on the page at all, which is exactly why
+ * the citation marks need a list to point at.
+ *
+ * A set would collapse those, and the panel would then either offer a list of
+ * rows two hundred pixels under the same list (when the digest is the selected
+ * card) or withhold the only copy of them (when the brief is). One value per id
+ * is the smallest thing that lets one rule cover both.
+ *
+ * ## What it does not do
+ *
+ * It looks nothing up. The parent is read off the artifact the caller already
+ * holds, so this stays a pure function over one card — importable by a
+ * component, testable against a literal, and unable to disagree with
+ * `resolveOpenCard` about which card is open, because it is handed the answer.
+ *
+ * Null in, empty out: a stage with no card has drawn nothing, and the panel's
+ * default is then "draw everything", which is the run detail page's situation.
+ */
+export type ArtifactShownAs =
+  /** The stage rendered this artifact itself — its rows, its paragraphs. */
+  | "body"
+  /** The stage rendered something written from it. Its rows are not on screen. */
+  | "source";
+
+export function resolveDrawnLineage(
+  card: ArtifactCardView | null,
+): Map<string, ArtifactShownAs> {
+  const drawn = new Map<string, ArtifactShownAs>();
+  if (card === null) {
+    return drawn;
+  }
+  drawn.set(card.reference.artifact_id, "body");
+  const { artifact } = card;
+  if (artifact.kind === "brief") {
+    const parent = artifact.derived_from.artifact_id;
+    // Never over the card's own entry: a brief that named itself as its parent
+    // is agent-authored nonsense, and "body" is the true answer for it.
+    if (parent.length > 0 && !drawn.has(parent)) {
+      drawn.set(parent, "source");
+    }
+  }
+  return drawn;
+}
+
+/**
  * Whether the thing itself can be shown right now.
  *
  * Two conditions and they are different questions: DASH has to know the shape

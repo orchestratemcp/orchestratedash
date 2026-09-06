@@ -99,7 +99,12 @@ import {
 import { buildAgentControl } from "../../../lib/views/agent-control";
 import { resolveAgentStage, type AgentStage } from "../../../lib/views/agent-stage";
 import type { InputRoleView } from "../../../lib/views/inputs";
-import { resolveOpenCard, type ArtifactCardView } from "../../../lib/views/artifacts";
+import {
+  resolveDrawnLineage,
+  resolveOpenCard,
+  type ArtifactCardView,
+} from "../../../lib/views/artifacts";
+import { panelForRun } from "../../../lib/views/panel-run";
 import { isRunInFlight, type InboxItem } from "../../../lib/workspace";
 import type {
   AgentDeployTarget,
@@ -838,16 +843,34 @@ function AgentWorkspace(): ReactNode {
   });
   const openOutput = params.get(AGENT_WORKSPACE_PARAMS.output);
   /*
-   * MAR-668. The one artifact the Output stage draws in full, by id.
+   * MAR-668, widened by MAR-875. Everything of the selected run the Output
+   * stage has put on the screen, by id.
    *
-   * A set of one, because the stage draws one card — MAR-646's rule, and the
-   * rail beside it is the index of the rest. It is a set rather than a string
-   * so the author's panel takes the same shape of answer if a later surface
-   * ever draws two, which is the change that would otherwise reintroduce the
-   * duplication one card at a time.
+   * A set rather than a string, because a card can put more than one artifact
+   * in front of a reader: a brief's paragraphs cite the run's digest by
+   * position and DASH's own card draws those rows, so the collected list is on
+   * the screen even though the artifact on the stage is the brief.
+   * `resolveDrawnLineage` is the one place that hop is decided — the page must
+   * not work it out a second way, for `resolveOpenCard`'s own reason.
    */
   const openCard = resolveOpenCard(view.outputs, openOutput);
-  const drawnOutputs = new Set(openCard === null ? [] : [openCard.reference.artifact_id]);
+  const drawnOutputs = resolveDrawnLineage(openCard);
+  /*
+   * MAR-875. Which run the author's panel is describing.
+   *
+   * The panel was bound to the agent's whole history and read the newest
+   * artifact of each role, so opening Sunday's briefing in the rail changed the
+   * card on the stage and left the box under it describing Tuesday. One screen,
+   * two runs, and nothing saying so. `panelForRun` narrows the sections to the
+   * selected run and falls back to the standing panel for a run DASH holds no
+   * artifacts of.
+   */
+  const openRun = openCard?.reference.run_id ?? null;
+  const openPanel = panelForRun(view.panel, openRun);
+  /* And whether the reader has left the newest run, which is the one fact the
+     narrowing above makes invisible when it works. */
+  const olderRun =
+    openRun !== null && view.outputs.length > 0 && view.outputs[0]?.reference.run_id !== openRun;
   const checklistFacts = {
     models: view.models,
     run_count: view.snapshot?.runs.length ?? 0,
@@ -1104,6 +1127,28 @@ function AgentWorkspace(): ReactNode {
      * panel yields the body for exactly that one. `resolveOpenCard` is the same
      * function `OutputsPanel` chooses the card with — see its own note on why
      * the page may not work it out a second way.
+     *
+     * ## And once per run, with the sources in one place (MAR-875)
+     *
+     * That fix held and the scout still drew the same thirty headlines three
+     * times, because the artifact the stage draws is the **brief** and the
+     * headlines belong to the digest it was written from — a different record,
+     * with a different id, that nothing on this page could see was already
+     * present. Two further things were wrong with it and neither had been
+     * named: the author's panel went on describing the *newest* run while the
+     * rail let a person open an older one, and a paragraph's citations printed
+     * the full headline of everything they cited.
+     *
+     * Three answers, all of them here:
+     *
+     * - `resolveDrawnLineage` widens "already shown" from one id to the
+     *   selected artifact **and what it was written from**, and says which is
+     *   which — the panel collapses the sections that would redraw the rows
+     *   into one closed `Sources (n)` disclosure;
+     * - `panelForRun` binds the panel to the run the reader opened, and the
+     *   sentence above it says so when that run is not the newest;
+     * - `BriefParagraphBody` cites by the row's own position, and the numbers
+     *   index the same list the disclosure holds.
      */
     output: (
       <>
@@ -1118,7 +1163,16 @@ function AgentWorkspace(): ReactNode {
           openId={openOutput}
           setFeedback={setFeedback}
         />
-        <AgentPanel alreadyShown={drawnOutputs} view={view.panel} />
+        {/* MAR-875. Said above the author's region rather than inside it: where
+            the reader is standing is DASH's fact, and a box the author frames is
+            the one place it must not appear to come from. Renders nothing at all
+            on the newest run, which is every ordinary visit to this stage. */}
+        {olderRun ? (
+          <p className="muted wrap agent-output-older-run" role="status">
+            {AGENT_OUTPUTS_COPY.older_run}
+          </p>
+        ) : null}
+        <AgentPanel alreadyShown={drawnOutputs} view={openPanel} />
       </>
     ),
 

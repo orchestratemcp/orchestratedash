@@ -63,6 +63,50 @@ export function describeBriefAuthor(model: string | undefined): string {
 export const BRIEF_CITED_LABEL = "Written from";
 
 /**
+ * One citation, as the mark a reader sees (MAR-875).
+ *
+ * ## What this replaced
+ *
+ * The label above used to be followed by the **full headline** of every item a
+ * paragraph cited, separated by middots. On the proof scout that is up to thirty
+ * headlines under a paragraph of four sentences, and the same headlines again
+ * under the next one — the single largest block of repeated text on the page,
+ * and a large part of why the briefing Henrik asked for was hard to find inside
+ * the material it was written from.
+ *
+ * ## Why a number, and why *this* number
+ *
+ * The number is the row's own position in the run's collected list, one-based.
+ * That is the only numbering worth printing: it means the same thing in every
+ * paragraph, and it counts from the same place the `Sources` disclosure does,
+ * so `[7]` is the seventh collected row wherever a reader meets it. A number
+ * counted per paragraph would look exactly like this one and mean nothing.
+ *
+ * Square brackets rather than a superscript, because the mark has to survive
+ * being read aloud, copied into a message and printed to a PDF, and a bare
+ * digit beside a full stop does none of those.
+ */
+export function briefCitationMark(position: number): string {
+  return `[${String(position + 1)}]`;
+}
+
+/**
+ * The heading over the full list, on the printed page only (MAR-875).
+ *
+ * A PDF has no disclosure to open and nothing to hover, so a document whose
+ * citations were numbers alone would be a document whose citations could not be
+ * followed at all. The screen collapses the list because the reader can expand
+ * it; print expands it because the reader cannot.
+ *
+ * *Sources* rather than *Written from* here, and the difference is deliberate:
+ * `BRIEF_CITED_LABEL` introduces the rows **one paragraph** was written from
+ * and must not read as an endorsement of it. This heading sits over the whole
+ * collected list at the end of the document, where the ordinary word for the
+ * thing is the one a reader is looking for.
+ */
+export const BRIEF_PRINT_SOURCES_HEADING = "Sources";
+
+/**
  * What a paragraph with no numbers on it says.
  *
  * Shown rather than left blank, on `app/_components/digest.tsx`'s rule for an

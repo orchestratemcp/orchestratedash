@@ -80,6 +80,10 @@ function emptyTable(kind: PanelEmptyKind, at: number, label: string): PanelTable
     kind: "table",
     at,
     label,
+    /* MAR-875. Null because these fixtures resolve no artifact at all, which is
+       exactly what makes them empty — so none of them can be a second drawing
+       of something the stage already showed. */
+    source_artifact_id: null,
     columns: [{ key: "headline", label: "Headline", kind: "text" }],
     rows: [],
     capped: null,
@@ -147,8 +151,20 @@ function render(view: PanelView): string {
   return decode(renderToStaticMarkup(<AgentPanel view={view} />));
 }
 
-/** A panel whose every section is empty, which is a new agent's whole panel. */
-const html = render({ kind: "declared", title: "Newsroom", sections: EMPTY_SECTIONS });
+/**
+ * A panel whose every section is empty, which is a new agent's whole panel.
+ *
+ * `by_run` is empty and has to be: MAR-875 keys it by the runs whose artifacts
+ * a section resolved, and these sections resolved none. A fixture that carried
+ * a run here would be describing an agent that has produced something, which is
+ * the one thing this file's whole population is not.
+ */
+const html = render({
+  kind: "declared",
+  title: "Newsroom",
+  sections: EMPTY_SECTIONS,
+  by_run: {},
+});
 
 /** How many times a string occurs, without building a regex out of copy. */
 function occurrences(haystack: string, needle: string): number {
@@ -314,6 +330,7 @@ describe("an author who writes DASH's own sentence gets a text node", () => {
       { kind: "note", at: 0, label: PANEL_EMPTY_DISCLOSURE, text: PANEL_EMPTY_DISCLOSURE },
       emptyTable("no_artifact", 1, "Headlines"),
     ],
+    by_run: {},
   });
 
   it("says the sentence four times and makes exactly one of them an affordance", () => {

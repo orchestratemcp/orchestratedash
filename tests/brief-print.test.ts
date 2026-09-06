@@ -20,6 +20,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { BriefBody } from "../app/_components/digest";
 import { briefFileName } from "../electron/brief-pdf";
+import { BRIEF_PRINT_SOURCES_HEADING } from "../lib/copy/brief";
 import { briefPrintDocument } from "../lib/brief/print";
 import { fingerprintItems } from "../lib/brief/fingerprint";
 import type { BriefArtifact, DigestArtifact } from "../lib/contracts";
@@ -60,13 +61,18 @@ const HOSTILE_BRIEF: BriefArtifact = {
   },
 };
 
-function printed(artifact: BriefArtifact, title = artifact.title): string {
+function printed(artifact: BriefArtifact, title = artifact.title, print = true): string {
   return briefPrintDocument({
     title,
     subtitle: "scout · 18 August 2026 at 11:01",
     body: renderToStaticMarkup(
       BriefBody({
         artifact,
+        /* MAR-875. The one thing the print path does differently, and the
+           default here is `true` because `electron/brief-pdf.ts` passes it —
+           a helper that quietly printed the screen's rendering would be
+           testing a document nobody receives. */
+        print,
         citations: {
           state: "matched",
           items: ITEMS,
@@ -123,6 +129,40 @@ describe("the printed document", () => {
     const html = printed(HOSTILE_BRIEF, 'Weekly <b>brief</b> & "notes"');
     expect(html).toContain("Weekly &lt;b&gt;brief&lt;/b&gt; &amp; &quot;notes&quot;");
     expect(html).not.toContain("<b>brief</b>");
+  });
+
+  /**
+   * MAR-875. A PDF has nothing to press, so the list the marks index is printed.
+   *
+   * On screen a paragraph cites `[1]` and the list those numbers index is one
+   * press away, inside the `Sources` disclosure the author's panel draws. A
+   * printed page has no disclosure and no hover, so a document that carried the
+   * marks alone would carry citations nobody could follow — which is worse than
+   * the thirty repeated headlines this packet removed, because at least those
+   * could be read.
+   */
+  it("prints the collected list under a heading of its own", () => {
+    const html = printed(HOSTILE_BRIEF);
+    expect(html).toContain(BRIEF_PRINT_SOURCES_HEADING);
+    expect(html).toContain("Providers cut prices");
+    // Under the document rather than beside each paragraph: the marks stay
+    // compact and the list is read once, at the end, where a reader looks.
+    expect(html.indexOf("See [click here](http://evil.example)")).toBeLessThan(
+      html.indexOf(`<h3>${BRIEF_PRINT_SOURCES_HEADING}</h3>`),
+    );
+  });
+
+  it("adds that list on the print path only", () => {
+    /*
+     * The screen must not grow a second copy of the list: the author's panel
+     * draws it once, collapsed, and a brief card that printed it inline would
+     * put MAR-875's own defect back under a different heading.
+     */
+    const screen = printed(HOSTILE_BRIEF, HOSTILE_BRIEF.title, false);
+    expect(screen).not.toContain(`<h3>${BRIEF_PRINT_SOURCES_HEADING}</h3>`);
+    // The document itself is byte-for-byte the same either way — `print` adds,
+    // and never rewrites, which is ADR 0025 decision 4's no-second-escaper rule.
+    expect(screen).toContain("[click here](http://evil.example)");
   });
 
   it("forces light and hides controls, so a dark app does not print a black page", () => {
