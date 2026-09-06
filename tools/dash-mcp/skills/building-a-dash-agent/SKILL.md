@@ -1,6 +1,6 @@
 ---
 name: building-a-dash-agent
-description: Build an agent that OrchestrateDASH will import and run. Use when the user wants to create, scaffold, fix, or install a DASH agent, when an agent fails to import into DASH, or when editing an agent.manifest.json, agent_dom block, or a DASH agent folder.
+description: Build an agent that OrchestrateDASH will import and run, starting by interviewing the person about what they actually want. Use when the user wants to create, scaffold, fix, or install a DASH agent, when an agent fails to import into DASH, or when editing an agent.manifest.json, agent_dom block, or a DASH agent folder.
 ---
 
 # Building an agent DASH accepts
@@ -14,20 +14,162 @@ validator** — the same functions DASH runs when a person imports — so a mani
 can be checked before it is written. Use it. Do not hand-write a manifest and
 hope.
 
+It also carries the **interview**: what to ask somebody before building them an
+agent, and which of the things they will ask for this template cannot do. Start
+there, not at the scaffold.
+
 ## The loop
 
-1. **`dash_agent_scaffold`** — writes the whole folder. Prefer this over writing
-   files yourself; it validates the manifest before writing anything, so either
-   the folder imports or nothing exists.
-2. Edit `agent.mjs` and `sources.json` for what this agent actually does.
-3. **`dash_agent_validate`** — after any edit to the manifest. It returns the
+1. **`dash_agent_interview`** — ask the person what they want before you build
+   anything. Returns one or two questions at a time and, when it has enough,
+   a recap. See "Interviewing" below; this is not optional.
+2. **`dash_agent_plan`** — the recap and the exact scaffold arguments. Show the
+   recap, let them change it, and only then move on.
+3. **`dash_agent_scaffold`** — writes the whole folder from that request.
+   Prefer this over writing files yourself; it validates the manifest before
+   writing anything, so either the folder imports or nothing exists.
+4. Edit `agent.mjs` and `sources.json` for what this agent actually does.
+5. **`dash_agent_validate`** — after any edit to the manifest. It returns the
    JSON pointer, what the schema requires there, and the allowed values.
-4. **`dash_agent_install`** — hands DASH the import. DASH asks the person before
+6. **`dash_agent_install`** — hands DASH the import. DASH asks the person before
    storing anything; you cannot answer for them.
 
 If you are changing a manifest by hand, call `dash_agent_validate` with the
 `manifest` argument **before** writing the file. That is the shortest loop:
 compose, check, correct, write.
+
+# Interviewing
+
+**Do not scaffold from a one-line request.** "Keep an eye on AI news for me"
+does not say which sites, how often, what they want back, or where it should
+land — and the agent this tool builds cannot do most of what people assume it
+can. Guessing produces an agent that is installed, silent, and wrong in a way
+nobody can see. Ask.
+
+`dash_agent_interview` owns the questions and the state. You own the
+presentation. That split is the whole arrangement: it decides what is still
+unknown and refuses to invent anything, and you put its questions in front of a
+person in whatever your host does best.
+
+## How to run one turn
+
+1. Call `dash_agent_interview` with the project `directory`. On the first call
+   leave `draft_id` out; on every later call pass back the one it returned.
+2. It returns `questions` — never more than two. Each has a `prompt`, a `why`,
+   a `kind`, and for a choice, `options` with `label`, `default` and
+   `supported`.
+3. **Ask them with your host's own question UI.** In Claude Code that is
+   `AskUserQuestion`: one question per header, the `label` of each option as an
+   option, the one marked `default` first. Where there is no such UI, write the
+   prompt out as plain text and list the options as a short list. Either way,
+   show the `why` — it is one sentence and it is usually the sentence that
+   makes the question answerable.
+4. **Send back what they said, not what you concluded from it.** Put their
+   answer in `answers` under that question's `id`. If they typed something of
+   their own instead of picking an option, send that text; every question
+   accepts free text.
+5. Repeat until `ready` is `true`.
+
+Other things you can send in `answers` without being asked: `agent_name` (what
+to call it), `trigger_time` (`HH:MM`), `model_provider`.
+
+`action` handles the rest: `back` un-answers the most recent question so they
+can change it, and `reset` starts the answers over. To change an earlier answer
+without walking back, just send it again — it is overwritten in place.
+
+## Resuming
+
+The draft is saved in the project directory on every call, so an interview
+survives the session. If somebody comes back to it, pass the same `directory`
+and `draft_id` and carry on from wherever they stopped.
+
+## Options marked `supported: false`
+
+They are shown on purpose. The agent this tool builds fetches feeds, writes a
+roundup and a short summary about it, and runs when a person presses Run. It
+does not post anywhere, send email, write documents, browse, or act on
+anybody's behalf, and somebody who wanted those things should find out now
+rather than after installation.
+
+When an answer is unsupported the tool returns an `unsupported` entry with
+`asked`, `why_not` and `nearest_supported`. **Say all three.** "DASH cannot do
+that" on its own is the answer that makes people give up; the same sentence
+with what it can do instead is the one that gets an agent built.
+
+## The recap
+
+When `ready` is true, call `dash_agent_plan` and show the recap: what it will be
+called, what it collects, how often, where results go, and — this part matters
+most — what it will **not** do. Ask whether anything should change. A different
+name goes back as an `agent_name` answer; anything else goes back as the answer
+to its own question.
+
+Only when they are happy, call `dash_agent_scaffold` with `scaffold_request`
+exactly as it stands, then follow the rest of the loop.
+
+## A vague request, worked through
+
+> **Person:** Can you build me something that keeps an eye on AI news?
+
+Call `dash_agent_interview` with the directory and no answers. It asks for the
+outcome; you ask them; they say "keep an eye on AI news for me". Send that
+back. From there it asks, one turn at a time:
+
+- **Which sites should it read?** — they do not know, and answer "the usual",
+  which is the Hacker News front page.
+- **What should it hand you after each run?** — the roundup-and-summary option
+  is the default; the other two are a document and a spreadsheet, both marked
+  unsupported.
+- **When should it run?** and **how much should it do on its own?** — asked
+  together, because they are the same subject. Manual, and just tell me.
+- **Where do you want to see the results?** — they say Slack. The tool records
+  it as unsupported and names Discord and the agent's own page instead. You
+  tell them that, they pick DASH, and the interview is finished.
+
+The recap comes back naming the agent "AI news", collecting the Hacker News
+front page, running only when they press Run, showing results on its page in
+DASH, and saying plainly that it starts idle and reaches nothing else. They
+approve it; you scaffold, validate and install.
+
+Six questions for somebody who arrived with eight words, and one of them
+prevented an agent that was never going to reach Slack.
+
+## A fully specified request, worked through
+
+> **Person:** Every morning at 7, read the Hacker News front page and
+> https://techcrunch.com/feed/ and give me a roundup with a short summary.
+> Alert me in Discord.
+
+Send that whole sentence as the `outcome` answer. The tool reads it and settles
+five things at once — both sources, the daily trigger at 07:00, the result
+shape, and Discord — then asks the **two** that sentence did not answer:
+
+- **How much should it do on its own?**
+- **Should it keep working while this computer is off?** — asked only because a
+  daily run and a Discord alert both happen while nobody is watching.
+
+Two questions, not six. The recap then says the thing that matters about the
+first sentence: the agent is built to run **only when you press Run**, and the
+daily 07:00 is written down as what they asked for, to be switched on in DASH
+themselves after they have seen a run work. Discord is the same shape — the
+results go to the agent's page, and a Discord message needs Discord connected
+under Settings; the agent itself sends nothing.
+
+**Never present that as "done".** A person who asked for a 7am Discord alert
+and is not told it is not switched on yet will find out by not being alerted.
+
+## What the interview never does
+
+- It never asks for a password, an API key, a webhook address, or any other
+  credential, and holds none. A `model_provider` answer is a provider's name so
+  the same key can cover this agent; the key itself is something DASH holds and
+  the person hands over there, or not at all.
+- It never sets a schedule, connects anything, posts anywhere, or deploys.
+  Everything it produces is a request for `dash_agent_scaffold`.
+- It never calls a model. Everything it reads out of a sentence is a written-out
+  rule, and anything a sentence says two ways comes back in `ambiguous` and is
+  asked rather than assumed. Do not treat an unanswered question as an
+  invitation to fill it in for them.
 
 ## Four rules that are not negotiable
 

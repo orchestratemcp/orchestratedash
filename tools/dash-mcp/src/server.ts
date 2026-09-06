@@ -20,7 +20,15 @@
  * process wants to say goes to stderr.
  */
 
-import { installAgent, scaffoldAgent, validateAgent, type ToolResult } from "./agent-tools";
+import {
+  installAgent,
+  interviewAgent,
+  planAgent,
+  scaffoldAgent,
+  validateAgent,
+  type ToolResult,
+} from "./agent-tools";
+import type { InterviewAction } from "./interview";
 import type { FeedSource } from "./scaffold";
 
 const SERVER_NAME = "dash";
@@ -56,6 +64,82 @@ interface ToolDefinition {
  * writes a folder does not.
  */
 const TOOLS: ToolDefinition[] = [
+  {
+    name: "dash_agent_interview",
+    title: "Ask the person what their agent should do",
+    description:
+      "Call this FIRST, before dash_agent_scaffold, whenever somebody wants an agent built. Returns " +
+      "one or two questions at a time — outcome, sources, what they get back, when it runs, how much " +
+      "it may do on its own, and where results go — with suggested answers to show in your own " +
+      "question UI. It reads a detailed opening answer and skips whatever that already settled, and " +
+      "it names anything asked for that a DASH agent cannot do, with the nearest thing that works. " +
+      "Send answers back with the same draft_id; the draft is saved so it can be resumed later. " +
+      "It never asks for a password or an API key and holds no credential.",
+    inputSchema: {
+      type: "object",
+      required: ["directory"],
+      properties: {
+        directory: {
+          type: "string",
+          description:
+            "Full path of the project directory the agent will be built in. The interview draft is " +
+            "saved inside it. Must be outside DASH's data directory.",
+        },
+        draft_id: {
+          type: "string",
+          description:
+            "Omit on the first call. Pass back the id returned by an earlier call to continue, " +
+            "including in a later session.",
+        },
+        answers: {
+          type: "object",
+          description:
+            "The person's answers, keyed by the question id that asked for them. Pass what they " +
+            "actually said, not your reading of it. Also accepts agent_name (what to call it), " +
+            "trigger_time (HH:MM) and model_provider.",
+          additionalProperties: { type: "string" },
+        },
+        action: {
+          enum: ["next", "back", "recap", "reset"],
+          description:
+            "next (default) records the answers and asks what is still unknown. back un-answers the " +
+            "most recent question so it can be answered differently, and ignores any answers sent " +
+            "with it. reset clears every answer and keeps the draft. recap behaves like next and is " +
+            "there to re-read a finished interview without changing it.",
+        },
+      },
+    },
+    run: (args) =>
+      interviewAgent({
+        directory: requireString(args, "directory"),
+        draft_id: optionalString(args, "draft_id"),
+        answers: readAnswers(args["answers"]),
+        action: readAction(args["action"]),
+      }),
+  },
+  {
+    name: "dash_agent_plan",
+    title: "Turn a finished interview into a plan the person can check",
+    description:
+      "Reads a finished interview and returns two things: a recap in plain words — what it will be " +
+      "called, what it collects, how often, where results go, and what it will NOT do — and the exact " +
+      "arguments to hand dash_agent_scaffold. Show the recap and let the person change it before you " +
+      "build anything. Refuses while any question is still unanswered, and names which. It adds no " +
+      "validation of its own: the request goes through DASH's own validator inside dash_agent_scaffold.",
+    inputSchema: {
+      type: "object",
+      required: ["directory", "draft_id"],
+      properties: {
+        directory: { type: "string", description: "The same directory the interview used." },
+        draft_id: { type: "string", description: "The id dash_agent_interview returned." },
+      },
+    },
+    run: (args) =>
+      planAgent({
+        directory: requireString(args, "directory"),
+        draft_id: requireString(args, "draft_id"),
+      }),
+  },
   {
     name: "dash_agent_scaffold",
     title: "Build a DASH agent folder",
@@ -196,6 +280,41 @@ function optionalString(args: Record<string, unknown>, key: string): string | un
   }
   if (typeof value !== "string") {
     throw new BadArgument(`"${key}" must be text.`);
+  }
+  return value;
+}
+
+/**
+ * The interview's answers, checked rather than cast.
+ *
+ * Every value is a string, because every value is something a person said.
+ * A number or an object arriving here means the caller invented a shape, and
+ * dropping it silently would produce an interview that keeps asking a question
+ * it was already sent an answer to.
+ */
+function readAnswers(value: unknown): Record<string, string> | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new BadArgument('"answers" must be an object of question id to what the person said.');
+  }
+  const answers: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry !== "string") {
+      throw new BadArgument(`"answers.${key}" must be text — what the person actually said.`);
+    }
+    answers[key] = entry;
+  }
+  return answers;
+}
+
+function readAction(value: unknown): InterviewAction | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (value !== "next" && value !== "back" && value !== "recap" && value !== "reset") {
+    throw new BadArgument('"action" must be one of next, back, recap, reset.');
   }
   return value;
 }

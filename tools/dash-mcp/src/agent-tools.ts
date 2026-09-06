@@ -14,10 +14,23 @@
  * write is a coding agent that will guess.
  */
 
+import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
 import { AI_PROVIDER_IDS, type AiProviderId } from "../../../lib/ai/providers";
+import {
+  isReady,
+  mergeAnswers,
+  nextQuestions,
+  planFromDraft,
+  resetDraft,
+  stepBack,
+  unsupportedFor,
+  type InterviewAction,
+  type InterviewDraft,
+  type QuestionId,
+} from "./interview";
 import { refuseStagingDirectory, templateRoot } from "./paths";
 import {
   DEFAULT_MODEL_PROVIDER,
@@ -374,5 +387,276 @@ export function installAgent(input: InstallInput): ToolResult {
       input.open === false
         ? "Open the URL above on the computer where DASH is installed. DASH will ask before it stores anything."
         : "DASH should be opening now and will ask before it stores anything. If nothing happens, DASH is probably not installed — open the URL above on the computer where it is.",
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * interview
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The draft directory inside the author's own project folder.
+ *
+ * `<project>/.dash/interview-<id>.json`, and every word of that is a decision.
+ * It is inside the directory the *caller* named, which is the only place this
+ * package is allowed to write at all (ADR 0032 decision 1) — never DASH's data
+ * directory, never an installed agent folder. It is dotted so it does not sit
+ * beside the agent's own files, and it survives the machine being closed, which
+ * is the whole of what "resumable" needs to mean here.
+ */
+const DRAFT_DIRECTORY = ".dash";
+
+/** Draft ids are made here and read back; anything else is refused by shape. */
+const DRAFT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{3,63}$/;
+
+export interface InterviewInput {
+  /** The project directory the agent will eventually be built in. */
+  directory: string;
+  /** Omit to start; pass the id back to resume, later or on another day. */
+  draft_id?: string;
+  /** Question ids to the person's answers, verbatim. */
+  answers?: Record<string, string>;
+  action?: InterviewAction;
+}
+
+function draftPath(directory: string, draftId: string): string {
+  return path.join(directory, DRAFT_DIRECTORY, `interview-${draftId}.json`);
+}
+
+function newDraftId(): string {
+  return `draft-${randomBytes(4).toString("hex")}`;
+}
+
+/**
+ * Ask the next question, or say there are none left.
+ *
+ * All the deciding is in `interview.ts`, over values. What is here is the two
+ * things that need a disk — finding the draft and saving it — plus the refusal
+ * that guards every path argument this package takes.
+ *
+ * The draft is written on **every** call, including the first, so "resume"
+ * needs nothing more than the id that came back: an interview that only
+ * persisted once it was finished would lose exactly the conversations worth
+ * resuming.
+ */
+export function interviewAgent(
+  input: InterviewInput,
+  now: Date = new Date(),
+  makeId: () => string = newDraftId,
+): ToolResult {
+  const staging = refuseStagingDirectory(input.directory);
+  if (staging !== null) {
+    return { ok: false, refusal: staging };
+  }
+  const directory = path.resolve(input.directory);
+
+  let draft: InterviewDraft;
+  if (input.draft_id === undefined) {
+    const id = makeId();
+    draft = {
+      draft_id: id,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      answers: {},
+      answered_order: [],
+    };
+  } else {
+    if (!DRAFT_ID_PATTERN.test(input.draft_id)) {
+      return {
+        ok: false,
+        refusal:
+          `"${input.draft_id}" is not a draft this tool made. Leave draft_id out to start a new ` +
+          "interview, or pass back the one an earlier call returned.",
+      };
+    }
+    const file = draftPath(directory, input.draft_id);
+    let held: unknown;
+    try {
+      held = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      return {
+        ok: false,
+        refusal:
+          `There is no interview saved at ${file}. Leave draft_id out to start a new one; the ` +
+          "answers from the old one are not recoverable.",
+      };
+    }
+    const restored = readDraft(held, input.draft_id, now);
+    if (restored === null) {
+      return {
+        ok: false,
+        refusal: `${file} is not a draft this tool can read. Start a new interview without draft_id.`,
+      };
+    }
+    draft = restored;
+  }
+
+  const action: InterviewAction = input.action ?? "next";
+  let ambiguous: QuestionId[] = [];
+  let ignored: string[] = [];
+
+  if (action === "reset") {
+    draft = resetDraft(draft, now);
+  } else if (action === "back") {
+    // Deliberately ignores `answers`: a call that both steps back and writes
+    // forward has a result nobody can predict from reading it.
+    draft = stepBack(draft, now);
+  } else {
+    const merged = mergeAnswers(draft, input.answers ?? {}, now);
+    draft = merged.draft;
+    ambiguous = merged.ambiguous;
+    ignored = merged.ignored;
+  }
+
+  try {
+    mkdirSync(path.join(directory, DRAFT_DIRECTORY), { recursive: true });
+    writeFileSync(
+      draftPath(directory, draft.draft_id),
+      `${JSON.stringify(draft, null, 2)}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    return { ok: false, refusal: `The interview draft could not be saved: ${String(error)}` };
+  }
+
+  const ready = isReady(draft);
+  const plan = ready ? planFromDraft(draft, directory, now) : null;
+
+  return {
+    ok: true,
+    draft_id: draft.draft_id,
+    draft_file: draftPath(directory, draft.draft_id),
+    questions: nextQuestions(draft),
+    answered: draft.answers,
+    unsupported: unsupportedFor(draft.answers),
+    ready,
+    ...(ambiguous.length === 0
+      ? {}
+      : {
+          ambiguous,
+          ambiguous_note:
+            "What was said could be read more than one way for these, so they are being asked rather than assumed.",
+        }),
+    ...(ignored.length === 0 ? {} : { ignored }),
+    ...(plan !== null && plan.ok
+      ? { recap: plan.recap, scaffold_request: plan.scaffold_request }
+      : {}),
+    next: ready
+      ? "Show the recap to the person, let them change anything in it, then call dash_agent_plan."
+      : "Ask the person the questions above, in the host's own question UI where there is one, and send their answers back with the same draft_id.",
+  };
+}
+
+/**
+ * A draft read back off disk, or null.
+ *
+ * Every value is re-checked rather than cast. `lib/schedule/store.ts` makes the
+ * argument for this better than it could be made again here: the file is on the
+ * user's own disk, an editor or a merge can have been through it, and a value
+ * that would not have been accepted going in must not become an answer on the
+ * strength of having been written once.
+ */
+function readDraft(held: unknown, draftId: string, now: Date): InterviewDraft | null {
+  if (typeof held !== "object" || held === null || Array.isArray(held)) {
+    return null;
+  }
+  const record = held as Record<string, unknown>;
+  const answers: Record<string, string> = {};
+  const heldAnswers = record["answers"];
+  if (typeof heldAnswers === "object" && heldAnswers !== null) {
+    for (const [key, value] of Object.entries(heldAnswers as Record<string, unknown>)) {
+      if (typeof value === "string" && value.trim().length > 0) {
+        answers[key] = value;
+      }
+    }
+  }
+  const heldOrder = record["answered_order"];
+  const order = Array.isArray(heldOrder)
+    ? heldOrder.filter(
+        (id): id is QuestionId => typeof id === "string" && answers[id] !== undefined,
+      )
+    : [];
+
+  return {
+    draft_id: draftId,
+    created_at: typeof record["created_at"] === "string" ? record["created_at"] : now.toISOString(),
+    updated_at: now.toISOString(),
+    answers,
+    answered_order: order,
+  };
+}
+
+/* ---------------------------------------------------------------------- *
+ * plan
+ * ---------------------------------------------------------------------- */
+
+export interface PlanInput {
+  directory: string;
+  draft_id: string;
+}
+
+/**
+ * The finished interview, as the exact arguments `dash_agent_scaffold` takes
+ * and one recap a person can read.
+ *
+ * It is a separate tool rather than a flag because it is a separate moment: the
+ * host shows this, the person changes what they want, and only then is anything
+ * written. Folding it into the interview would make "here is what I am about to
+ * build" indistinguishable from "here is my next question", and the one press
+ * this design asks a person for is the one on the recap.
+ *
+ * It adds no validation of its own. The request goes to `dash_agent_scaffold`,
+ * which puts it through `verdictForManifest` before a byte is written, exactly
+ * as it did before this tool existed (ADR 0032 decisions 4 and 5).
+ */
+export function planAgent(input: PlanInput, now: Date = new Date()): ToolResult {
+  const staging = refuseStagingDirectory(input.directory);
+  if (staging !== null) {
+    return { ok: false, refusal: staging };
+  }
+  const directory = path.resolve(input.directory);
+
+  if (!DRAFT_ID_PATTERN.test(input.draft_id)) {
+    return {
+      ok: false,
+      refusal: `"${input.draft_id}" is not a draft this tool made. Run dash_agent_interview first.`,
+    };
+  }
+
+  const file = draftPath(directory, input.draft_id);
+  let held: unknown;
+  try {
+    held = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return {
+      ok: false,
+      refusal: `There is no interview saved at ${file}. Run dash_agent_interview first.`,
+    };
+  }
+  const draft = readDraft(held, input.draft_id, now);
+  if (draft === null) {
+    return { ok: false, refusal: `${file} is not a draft this tool can read.` };
+  }
+
+  const plan = planFromDraft(draft, directory, now);
+  if (!plan.ok) {
+    return {
+      ok: false,
+      refusal: plan.problem,
+      remaining: plan.remaining,
+      questions: nextQuestions(draft),
+    };
+  }
+
+  return {
+    ok: true,
+    draft_id: draft.draft_id,
+    recap: plan.recap,
+    scaffold_request: plan.scaffold_request,
+    unsupported: unsupportedFor(draft.answers),
+    next:
+      "Show the recap to the person and let them change anything in it before you build. Send a " +
+      "changed name back as an agent_name answer to dash_agent_interview, then call this again. " +
+      "When they are happy, call dash_agent_scaffold with scaffold_request exactly as it stands.",
   };
 }
