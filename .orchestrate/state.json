@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-09-05",
+  "updated_at": "2026-09-06",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
   "lifecycle_note": "2026-08-26 evening reconcile: MAR-795 (VPS packet B, ADR 0031) merged bf0feda; MAR-800 resolved (claim did not reproduce; the real masked-hint envelope bug fixed, a3986b0); MCP MAR-788 merged 12421c1. MAR-785 PROVEN: autostart fired twice today on real sign-ins with no DASH (autostart.log receipts). Schedule receipt sits in the un-checkpointed wal — readable at Henriks next DASH open, which is act one of the VPS sitting (packet A five presses + packet B reboot script, on MAR-794/795). dash.sqlite base integrity ok; external wal-attach reads fail benignly while un-checkpointed.",
   "authority": {
@@ -2031,9 +2031,10 @@
     },
     {
       "id": "MAR-873",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "ba2371a",
+      "note": "STOPPED CORRECTLY by the worker per the prompt's own rule; PR #317 is docs only (docs/mar-873-handoff.md), NO CODE CHANGED. The gate-order diagnosis held (lib/views/ask.ts refuses no_provider before readEffectiveModelChoice), but a reorder would make things worse: proof-scout-mar861's manifest declares agent_dom.connections: [] and every step model_tier none, and performAskAction (electron/ask-host.ts) spends only through the manifest's own declared connection_id. Reading the fleet key directly is rejected by ADR 0013/0023 by design (lib/broker/execute.ts derives the vault name from the agent id so no agent resolves to the fleet credential). REAL FIX IS UPSTREAM: (1) the MAR-862 plugin should always emit the ADR-0013-shaped model_provider connection regardless of what the agent's steps need -- new packet, dispatchable, no ruling; (2) adoption for agents imported after the provider was connected is a manual press per ADR 0013, which is MAR-874's surface. Do not reorder the gate until (1) exists. Lifecycle merged because the handoff landed; the packet itself is re-scoped, not done."
     },
     {
       "id": "MAR-874",
