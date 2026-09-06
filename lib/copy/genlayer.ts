@@ -19,6 +19,10 @@
  *    That has a sentence of its own, an explanation, and a button — never a
  *    spinner. It is the single most likely way this feature disappoints somebody,
  *    and `describeAdjudication` is where it is answered.
+ * 4. **A dropped connection is not a verdict on the briefing either.** MAR-880:
+ *    `network_lost` says DASH's own connection failed, never that the network or
+ *    the committee found anything wrong. The judgement may have finished without
+ *    DASH ever hearing about it.
  *
  * Pure, and it imports only types — the standing every `lib/copy/` module keeps
  * so a component can call it.
@@ -281,6 +285,23 @@ export function describeAdjudicationFailure(failure: AdjudicationFailure): Adjud
         meaning:
           "The briefing was published and the judgement was still running when DASH stopped " +
           "watching it. The judgement may well have finished on the network.",
+        next_action: "Ask for it to be judged again.",
+        tone: "muted",
+      };
+    case "network_lost":
+      /*
+       * MAR-880. Worded to name DASH's own connection as the thing that
+       * failed — never the network's answer and never the committee's — on
+       * `abandoned`'s own register: this is DASH losing track, not a finding
+       * about the briefing. Same next action as `abandoned`, for the same
+       * reason: asking again is a fresh commission, and the network may
+       * already hold a finished one DASH never heard about.
+       */
+      return {
+        headline: "DASH lost the connection to the network",
+        meaning:
+          "DASH lost the connection to the network while it was watching this judgement. The " +
+          "judgement may still be running there.",
         next_action: "Ask for it to be judged again.",
         tone: "muted",
       };

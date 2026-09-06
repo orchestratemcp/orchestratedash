@@ -56,6 +56,7 @@ import type { BriefArtifact, DigestArtifact } from "../contracts";
 import type { GenLayerConnection } from "./connection";
 import { buildAdjudicationPayload, type AdjudicationPayload } from "./payload";
 import { readReceipt, type ReceiptReading } from "./receipt";
+import { GenLayerNetworkLostError } from "./record";
 import {
   advanceAdjudication,
   openAdjudication,
@@ -153,13 +154,16 @@ export type AdjudicationResult =
  * `now` and `sleep` are injected for `lib/workspace.ts`' reason — a projection
  * that reads its own clock cannot be tested at a boundary — and here it is
  * sharper still: a test of the five-minute path must not take five minutes.
+ * `log` is injected for the same reason `network_lost` exists at all (MAR-880):
+ * the one line it writes names a real network error, and a test asserting
+ * that line was written must not depend on `console.warn`.
  */
 export async function adjudicateBrief(
   brief: BriefArtifact,
   digest: DigestArtifact,
   connection: GenLayerConnection,
   openChain: (connection: GenLayerConnection) => Promise<GenLayerChain>,
-  deps: { now(): Date; sleep(ms: number): Promise<void> },
+  deps: { now(): Date; sleep(ms: number): Promise<void>; log(line: string): void },
 ): Promise<AdjudicationResult> {
   const startedAt = deps.now().toISOString();
   const commissionId = commissionIdFor(brief.run_id, deps.now());
@@ -252,7 +256,18 @@ export async function adjudicateBrief(
     advanceAdjudication(commissionId, name, hash);
     try {
       return { hash, receipt: await chain.waitFinalized(hash) };
-    } catch {
+    } catch (error) {
+      if (error instanceof GenLayerNetworkLostError) {
+        /*
+         * DASH stopped *hearing from the network*, which is a narrower and
+         * more useful claim than "DASH stopped waiting" — see `abandoned`
+         * below. The error is bound and logged, never stored: a network's
+         * own text is content DASH did not write, and `failure` is a closed
+         * enum column, not a place for it (MAR-880).
+         */
+        deps.log(`[dash] judgement ${commissionId} stopped in ${name}: ${error.message}`);
+        return "network_lost";
+      }
       // The transaction is on the chain and DASH stopped watching it. That is
       // not the same as a refusal and must not read as one — see `abandoned`.
       return "abandoned";
