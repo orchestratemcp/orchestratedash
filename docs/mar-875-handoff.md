@@ -95,16 +95,55 @@ through this diff on their account — the defect is not there.
 reaches `node:fs` through `lib/panel-spec.ts`. That is why `panelForRun` lives
 in `lib/views/panel-run.ts` with type imports only. It is green now.
 
+### CI ran the installed shell smoke, and proof 6n passed
+
+Both PR checks are green on `610bedd`: `verify` (2m2s) and **`shell-smoke`
+(1m52s)** — the real Electron shell against installed-style user data on the
+Windows runner.
+
+`85 PASS / 0 FAIL / 0 SKIP` in the raw job log
+(`gh api repos/orchestratemcp/orchestratedash/actions/jobs/101577437973/logs`;
+`gh run view` truncates it). The rewritten 6n reported exactly the shape this
+session predicted from the source, before it had ever been executed:
+
+```
+PASS  6n. the workspace draws the panel the sample's manifest declared:
+{"heading":"What the scout found","sections":1,
+ "labels":["How this agent has been doing"],"table_rows":9,
+ "sources_summary":"Sources (9)","sources_open":false,
+ "panel_digest_bodies":0,"controls_inside":0,"raw_instants":0}
+PASS  6o. nothing inside the author's region is a control or a raw instant:
+{"controls_inside":0,"raw_instants":0}
+PASS  6p. the agent's own output is on the page a link to it lands on:
+{"has_news":true,"news_before_card_receipt":true,
+ "has_card_receipt":true,"has_permission_receipt":false}
+```
+
+Read what 6n is saying, because it is the packet's claim in one line: on the
+installed shell the author's region drew **one** declared section, **zero**
+digest bodies, and one **closed** `Sources (9)` disclosure with the nine rows
+still behind it. Nine, not thirty, because the sample agent's real Hacker News
+run collected nine — the count is DASH's own and it is honest.
+
+`sources_open: false` and `controls_inside: 0` together are ADR 0008 holding
+under the new markup: a `<details>` is not a control, and nothing in the region
+asks the reader for anything.
+
 ## What is NOT done
 
-- **No runtime proof of any kind.** No `pnpm verify`, no `verify:shell`, no
-  `pnpm shell`; no Electron process was started by this session, and no store —
-  real or scratch — was read or written.
-- **Proof 6n was rewritten by reasoning, not by running.** See "the one thing to
-  do first".
+- **This session started no Electron process and touched no store**, real or
+  scratch. The installed-shell evidence above is CI's, on a GitHub Windows
+  runner — which is the right place for it, and is *not* the same thing as
+  Henrik's own installed build on his own machine.
 - **The capture harness was not run**, so there are no before/after frames. Its
   fixtures carry 3–4 items per digest, which is fine for structure and will not
-  photograph the thirty-row case Henrik actually saw.
+  photograph the thirty-item case Henrik actually saw. This is now the largest
+  remaining gap.
+- **Nobody has looked at this on screen.** Four DASH defects in a row have had
+  no overflow to measure, and this packet changes what the author's region looks
+  like more than anything since MAR-646. A closed disclosure where three
+  sections used to be is exactly the kind of change a number reports as a
+  triumph and an eye reports as "where did my table go".
 - **`app/_components/outputs.tsx` is unchanged.** DASH's own card was
   deliberately not touched: MAR-668's ruling is that the surface which yields is
   the author's, never DASH's, and deleting DASH's record to resolve a
@@ -164,49 +203,49 @@ branch.
 
 ## The one thing the next session should do first
 
-**Run the installed shell smoke and read proof 6n.** It is the only assertion in
-this packet whose new form has never been executed, and it is the one that gates
-`pnpm verify` on Windows. From PowerShell, with DASH's own store untouched:
+**Look at it.** The smoke question this section originally asked has been
+answered by CI — 6n, 6o and 6p all pass on the installed shell — so the largest
+remaining gap is that no human and no camera has seen this surface.
+
+Run the capture harness against a scratch store and read
+`agent-output-author-panel` and `agent-output-brief-outputs-area`:
 
 ```
 pnpm build:renderer
 pnpm build:shell
-$env:DASH_SHELL_URL='dash-app://ui/'
-pnpm exec electron dist/electron/smoke.mjs --user-data-dir=<scratch>\orchestratedash > <scratch>\smoke.log 2>&1
+$env:DASH_DATA_DIR='<scratch>'
+$env:DASH_CAPTURE_DIR='<scratch>\frames'
+pnpm exec electron dist/electron/capture-cockpit.mjs --user-data-dir=<scratch>\capture
 ```
 
-The basename must be `orchestratedash`; 85 PASS / 0 FAIL is the bar, and fewer
-than 85 lines means it died rather than failed.
+Pass `--user-data-dir` or the run collides with the live app and with the other
+lanes, and a stale log fakes success. Its fixtures carry 3–4 items per digest,
+so the frames will show the *structure* and not the thirty-item volume.
 
-What 6n now expects on `?stage=output`, and the reasoning to check it against:
-the scaffold declares `report(digest)`, `metrics`, `table(digest)`; the stage's
-open card is the newest digest; `report` and `table` both bind it, so both yield
-and one `Sources (n)` disclosure replaces them. Therefore `sections === 1`,
-`labels === ["How this agent has been doing"]`, `sources_summary` starts with
-`"Sources ("`, `sources_open === false`, `table_rows > 0` (the rows are in the
-DOM inside a closed `<details>`), and `panel_digest_bodies === 0`. 6o is
-unaffected — `<summary>` is not in its `button, input, select, textarea` query —
-and 6p is unaffected, and slightly safer, because the panel no longer draws a
-`.digest-items` list at all.
-
-**If 6n fails, do not delete it.** The likely failure is the wait condition
-(`sections === 1 && sources_summary !== null`) timing out because the sample's
-newest artifact is not what I assumed; the `panel` object is printed on failure
-and will say which.
-
-Second, before or after: run the capture harness against a scratch store and
-look at `agent-output-author-panel` and `agent-output-brief-outputs-area`. Four
-DASH defects in a row have had no overflow to measure, and this packet changes
-what the author's region looks like more than anything since MAR-646.
+The specific thing to judge, because a number cannot: the sample agent's panel
+now goes from three labelled sections to **one section plus a closed
+disclosure**. That is the intended fix and it is also, on a first look, a
+surface that lost two headings. If it reads as "where did my table go" rather
+than as "the sources are one press away", the answer is "Surprises" #3 — give
+the disclosure the first yielding section's label, one component, no view-model
+change.
 
 ## Evidence class
 
-**Fixture tests only.** Everything above was proven by `vitest` against
-in-memory fixtures and by `tsc`. Nothing in this packet has been observed in the
-packaged renderer, in the installed shell, or against any store. The smoke and
-capture-harness edits are *reasoned* changes to proof code that has not been
-executed since they were made. No claim in this handoff should be promoted past
-`merged` on the strength of it.
+**Fixture tests, plus installed-shell smoke in CI.**
+
+- *Fixture tests* — `vitest` over in-memory fixtures, and `tsc`. This covers the
+  lineage, the collapse, the per-run binding, the citation marks, the print
+  path, and the run grouping.
+- *Installed-style shell proof* — the `shell-smoke` job on this PR, 85 PASS /
+  0 FAIL / 0 SKIP, with proofs 6n/6o/6p asserting the new arrangement on the
+  real Electron shell against installed-style user data. This is stronger than
+  the "fixture tests only" I expected to be able to claim, and it is what the
+  rewritten 6n is worth.
+- *Not proven* — **nothing has been photographed and nothing has been seen on
+  Henrik's own installed build.** A GitHub Windows runner is not his machine,
+  and 6n asserts a DOM shape rather than a legible screen. Promotion past
+  `merged` should wait on the capture run above, or on Henrik looking at it.
 
 ## Needs orchestrator
 
@@ -216,8 +255,11 @@ executed since they were made. No claim in this handoff should be promoted past
 2. **A ruling on "Surprises" #3** — whether losing the author's declared labels
    for yielding sections is acceptable, or whether the Sources disclosure should
    wear the first yielding section's label.
-3. **Installed proof of 6n**, and the lifecycle promotion that depends on it.
-   This session's evidence does not reach `proven`.
+3. **The lifecycle call.** `shell-smoke` green on this PR is real installed-style
+   evidence and it came from CI rather than from a claim — but it is a DOM
+   assertion on a runner, not a look at Henrik's build. My own reading is
+   `merged` on evidence, `proven` only after the capture run or Henrik's eyes.
+   The orchestrator owns that call.
 4. **Linear**: MAR-875 has had nothing posted to it by this session.
 5. Coordinate with **UX-2 (MAR-876)** before it changes `agent-kit/scaffold.ts`'s
    declared panel: the scaffold's three sections are what 6n counts, and this
