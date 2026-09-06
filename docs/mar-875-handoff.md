@@ -60,22 +60,35 @@ pnpm typecheck                       -> clean (no output)
 pnpm brand:check                     -> 12 characters, 96 frames, 4 fonts verified
 pnpm vitest run tests/one-result-per-run.test.tsx
                                      -> Test Files 1 passed | Tests 32 passed
-pnpm test                            -> Test Files 266 passed | 1 failed (267)
-                                        Tests 5069 passed | 1 failed | 13 skipped
+pnpm test                            -> Test Files 265 passed | 4 failed (269)
+                                        Tests 5081 passed | 7 failed | 13 skipped
 ```
 
-The one red file is `tests/store-damage.test.ts` — *"carries the damage as a
-recovery, beside the agents that survived"*, **`Error: Test timed out in
-5000ms`**, not an assertion. Re-run alone it passes:
+### The red files are a machine flake, and this is the proof
 
-```
-pnpm vitest run tests/store-damage.test.ts
-                                     -> Test Files 1 passed | Tests 28 passed
-```
+Every failure in every full run was **`Error: Test timed out in 5000ms`** —
+never an assertion — and every one landed in the store/folder group that does
+real SQLite and filesystem work in temp directories: `agent-folders`,
+`folder-repair-flow`, `store-damage`, `store-sqlite`, `brand-surfaces`. Three
+other lane worktrees were installing, building and testing on this machine
+throughout.
 
-It is the known flake under parallel-lane load — three other worktrees were
-building and testing on this machine throughout — and it touches none of this
-packet's files. **Re-run it once before merging rather than taking my word.**
+I did not take that on trust. Checking `origin/master` out **in this same
+worktree** and running the same four files, interleaved:
+
+| Run | `origin/master` (2894539) | this branch |
+| --- | --- | --- |
+| 1 | 1 failed / 78 | 7 failed / 78 |
+| 2 | **6 failed / 78** | **0 failed — 78 passed** |
+
+The flake moves with the machine, not with the branch: master failed six of the
+same tests in a run where this branch passed all seventy-eight. The
+`brand-surfaces` case passes on its own too (`-t "hands the fleet row the
+character"` → 1 passed | 17 skipped).
+
+None of these files import anything this packet changed. **Re-run them once on a
+quiet machine before merging rather than taking my word**, but do not go hunting
+through this diff on their account — the defect is not there.
 
 `tests/client-bundle.test.ts` failed once during development and was **right**:
 `app/agents/detail/page.tsx` is a client component and `lib/views/panel.ts`
