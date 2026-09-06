@@ -34,6 +34,35 @@
  * exact configuration `scripts/build-shell.mjs` uses for Electron main — at
  * about 1.2 MB, and the bundle runs. A Node-only entry point has broken this
  * bundle before, which is why that was the first thing this packet established.
+ *
+ * ## One dropped connection must not kill a five-minute wait (MAR-880)
+ *
+ * `genlayer-js@1.1.8`'s own poll loop calls `client.getTransaction` with no
+ * try/catch around it, over a transport built with `retryCount: 0`. Judgement
+ * 4 on Proof Scout's brief died in `opening` — `open_tx` written, `submit_tx`
+ * never reached — twenty-five seconds after the press, while Studionet
+ * finalized that same open transaction six seconds later. One poll threw and
+ * the whole wait was abandoned as if the chain had gone silent, when it had
+ * not.
+ *
+ * So `waitFinalized` below does not hand the whole wait to the library's own
+ * recursive `waitForTransactionReceipt`. It drives its own poll loop,
+ * checking once per interval (`retries: 0`, so the library makes exactly one
+ * `getTransaction` call and either returns a decided receipt or throws) and
+ * retrying *that one check* — never the whole wait — up to `POLL_RETRY_LIMIT`
+ * times with a short backoff before deciding the network, not the chain, is
+ * the problem. `pollWithRetry` is exported specifically so that decision can
+ * be tested with a fake poll and no genlayer-js in the room — see
+ * `tests/genlayer-client.test.ts`.
+ *
+ * The one thing this must not do is treat "not decided yet" as an error: with
+ * `retries: 0` the library throws `Timed out waiting for transaction …` on a
+ * merely-pending status, and retrying *that* with a backoff would turn every
+ * ordinary poll into a five-times-slower one and could even manufacture a
+ * false `network_lost` out of a transaction that was simply still being
+ * judged. `isNotYetDecided` is the one place that message is read, and it is
+ * this file's own accounting, not a claim about anything durable — nothing
+ * derived from it is stored.
  */
 
 import { createAccount, createClient } from "genlayer-js";
@@ -42,6 +71,7 @@ import { TransactionStatus } from "genlayer-js/types";
 
 import type { GenLayerChain } from "./adjudicate";
 import type { GenLayerConnection } from "./connection";
+import { GenLayerNetworkLostError } from "./record";
 
 /**
  * How long DASH will watch one transaction, and where the numbers come from.
@@ -61,6 +91,59 @@ const ACCEPTED_POLL_MS = 2_000;
 const ACCEPTED_POLLS = 300;
 const FINALIZED_POLL_MS = 3_000;
 const FINALIZED_POLLS = 200;
+
+/**
+ * How many extra tries one failed poll gets before it counts as lost, and how
+ * long DASH waits between them (MAR-880).
+ *
+ * Five retries is enough to ride out one dropped connection or one
+ * not-yet-indexed hash without turning a check that normally takes a fraction
+ * of a second into a five-minute one on every single poll — most polls never
+ * retry at all. The backoff is short because the budget this sits inside is
+ * already generous (ten minutes to accepted, ten more to finalized); this is
+ * for riding out a blip, not for waiting out an outage.
+ */
+export const POLL_RETRY_LIMIT = 5;
+const POLL_RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 8_000] as const;
+
+/**
+ * Retry one poll up to `POLL_RETRY_LIMIT` times with a short backoff before
+ * giving up on it.
+ *
+ * Generic over `poll`, and `sleep` is injectable, on `adjudicateBrief`'s own
+ * reasoning: a test of a five-times-longer wait must not take five times as
+ * long. Nothing here knows what a "poll" checks or what it means for one to
+ * succeed — that is `waitForStatus`'s job, below. This function knows only
+ * how many times to try again and how long to wait in between.
+ */
+export async function pollWithRetry<T>(
+  poll: () => Promise<T>,
+  sleep: (ms: number) => Promise<void> = realSleep,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= POLL_RETRY_LIMIT; attempt++) {
+    try {
+      return await poll();
+    } catch (error) {
+      lastError = error;
+      if (attempt === POLL_RETRY_LIMIT) {
+        break;
+      }
+      await sleep(POLL_RETRY_BACKOFF_MS[attempt]);
+    }
+  }
+  throw new GenLayerNetworkLostError(
+    `lost the network after ${POLL_RETRY_LIMIT + 1} consecutive polls: ${errorMessage(lastError)}`,
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function realSleep(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * The faucet, over the network's own JSON-RPC.
@@ -152,25 +235,115 @@ export async function openGenLayerChain(
        * Neither of them means the contract call succeeded, and neither means
        * state was applied. `lib/genlayer/receipt.ts` is the only thing that
        * answers those, from three fields on the receipt returned here.
+       *
+       * See this file's header (MAR-880): each status is its own poll loop
+       * rather than one call handed to the library's recursive wait, so a
+       * dropped connection on poll 4 does not cost the whole budget earned by
+       * polls 1 through 3.
        */
-      await client.waitForTransactionReceipt({
-        hash: asHash(hash),
-        status: TransactionStatus.ACCEPTED,
-        interval: ACCEPTED_POLL_MS,
-        retries: ACCEPTED_POLLS,
-      });
-      return client.waitForTransactionReceipt({
-        hash: asHash(hash),
-        status: TransactionStatus.FINALIZED,
-        interval: FINALIZED_POLL_MS,
-        retries: FINALIZED_POLLS,
-      });
+      await waitForStatus(client, asHash(hash), TransactionStatus.ACCEPTED, ACCEPTED_POLL_MS, ACCEPTED_POLLS);
+      return waitForStatus(client, asHash(hash), TransactionStatus.FINALIZED, FINALIZED_POLL_MS, FINALIZED_POLLS);
     },
 
     async read(functionName: string, args: readonly string[]): Promise<unknown> {
       return client.readContract({ address, functionName, args: [...args] });
     },
   };
+}
+
+/**
+ * The one method `waitForStatus` needs from a genlayer-js client.
+ *
+ * Narrower than `ReturnType<typeof createClient>` on purpose: a structural
+ * type this small is one a test can satisfy with a plain object and no
+ * genlayer-js in the room — see `tests/genlayer-client.test.ts`.
+ */
+export interface PollableClient {
+  waitForTransactionReceipt(args: {
+    hash: `0x${string}` & { length: 66 };
+    status: TransactionStatus;
+    interval: number;
+    retries: number;
+  }): Promise<unknown>;
+}
+
+/**
+ * One status, waited for, with each individual poll retried on its own
+ * (MAR-880).
+ *
+ * `checkOnce` below is one call to the library with `retries: 0`, so it makes
+ * exactly one `getTransaction` and either returns a decided receipt or
+ * throws. This loop turns that into the same shape the library's own
+ * recursive wait had — up to `maxPolls` checks, `intervalMs` apart — except
+ * that a check which throws for a transport reason is retried by
+ * `pollWithRetry` before it costs one of those `maxPolls` slots, and a check
+ * which throws only because the status is not there yet costs a slot and
+ * nothing else. Exhausting `maxPolls` throws a plain `Error`, exactly the
+ * shape the library's own timeout took, which is what keeps this an
+ * `abandoned` and not a `network_lost` — see `lib/genlayer/adjudicate.ts`.
+ *
+ * Exported so a test can drive the whole loop — throws that resolve on
+ * retry, throws that exhaust the retry budget, and a budget that runs out
+ * while every poll keeps succeeding — against a fake `PollableClient` with no
+ * real wait in the room. `sleep` is injectable for the same reason: a test of
+ * a budget-exhaustion path must not spend that budget's wall-clock time.
+ */
+export async function waitForStatus(
+  client: PollableClient,
+  hash: `0x${string}` & { length: 66 },
+  status: TransactionStatus,
+  intervalMs: number,
+  maxPolls: number,
+  sleep: (ms: number) => Promise<void> = realSleep,
+): Promise<unknown> {
+  for (let poll = 0; poll < maxPolls; poll++) {
+    const outcome = await pollWithRetry(() => checkOnce(client, hash, status), sleep);
+    if (outcome.decided) {
+      return outcome.receipt;
+    }
+    if (poll < maxPolls - 1) {
+      await sleep(intervalMs);
+    }
+  }
+  throw new Error(`Timed out waiting for transaction ${hash} to reach status "${status}".`);
+}
+
+/** One poll's answer. Not-yet-decided is a normal outcome, never a throw here. */
+type PollOutcome = { decided: true; receipt: unknown } | { decided: false };
+
+/** Ask once. `retries: 0` is what makes this exactly one `getTransaction`. */
+async function checkOnce(
+  client: PollableClient,
+  hash: `0x${string}` & { length: 66 },
+  status: TransactionStatus,
+): Promise<PollOutcome> {
+  try {
+    const receipt = await client.waitForTransactionReceipt({
+      hash,
+      status,
+      interval: 0,
+      retries: 0,
+    });
+    return { decided: true, receipt };
+  } catch (error) {
+    if (isNotYetDecided(error)) {
+      return { decided: false };
+    }
+    throw error;
+  }
+}
+
+/**
+ * The one shape `client.waitForTransactionReceipt` throws when asked to check
+ * once (`retries: 0`) and the status has not arrived — a normal answer to an
+ * ordinary poll, never a transport failure. Matched by the message because
+ * the library gives it no other shape: read from `genlayer-js@1.1.8`,
+ * `dist/index.js`, `receiptActions.waitForTransactionReceipt`. Anything else
+ * thrown from that call — a rejected fetch, a non-JSON body, an unindexed
+ * hash — is `pollWithRetry`'s to retry, not this function's to interpret.
+ */
+function isNotYetDecided(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("Timed out waiting for transaction ");
 }
 
 /**
