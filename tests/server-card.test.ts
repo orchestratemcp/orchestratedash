@@ -465,6 +465,30 @@ describe("what a card is for", () => {
     expect(new Set(refreshes)).toEqual(new Set(["Check now"]));
   });
 
+  it("only offers the confirmation where there is something to confirm", () => {
+    /*
+     * `confirm_host_key` carries the fingerprint a person compares; the refusal
+     * that follows the same decision not having been made — `host_key_not_trusted`
+     * — arrives with nothing, because DASH was turned away before it read
+     * anything. A **Yes, this is my server** there would be a control with no
+     * value behind it, and a dead button is worse than a sentence.
+     */
+    expect(
+      primaryServerAction({
+        step: "confirm_host_key",
+        label: "x",
+        fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+        key_type: "ssh-ed25519",
+        offered_count: 3,
+      })?.kind,
+    ).toBe("confirm");
+    const refused = { step: "unreachable", label: "x", problem: "host_key_not_trusted" } as const;
+    expect(serverCardState(refused)).toBe("needs_your_ok");
+    // The state is still its own — the chip says the server answered — and the
+    // control is the one that can actually get the code.
+    expect(primaryServerAction(refused)?.kind).toBe("check");
+  });
+
   it("never asks somebody to press Check on a server nothing can reach from here", () => {
     // `no_ssh_on_this_computer` is the one problem where the fault is on this
     // machine, and pressing Check again is still the honest next thing: the

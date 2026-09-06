@@ -260,10 +260,17 @@ export function ServerCard({
    */
   const sayNextAction =
     copy.next_action !== null &&
+    /*
+     * `never_checked`'s next action is literally "Check this server", which is
+     * the button. Every other suppression is decided by the control rather than
+     * by the state, so a state whose primary is only a *refresh* — the walls
+     * where DASH never got in, and `host_key_not_trusted`, which has no
+     * fingerprint to confirm — keeps its own guidance above the button.
+     */
     cardState !== "never_checked" &&
-    cardState !== "up" &&
-    cardState !== "needs_your_ok" &&
-    cardState !== "not_set_up";
+    primary?.kind !== "confirm" &&
+    primary?.kind !== "setup" &&
+    primary?.kind !== "put_agent";
   /*
    * The only agent that could go here, when there is exactly one.
    *

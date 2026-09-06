@@ -366,7 +366,22 @@ export function primaryServerAction(state: HostConnectState): ServerPrimaryActio
         kind: "setup",
       };
     case "needs_your_ok":
-      return { label: "Yes, this is my server", kind: "confirm" };
+      /*
+       * Only `confirm_host_key` carries a fingerprint, and a confirmation is a
+       * decision *about* one — so it is the only state where this card can
+       * offer the press.
+       *
+       * `host_key_not_trusted` is the refusal that follows the same decision
+       * not having been made, and it arrives with nothing to compare: DASH was
+       * turned away before it read anything. A **Yes, this is my server** there
+       * would be a control with no value behind it, which is the dead button
+       * `NoServerYet` refuses to draw one page over. A check asks the server
+       * again and comes back with the code, and the sentence above the button
+       * still says what the decision is.
+       */
+      return state.step === "confirm_host_key"
+        ? { label: "Yes, this is my server", kind: "confirm" }
+        : { label: "Check now", kind: "check" };
     case "up":
       return { label: "Put an agent here", kind: "put_agent" };
     case "never_checked":
