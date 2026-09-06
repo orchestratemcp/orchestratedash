@@ -119,6 +119,7 @@ export function startAdjudication(
   void adjudicateBrief(brief, digest, connection.connection, openGenLayerChain, {
     now: () => new Date(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    log: (line) => console.warn(line),
   }).catch((error: unknown) => {
     console.warn(
       `[dash] a judgement stopped unexpectedly: ${error instanceof Error ? error.message : String(error)}`,

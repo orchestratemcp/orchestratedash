@@ -50,8 +50,9 @@ import {
   describeAdjudicationNetwork,
   describeAdjudicationStage,
 } from "../lib/copy/genlayer";
-import { ADJUDICATION_STAGES } from "../lib/genlayer/record";
+import { ADJUDICATION_STAGES, GenLayerNetworkLostError } from "../lib/genlayer/record";
 import type { ArtifactItem, BriefArtifact, DigestArtifact } from "../lib/contracts";
+import { expectPlainLanguage } from "./helpers/plain-language";
 
 /* ---------------------------------------------------------------------- *
  * A brief and the list it was written from
@@ -459,6 +460,10 @@ function fakeChain(evaluateReceipt: unknown, verdictBody: unknown): {
 const CLOCK = {
   now: () => new Date("2026-09-04T12:00:00.000Z"),
   sleep: () => Promise.resolve(),
+  log: () => {
+    // Most tests do not care what was logged. The two that do (MAR-880) build
+    // their own deps with a recorder — see "one run" below.
+  },
 };
 
 describe("one run", () => {
@@ -526,6 +531,93 @@ describe("one run", () => {
     // that would have had to be explained afterwards never exists.
     expect(calls).toEqual([]);
   });
+
+  /*
+   * MAR-880. Judgement 4 on Proof Scout's brief died in `opening` — `open_tx`
+   * written, `submit_tx` never reached — twenty-five seconds after the press,
+   * while Studionet finalized that same open transaction six seconds later.
+   * `chain.waitFinalized` throwing `GenLayerNetworkLostError` is what
+   * `lib/genlayer/client.ts` does once its own poll retry budget is
+   * exhausted on consecutive transport errors, and the two tests below are
+   * the two things that must be true about it: the row settles as a kind a
+   * person can act on, and the network's own text reaches a log line and
+   * nowhere durable.
+   */
+  it("reports network_lost and logs one line naming the stage, when the chain loses the network mid-wait", async () => {
+    const logged: string[] = [];
+    const chain: GenLayerChain = {
+      address: "0x0000000000000000000000000000000000000001",
+      fund: () => Promise.resolve(),
+      write: (functionName) =>
+        Promise.resolve(`0x${functionName.length.toString(16).padStart(64, "0")}`),
+      // Died in `opening`, exactly as MAR-880's diagnosis describes: the write
+      // succeeded (a hash exists, `open_tx` would be set) and the wait on it
+      // is what lost the network.
+      waitFinalized: () =>
+        Promise.reject(
+          new GenLayerNetworkLostError(
+            "lost the network after 6 consecutive polls: fetch failed",
+          ),
+        ),
+      read: () => Promise.resolve({}),
+    };
+    const result = await adjudicateBrief(
+      briefOf(),
+      digestOf(),
+      defaultGenLayerConnection(),
+      () => Promise.resolve(chain),
+      { ...CLOCK, log: (line) => logged.push(line) },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.failure).toBe("network_lost");
+    expect(result.commission_id).not.toBeNull();
+
+    // One line, naming the commission and the stage — and the network's own
+    // text, which is exactly the content that must never reach the row (see
+    // `lib/genlayer/store.ts`'s standing rule) but is legitimate here because
+    // a log line is not a durable column a person's screen reads from.
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain(String(result.commission_id));
+    expect(logged[0]).toMatch(/stopped in opening:/);
+    expect(logged[0]).toContain("fetch failed");
+  });
+
+  it("reports abandoned, and logs nothing, when the wait's own budget runs out rather than the network", async () => {
+    const logged: string[] = [];
+    const chain: GenLayerChain = {
+      address: "0x0000000000000000000000000000000000000001",
+      fund: () => Promise.resolve(),
+      write: (functionName) =>
+        Promise.resolve(`0x${functionName.length.toString(16).padStart(64, "0")}`),
+      // What `lib/genlayer/client.ts`'s own `waitForStatus` throws once
+      // `maxPolls` is exhausted while the chain kept answering — a plain
+      // `Error`, not `GenLayerNetworkLostError`, which is the whole of what
+      // keeps this an `abandoned` rather than a `network_lost`.
+      waitFinalized: () =>
+        Promise.reject(
+          new Error('Timed out waiting for transaction 0xdeadbeef to reach status "ACCEPTED".'),
+        ),
+      read: () => Promise.resolve({}),
+    };
+    const result = await adjudicateBrief(
+      briefOf(),
+      digestOf(),
+      defaultGenLayerConnection(),
+      () => Promise.resolve(chain),
+      { ...CLOCK, log: (line) => logged.push(line) },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.failure).toBe("abandoned");
+    expect(logged).toEqual([]);
+  });
 });
 
 /* ---------------------------------------------------------------------- *
@@ -589,11 +681,32 @@ describe("the words", () => {
         "transaction_refused",
         "payload_refused",
         "abandoned",
+        "network_lost",
       ] as const
     ).map(describeAdjudicationFailure);
     expect(new Set(failures.map((one) => one.headline)).size).toBe(failures.length);
-    // Every one leads somewhere, which is what makes them five and not one.
+    // Every one leads somewhere, which is what makes them six and not one.
     expect(failures.every((one) => one.next_action !== null)).toBe(true);
+  });
+
+  it("(MAR-880) says network_lost in plain language, with no raw identifier or network text", () => {
+    /*
+     * The plain-language gate every guided-path surface runs — see
+     * `tests/helpers/plain-language.ts` — not run over this module before, and
+     * worth running now precisely because `network_lost` is the one failure
+     * whose whole reason for existing is a caught network error. Nothing
+     * about that error may leak into what a person reads.
+     */
+    const said = describeAdjudicationFailure("network_lost");
+    expectPlainLanguage([said.headline, said.meaning, said.next_action ?? ""]);
+    expect(said.meaning).not.toMatch(/https?:\/\//);
+    expect(said.tone).toBe("muted");
+    expect(said.next_action).toBe("Ask for it to be judged again.");
+  });
+
+  it("(MAR-880) says abandoned in plain language too", () => {
+    const said = describeAdjudicationFailure("abandoned");
+    expectPlainLanguage([said.headline, said.meaning, said.next_action ?? ""]);
   });
 
   it("names the network rather than printing its endpoint", () => {
@@ -613,6 +726,7 @@ describe("the words", () => {
       describeAdjudication("applied", "REJECTED"),
       describeAdjudication("no_consensus", null),
       describeAdjudicationFailure("abandoned"),
+      describeAdjudicationFailure("network_lost"),
     ]
       .flatMap((one) => [one.headline, one.meaning, one.next_action ?? ""])
       .join(" ");

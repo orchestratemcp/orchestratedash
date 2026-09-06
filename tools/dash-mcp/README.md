@@ -57,6 +57,15 @@ readable, and it is why `brief-fingerprint.mjs` is a separate file marked *do
 not edit*: it is the agent's half of one function DASH holds the other half of.
 `tests/fingerprint-mirror.test.ts` pins the two together.
 
+It also declares one `model_provider` connection, `optional: true`, so the
+person can ask it a question about what it found even though none of its own
+steps need a model. That needs no credential to import or run — DASH only
+hands it a key when the person presses "Give it to N waiting agents" on
+Settings → AI, or connects it on the agent's own row. Pass `model_provider`
+(`openrouter`, `anthropic` or `openai`; default `openrouter`) to
+`dash_agent_scaffold` to match whichever provider the person already has
+connected.
+
 ## Layout
 
 ```
