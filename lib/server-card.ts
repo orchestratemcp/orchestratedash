@@ -159,7 +159,14 @@ function standingQualifier(state: HostConnectState): string | null {
         case "helper_not_installed":
           return "not set up yet";
         case "no_runner_there":
-          return "nothing running";
+          /*
+           * MAR-871. "nothing running" read as a fault on the state every
+           * freshly enrolled server is in before its first deploy — the first
+           * sentence a new user got about their brand-new machine. It is the
+           * *success* of setting a server up, so the chip says what has been
+           * achieved rather than what has not happened yet.
+           */
+          return "ready";
         case "runner_refused_credential":
           return "not recognised";
       }
@@ -178,6 +185,14 @@ function standingQualifier(state: HostConnectState): string | null {
  * Red is spent on the three states where something is genuinely wrong or
  * unknown: nothing answered, the sign-in was turned away, and the machine may
  * not be the one DASH connected to before.
+ *
+ * MAR-871 moved one rung further. `no_runner_there` was amber, and amber is
+ * what a person reads as *almost*: it sat over the sentence a freshly rented,
+ * correctly set-up server shows on the day it is enrolled. Henrik's own ruling
+ * is that this state is the one clear **your server is up** — success styling,
+ * not a warning — because there is nothing left for the person to repair. The
+ * one thing left to do is put an agent on it, which is an invitation and not a
+ * fault, and the card draws it as the single primary action.
  */
 function standingTone(state: HostConnectState): string {
   switch (state.step) {
@@ -198,10 +213,11 @@ function standingTone(state: HostConnectState): string {
         case "no_ssh_on_this_computer":
         case "ssh_tools_cannot_check_here":
           return "chip-err";
+        case "no_runner_there":
+          return "chip-ok";
         case "host_key_not_trusted":
         case "key_not_on_server":
         case "helper_not_installed":
-        case "no_runner_there":
         case "runner_refused_credential":
           return "chip-warn";
       }
@@ -225,6 +241,176 @@ export function standingChip(state: HostConnectState): StandingChip {
         ? word
         : `${word}, ${qualifier}`;
   return { label, tone: standingTone(state), reach };
+}
+
+/* ---------------------------------------------------------------------- *
+ * One card, one state, one primary action (MAR-871)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What this card is *for*, right now.
+ *
+ * ## Why a second vocabulary beside `HostConnectState`
+ *
+ * `HostConnectState` has fifteen members and each of them is a real, separate
+ * diagnosis — MAR-572/573/600 spent three attended runs pulling them apart and
+ * nothing here merges them back. What the fifteen do not carry is the thing a
+ * *card* has to decide: how many controls to draw, and which one is the one.
+ * The Servers page answered that per control, so a server that was simply up
+ * offered five buttons — check, ask, turn on, put an agent here, stop using it —
+ * and Henrik's own report of that page is that he could not tell what state his
+ * server was in or what he was meant to press.
+ *
+ * So this is the fold, stated once and tested once: fifteen diagnoses, seven
+ * situations, one primary action each. The diagnosis is still what the sentences
+ * are read out of — `describeConnectState` is untouched and still says exactly
+ * which wall DASH met — and this decides only what the card does about it.
+ *
+ * ## The two that are not failures
+ *
+ * `up` is `no_runner_there`, and it is the state **every freshly enrolled
+ * server is in before its first deploy**. `in_use` is a server that named
+ * something. Splitting them is the whole of Henrik's shape: the first has one
+ * thing left to do and the second is a machine you manage.
+ */
+export type ServerCardState =
+  /** No record at all. The page draws the wizard, not a card. */
+  | "no_server"
+  /** DASH cannot talk to a runner there yet, and the setup text is the way out. */
+  | "not_set_up"
+  /** A check is in flight. No buttons, one sentence. */
+  | "checking"
+  /** A saved record nobody has asked anything yet. */
+  | "never_checked"
+  /** The one decision only the person can make: is this your machine? */
+  | "needs_your_ok"
+  /** Signed in, set up, and holding nothing. Your server is up. */
+  | "up"
+  /** The server named at least one agent. This is the manage state. */
+  | "in_use"
+  /** Something is wrong or unknown, and the sentence beside it says which. */
+  | "unreachable";
+
+export function serverCardState(state: HostConnectState): ServerCardState {
+  switch (state.step) {
+    case "no_host":
+      return "no_server";
+    case "not_checked":
+      return "never_checked";
+    case "probing":
+      return "checking";
+    case "awaiting_key_install":
+      return "not_set_up";
+    case "confirm_host_key":
+      return "needs_your_ok";
+    case "reachable":
+      /*
+       * Empty is a real answer and not the same as absent. A server that
+       * answered and named nothing is up and holding nothing; anything with a
+       * name on it is a machine somebody manages.
+       */
+      return state.agents_there.length === 0 ? "up" : "in_use";
+    case "unreachable":
+      switch (state.problem) {
+        case "no_runner_there":
+          return "up";
+        case "host_key_not_trusted":
+          return "needs_your_ok";
+        case "helper_not_installed":
+        case "key_not_on_server":
+        // The runner is there and was introduced by a different copy of DASH.
+        // Running the setup text again is what gives it a fresh introduction,
+        // so this is the same exit as a server that was never set up.
+        case "runner_refused_credential":
+          return "not_set_up";
+        case "no_ssh_on_this_computer":
+        case "ssh_tools_cannot_check_here":
+        case "no_answer_at_address":
+        case "sign_in_refused":
+        case "server_identity_changed":
+          return "unreachable";
+      }
+  }
+}
+
+/**
+ * What the card asks a person to do, and there is exactly one of them.
+ *
+ * `kind` rather than a callback, because this module renders nothing and must
+ * not learn what a press does. The card maps the kind to its own handler, and a
+ * state added without an action here is a compile error in the switch rather
+ * than a card with no button on it.
+ *
+ * `null` for the two states where pressing anything would be wrong: a check
+ * already in flight, and a page with no record on it.
+ */
+export interface ServerPrimaryAction {
+  label: string;
+  kind: "check" | "setup" | "put_agent" | "confirm";
+}
+
+export function primaryServerAction(state: HostConnectState): ServerPrimaryAction | null {
+  switch (serverCardState(state)) {
+    case "no_server":
+    case "checking":
+      return null;
+    case "not_set_up":
+      return {
+        // "Set it up again" only where a runner already answered and did not
+        // know DASH. Everywhere else this server has never been set up, and a
+        // word implying it was would send somebody looking for what they broke.
+        label:
+          state.step === "unreachable" && state.problem === "runner_refused_credential"
+            ? "Set it up again"
+            : "Set up this server",
+        kind: "setup",
+      };
+    case "needs_your_ok":
+      return { label: "Yes, this is my server", kind: "confirm" };
+    case "up":
+      return { label: "Put an agent here", kind: "put_agent" };
+    case "never_checked":
+    case "in_use":
+    case "unreachable":
+      /*
+       * One refresh, everywhere (MAR-871). The card used to carry two — "Check
+       * this server" in the button row and "Ask the server" inside the restart
+       * section — which asked a person to know that one of them signs in for the
+       * standing and the other signs in for the boot entry. Both are DASH going
+       * to the machine and asking, so both are this.
+       */
+      return { label: "Check now", kind: "check" };
+  }
+}
+
+/**
+ * Did DASH actually get onto this machine?
+ *
+ * ## The defect this replaces
+ *
+ * The summary above the list counted a server as having answered when its
+ * standing was `step: "reachable"`, and `no_runner_there` is modelled as a
+ * problem under `step: "unreachable"` even though `describeConnectState` gives
+ * it `reach: "signed_in"` and copy asserting the server answered. So the
+ * attended run of 2026-09-05 photographed *"1 server is saved. **None
+ * answered** when DASH checked"* directly above a card reading *"Vultr box is
+ * reachable, with nothing running on it — nothing is wrong with the
+ * connection."* The banner and the card it introduces disagreed, on the state
+ * every new server is in.
+ *
+ * It is MAR-605 returning inverted: that run photographed *"1 server is
+ * connected"* over a card saying DASH could not get in, and the fix was to
+ * count from a check rather than from a record. The same class of drift came
+ * back the other way round, because the count read a `step` and the sentence
+ * read a `reach`.
+ *
+ * So the question is asked of the *described* state, which is the same object
+ * the sentence is read out of. A renderer cannot count a server as silent while
+ * the sentence beside it says the server let DASH in.
+ */
+export function reachedTheServer(state: HostConnectState): boolean {
+  const { reach } = describeConnectState(state);
+  return reach === "signed_in" || reach === "connected";
 }
 
 /* ---------------------------------------------------------------------- *
@@ -413,6 +599,27 @@ export interface ServerCheck {
   answered: boolean;
   /** DASH's own clock when the server replied, or null if nothing has asked. */
   at: string | null;
+  /**
+   * What the server itself said was running, or null when it has not said
+   * (MAR-871).
+   *
+   * The third of the four facts this line must keep apart, and the one that is
+   * hardest to keep honest: **null is not zero**. A server DASH signed in to
+   * and never asked about its agents, and a server that answered and named
+   * nothing, look identical to a counter and mean opposite things to a reader.
+   * Only a number the *host* produced may reach this field.
+   */
+  running: number | null;
+  /**
+   * Whether this person asked this server to keep its agents running by itself
+   * (MAR-871).
+   *
+   * DASH's own record of its own act, so it is knowable with the server asleep
+   * — which is exactly why it is a separate fact from the three above. A card
+   * that let "residency is on" imply "and it is running" would be claiming a
+   * machine's state from a switch somebody flipped in August.
+   */
+  residency_on: boolean;
 }
 
 /**
@@ -439,6 +646,29 @@ export interface ServerCheck {
  * check proved this session. **Unasked** is the honest majority state — a page
  * that has just opened has checked nothing, and saying so is what stops the
  * reader assuming silence means working.
+ *
+ * ## Four facts, kept apart (MAR-871, UX-4)
+ *
+ * The attended run found the line disagreeing with the card beneath it, and the
+ * reason it could was that it had one fact where the card had four. So the
+ * clauses below are separate and each is drawn only from its own source:
+ *
+ * - **Last contact** — did DASH get onto the machine, and when. Counted from
+ *   `reachedTheServer`, which reads the described state rather than a `step`,
+ *   so it cannot disagree with the sentence on the card. A residency press or a
+ *   key placement is contact too: both sign in, and the old line went on saying
+ *   *"DASH has not checked since you opened it"* two seconds after one.
+ * - **Running state** — only a number the host itself produced, and absent
+ *   entirely when no host has produced one.
+ * - **Residency** — DASH's own record of a switch this person pressed. True
+ *   with the server asleep, which is why it may never imply the one above.
+ * - **Duplicates** — unchanged, and still says DASH kept them.
+ *
+ * There is deliberately no *last successful job* clause. Nothing in DASH holds
+ * one for a host: `agent_deploys` is bounded by ADR 0010 to DASH's own outbound
+ * act, `evidence_pulls` holds only local rows, and the attended run established
+ * that no run has yet produced output on a server at all. A clause for it would
+ * be a field invented by a renderer.
  */
 /**
  * Why this card cannot put an agent on this server any more (MAR-642).
@@ -452,9 +682,23 @@ export interface ServerCheck {
  * server, not the agent, not whether anything is deployed.
  * `MODEL_KEY_STAYS_HOME_REFUSAL` is a constant for the same reason.
  */
+/*
+ * MAR-871 rewrote it. The old sentence — *"Putting an agent on a server starts
+ * on the agent […] Open one and its settings will offer this server."* — was
+ * the answer to a question nobody asked. The attended run's own finding: a
+ * novice pressed a primary-styled control reading **Put an agent here** and was
+ * told, in DASH's voice, that the thing they had just pressed happens somewhere
+ * else. The label promised a verb the control did not perform.
+ *
+ * The control is unchanged and the list under it is unchanged. What changed is
+ * that this line now *instructs* rather than explains a routing decision: pick
+ * the agent, and the press after this one sends it. The destination is named
+ * because the person is about to be moved there, which is the difference
+ * between a hand-off and a bounce.
+ */
 export const DEPLOY_LIVES_ON_THE_AGENT =
-  "Putting an agent on a server starts on the agent, where its connections and its model are. " +
-  "Open one and its settings will offer this server.";
+  "Choose the agent to put here. DASH opens that agent's own settings at the step that sends " +
+  "it, because its connections and its model are set there.";
 
 /**
  * One deployed copy, as the table at the top of the page reads it (MAR-642).
@@ -535,13 +779,49 @@ export function summariseServers(
           ? `${answered.length === 1 ? "It answered" : "All of them answered"} when DASH checked${lastAsked(answered)}.`
           : `${String(answered.length)} of them answered when DASH checked${lastAsked(answered)}.`;
 
+  /*
+   * What the *hosts* said, added only where a host said it. `null` is skipped
+   * rather than read as nought — a server DASH signed in to and never asked
+   * about its agents is not a server with no agents on it.
+   */
+  const many = servers.length > 1;
+  const counted = checks
+    .map((check) => check.running)
+    .filter((running): running is number => running !== null);
+  const running = counted.reduce((total, one) => total + one, 0);
+  const runningClause =
+    counted.length === 0
+      ? ""
+      : running === 0
+        ? many
+          ? " None of them reported an agent running."
+          : " It reported nothing running."
+        : running === 1
+          ? ` ${many ? "They" : "It"} reported 1 agent running.`
+          : ` ${many ? "They" : "It"} reported ${String(running)} agents running.`;
+
+  /*
+   * DASH's own record, and worded as one. "You have asked" rather than "it
+   * does", because the server's own answer to that question lives on the card
+   * and can disagree — somebody may have switched it off on the machine itself.
+   */
+  const kept = checks.filter((check) => check.residency_on).length;
+  const residencyClause =
+    kept === 0
+      ? ""
+      : !many
+        ? " You have asked it to keep its agents running after a restart."
+        : kept === 1
+          ? " You have asked 1 of them to keep its agents running after a restart."
+          : ` You have asked ${String(kept)} of them to keep their agents running after a restart.`;
+
   const duplicated = servers.filter((server) => server.same_server_count > 1).length;
   const duplicates =
     duplicated === 0
       ? ""
       : ` ${String(duplicated)} of them describe a server DASH already had — DASH kept them rather than deleting anything.`;
 
-  return `${saved} ${standing}${duplicates}`;
+  return `${saved} ${standing}${runningClause}${residencyClause}${duplicates}`;
 }
 
 /**
@@ -661,22 +941,47 @@ export function everyServerCardSentence(): string[] {
     // Every branch of the summary, which is four sentences and not one: nothing
     // asked, none answered, all answered, some answered.
     summariseServers([{ same_server_count: 1 }]),
-    summariseServers([{ same_server_count: 1 }], [{ answered: false, at: CHECKED_AT }]),
-    summariseServers([{ same_server_count: 1 }], [{ answered: true, at: CHECKED_AT }]),
+    summariseServers([{ same_server_count: 1 }], [check({ answered: false })]),
+    summariseServers([{ same_server_count: 1 }], [check({ answered: true })]),
     summariseServers(
       [{ same_server_count: 1 }, { same_server_count: 1 }],
-      [
-        { answered: true, at: CHECKED_AT },
-        { answered: false, at: CHECKED_AT },
-      ],
+      [check({ answered: true }), check({ answered: false })],
     ),
     summariseServers(
       [{ same_server_count: 4 }, { same_server_count: 4 }],
-      [
-        { answered: true, at: CHECKED_AT },
-        { answered: true, at: CHECKED_AT },
-      ],
+      [check({ answered: true }), check({ answered: true })],
     ),
+    /*
+     * MAR-871's three added clauses, every branch of each — including the
+     * singular forms, which is where a summary about one server would otherwise
+     * read "1 of them". The gate only ever sees a string a fixture reaches.
+     */
+    summariseServers([{ same_server_count: 1 }], [check({ answered: true, running: 0 })]),
+    summariseServers([{ same_server_count: 1 }], [check({ answered: true, running: 1 })]),
+    summariseServers([{ same_server_count: 1 }], [check({ answered: true, running: 3 })]),
+    summariseServers(
+      [{ same_server_count: 1 }, { same_server_count: 1 }],
+      [check({ answered: true, running: 0 }), check({ answered: true, running: 0 })],
+    ),
+    summariseServers(
+      [{ same_server_count: 1 }, { same_server_count: 1 }],
+      [check({ answered: true, running: 1 }), check({ answered: true, running: 0 })],
+    ),
+    summariseServers(
+      [{ same_server_count: 1 }, { same_server_count: 1 }],
+      [check({ answered: true, running: 2 }), check({ answered: true, running: 1 })],
+    ),
+    summariseServers([{ same_server_count: 1 }], [check({ residency_on: true })]),
+    summariseServers(
+      [{ same_server_count: 1 }, { same_server_count: 1 }],
+      [check({ residency_on: true }), check({ residency_on: false })],
+    ),
+    summariseServers(
+      [{ same_server_count: 1 }, { same_server_count: 1 }],
+      [check({ residency_on: true }), check({ residency_on: true })],
+    ),
+    // MAR-871. The seven card states, as the one control each of them offers.
+    ...states.map((state) => primaryServerAction(state)?.label ?? ""),
     /*
      * MAR-642's four sentences, every branch of each. The gate only ever sees a
      * string a fixture reaches — MAR-620's lesson about an optional field no
@@ -694,6 +999,19 @@ export function everyServerCardSentence(): string[] {
 
 /** One fixed instant, so the sweep reads the same on two runs. */
 const CHECKED_AT = "2026-08-10T21:14:37Z";
+
+/**
+ * One check for the sweep, with every fact stated.
+ *
+ * Defaults rather than optional fields on `ServerCheck` itself. An optional
+ * field is one a fixture can leave unset, and a clause behind an unset field is
+ * a clause the copy gate never reads — which is how a sentence ships green and
+ * unchecked. Here the defaults live in the *fixture*, so the type still obliges
+ * every caller to answer all four questions.
+ */
+function check(over: Partial<ServerCheck> = {}): ServerCheck {
+  return { answered: false, at: CHECKED_AT, running: null, residency_on: false, ...over };
+}
 
 /** A real runner build's shape, because it is rendered as a value. */
 const BUILD = "96cef12082fe67afa3a6";
