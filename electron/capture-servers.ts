@@ -570,7 +570,25 @@ async function run(): Promise<void> {
       if (steps === 0) {
         console.log(`[servers] no card at ${viewport.name} — recipe frame skipped`);
       } else {
-        console.log(`[servers]   recipe: ${String(steps)} steps on screen`);
+        /*
+         * Measured **open**, and that is the point of measuring it twice.
+         *
+         * The first run of this scene reported `page_overflows: false` on every
+         * frame and then photographed a window with a horizontal scrollbar on
+         * it: the measurement ran before the recipe was opened, and the recipe
+         * is the only thing on this card holding a shell snippet that will not
+         * reflow. A measurement that cannot see the widest thing on the page is
+         * a measurement that will keep saying the page is fine.
+         */
+        const open = await layout(window);
+        measurements.push({
+          viewport: viewport.name,
+          theme,
+          density: "comfortable",
+          recipe_open: true,
+          ...(open as object),
+        });
+        console.log(`[servers]   recipe: ${String(steps)} steps on screen ${JSON.stringify(open)}`);
         await shoot(window, `servers-recipe-${viewport.name}-${theme}-comfortable`);
         // Back to the card as it opens, so the next frame is not of an open
         // disclosure under a filename that does not say so.

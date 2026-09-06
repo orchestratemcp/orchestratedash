@@ -8739,9 +8739,30 @@ main:has(.agent-cockpit) {
 
 .setup-steps {
   margin: var(--density-gap) 0 0;
-  padding-left: var(--space-5);
+  /* Room for the marker, which is the one piece of a numbered list that must
+     not be clipped: "step 3 of 5" is the whole reason this is an ordered list
+     and not four paragraphs. */
+  padding-left: var(--space-6);
   display: grid;
   gap: var(--density-gap);
+  list-style: decimal;
+}
+
+/*
+ * `min-width: 0` on both the step and the list, and it is load-bearing rather
+ * than defensive.
+ *
+ * A grid or flex item's automatic minimum size is its *content* width, so a
+ * `<pre white-space: pre>` holding a shell snippet refuses to shrink and pushes
+ * the card — and then the page — sideways, however many `overflow-x: auto`
+ * rules sit on the pre itself. The first capture run of this panel photographed
+ * exactly that: a horizontal scrollbar on the window and the disclosure clipped
+ * at the right edge, on a page whose own rule (MAR-491) is that content reflows
+ * rather than scrolling the page.
+ */
+.setup-steps,
+.setup-step {
+  min-width: 0;
 }
 
 .setup-step {
@@ -8762,6 +8783,14 @@ main:has(.agent-cockpit) {
   align-items: center;
   gap: var(--space-2);
   max-width: 100%;
+  min-width: 0;
+}
+
+/* The value scrolls itself rather than widening its parent — see `.setup-steps`
+   for why the minimum size has to be said out loud. */
+.copyable > pre {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /*
