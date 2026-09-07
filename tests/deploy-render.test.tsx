@@ -110,9 +110,22 @@ function panel(
 
 describe("the entry point itself", () => {
   it("exists, named for what a person wants rather than for the mechanism", () => {
-    // The issue's own words. "Deploy" is what the command is called; this is
-    // what the person is trying to do.
-    expect(panel()).toContain("Run this agent on your server");
+    /*
+     * The issue's own words. "Deploy" is what the command is called; this is
+     * what the person is trying to do.
+     *
+     * MAR-874 shortened the heading from *Run this agent on your server* to
+     * *Where it runs*, which is the same choice made a second time: the stage
+     * now names each section by the question it answers, and this section's
+     * question is where. So the invariant is asserted rather than the old
+     * string — the mechanism's word must never be the heading — together with
+     * the state sentence that now carries what the heading used to spell out.
+     */
+    const html = panel();
+    expect(html).toContain("Where it runs");
+    expect(html).not.toContain('<h2 id="deploy-to-server">Deploy');
+    // And the one line that says where it is right now. This agent is here.
+    expect(html).toContain("This computer.");
   });
 
   it("names the agent and the server on the button, not just the verb", () => {

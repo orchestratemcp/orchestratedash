@@ -106,7 +106,9 @@ describe("the Run stage, for an agent that has reported nothing", () => {
 });
 
 describe("the Settings stage repair control", () => {
-  function repair(over: { canAct?: boolean; hasFolder?: boolean } = {}): string {
+  function repair(
+    over: { canAct?: boolean; hasFolder?: boolean; startable?: boolean } = {},
+  ): string {
     return decode(
       renderToStaticMarkup(
         <RepairAgent
@@ -115,10 +117,56 @@ describe("the Settings stage repair control", () => {
           hasFolder={over.hasFolder ?? true}
           onRepaired={() => {}}
           setFeedback={() => {}}
+          startable={over.startable ?? false}
         />,
       ),
     );
   }
+
+  /**
+   * MAR-874. The heading is a predicate, and the whole of the contradiction
+   * this issue was filed on.
+   *
+   * ## What was on screen
+   *
+   * The header read **READY** and named the server the agent was living on.
+   * Four sections down, this block read *This agent will not run*. Both were
+   * about the same agent at the same moment, and the one that had checked
+   * nothing was this one: `RepairAgent` drew that heading over **every** agent
+   * with a folder in a window that could act, because — as its own docblock
+   * says — a missing registration and a stale one look identical from the
+   * renderer.
+   *
+   * ## Which was true
+   *
+   * The header. `WorkspaceView.startable` is the fact DASH actually holds — a
+   * registration naming a program it could spawn — and it is the same fact
+   * `AGENT_CONTROL_COPY.idle.not_reported` speaks from on the Run stage. A
+   * deployed agent has one, so `startable` was true and the alarm was false.
+   *
+   * ## What did not change
+   *
+   * The control. It is offered exactly as often as before, for the reason the
+   * component gives: a repair door that appeared only once DASH had diagnosed a
+   * fault would be missing in every case nobody predicted, which is the class
+   * of defect MAR-703 was. Only the claim above it moved.
+   */
+  it("says an agent will not run only when DASH cannot start it", () => {
+    const broken = repair({ startable: false });
+    expect(broken).toContain(REPAIR_AGENT_COPY.heading);
+    expect(broken).not.toContain(REPAIR_AGENT_COPY.heading_calm);
+
+    const ready = repair({ startable: true });
+    expect(ready).toContain(REPAIR_AGENT_COPY.heading_calm);
+    expect(ready).not.toContain(REPAIR_AGENT_COPY.heading);
+
+    // And the door is the same door either way — same button, same promise
+    // about the folder, in both states.
+    for (const html of [broken, ready]) {
+      expect(html).toContain(REPAIR_AGENT_COPY.action);
+      expect(html).toContain(REPAIR_AGENT_COPY.detail);
+    }
+  });
 
   /**
    * MAR-705's answer to *"can you figure out how we can do it from dash and not

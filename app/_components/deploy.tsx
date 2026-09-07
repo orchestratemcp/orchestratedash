@@ -557,20 +557,110 @@ export function DeployToServerPanel({
       )}
 
       {/*
+        MAR-874. Everything that explains, behind one press — and nothing is
+        gone.
+
+        ADR 0007's receipt keeps every limit it listed and its revocation
+        sentence; MAR-591's amber notice about what does not travel keeps its
+        reasons and its permission list; `describeSentServer` keeps its bound on
+        what DASH may claim about a copy sitting on a machine it cannot see.
+        They are one press under a question a person standing at a deploy button
+        is already asking, instead of four blocks between them and the button.
+
+        ## Above the button, and that position is not cosmetic
+
+        ADR 0002 amendment 2: a disclosure that arrives after the grant
+        describes a window the person was already inside. Collapsing these was
+        allowed; moving them *below* the press was not, and
+        `tests/deploy-render.test.tsx` is the gate that said so — it asserts the
+        stranded-connection sentence appears earlier in the markup than the
+        button, which is the machine-readable form of *before the press*. So the
+        disclosure sits here: closed, one press, and every word of it ahead of
+        the control it is about.
+      */}
+      <WhyDisclosure>
+        <p className="card-meta wrap">{describeSignIn(chosen)}.</p>
+
+        {/*
+          ADR 0007's receipt, before the deploy and not with it, from the same
+          function the Servers page and the connect flow call. This is the named
+          version — the agent is known here, so the first line can say which
+          agent is about to be copied where, which is the one thing the other
+          two surfaces cannot say at the moment they have to say the rest.
+        */}
+        <section className="deploy-receipt">
+          <h3 className="label-caps">Before you put {title} on {chosen.label}</h3>
+          <p className="wrap">{receipt.what}</p>
+          <ul className="permission-list">
+            {receipt.limits.map((limit) => (
+              <li key={limit} className="wrap">
+                {limit}
+              </li>
+            ))}
+          </ul>
+          <p className="disclosure wrap" role="note">
+            {receipt.revocation}
+          </p>
+        </section>
+
+        {/*
+          MAR-591's warning arm. After the receipt, because it is the same kind
+          of sentence the receipt is — what this arrangement is actually like —
+          and because the receipt is the general case while this is about *this*
+          agent's own connections.
+
+          The **refusal** arm is not here. See below the button row: a sentence
+          that explains why a control is dead is not an explanation a person may
+          have to go looking for, it is the state of the control.
+        */}
+        {deploy.travel.verdict === "refuse" ? null : (
+          <ConnectionTravelNotice travel={deploy.travel} agent={title} server={chosen.label} />
+        )}
+
+        {/*
+          MAR-874. The card that was a section, now a row under the state line
+          it used to restate. Every sentence is unchanged and so is every
+          control: *send it again*, and a per-server *bring it home* which is
+          the only place that press lives once there is more than one server.
+        */}
+        <SentServers
+          targets={targets}
+          travel={deploy.travel}
+          busy={busy}
+          canAct={canAct}
+          onSendAgain={onSendAgain}
+          onBringHome={onBringHomeRequest}
+        />
+      </WhyDisclosure>
+
+      {/*
+        MAR-591's refusal, in the open (MAR-874).
+
+        `lib/workspace.ts`'s rule about dead controls: the button below is
+        disabled on a refusal rather than hidden, and a disabled control whose
+        reason is folded away is a control that reads as broken. Everything else
+        this section says is an answer to *why*; this one is an answer to *why
+        can I not press that*, and the two are not the same question.
+      */}
+      {deploy.travel.verdict === "refuse" ? (
+        <ConnectionTravelNotice travel={deploy.travel} agent={title} server={chosen.label} />
+      ) : null}
+
+      {/*
         MAR-874. One action, and which one it is depends on where the agent is.
 
         An agent that lives here gets *Put it on <server>*. An agent that lives
         on exactly one server gets *Bring it home*, because that is the other
         end of the same switch and it is what somebody reading a one-line state
         of *my server* would reach for. The *send it again* half is still
-        offered, on its own row one press below, where `describeSentServer`
+        offered, on its own row one press above, where `describeSentServer`
         already worded it per server.
 
         Above one server the switch has no single other end, so the deploy
-        button stays primary and every per-server control lives on its own row
-        below. That case is rare, and the alternative — a *Bring home* that
-        could not say which machine it meant — is exactly the ambiguous action
-        UX-4 was filed on.
+        button stays primary and every per-server control lives on its own row.
+        That case is rare, and the alternative — a *Bring home* that could not
+        say which machine it meant — is exactly the ambiguous action UX-4 was
+        filed on.
       */}
       {!canAct ? (
         /*
@@ -620,70 +710,6 @@ export function DeployToServerPanel({
         </div>
       )}
 
-      {/*
-        MAR-874. Everything that explains, behind one press — and nothing is
-        gone.
-
-        ADR 0007's receipt keeps every limit it listed and its revocation
-        sentence; MAR-591's amber notice about what does not travel keeps its
-        reasons and its permission list; `describeSentServer` keeps its bound on
-        what DASH may claim about a copy sitting on a machine it cannot see.
-        They are one press under a question a person standing at a deploy button
-        is already asking, instead of four blocks between them and the button.
-
-        The receipt in particular is still *before the press* either way: a
-        person who opens Why? reads it before deciding, and a person who does
-        not was never going to read four paragraphs first no matter where they
-        sat.
-      */}
-      <WhyDisclosure>
-        <p className="card-meta wrap">{describeSignIn(chosen)}.</p>
-
-        {/*
-          ADR 0007's receipt, before the deploy and not with it, from the same
-          function the Servers page and the connect flow call. This is the named
-          version — the agent is known here, so the first line can say which
-          agent is about to be copied where, which is the one thing the other
-          two surfaces cannot say at the moment they have to say the rest.
-        */}
-        <section className="deploy-receipt">
-          <h3 className="label-caps">Before you put {title} on {chosen.label}</h3>
-          <p className="wrap">{receipt.what}</p>
-          <ul className="permission-list">
-            {receipt.limits.map((limit) => (
-              <li key={limit} className="wrap">
-                {limit}
-              </li>
-            ))}
-          </ul>
-          <p className="disclosure wrap" role="note">
-            {receipt.revocation}
-          </p>
-        </section>
-
-        {/*
-          MAR-591. After the receipt, because it is the same kind of sentence
-          the receipt is — what this arrangement is actually like — and because
-          the receipt is the general case while this is about *this* agent's own
-          connections.
-        */}
-        <ConnectionTravelNotice travel={deploy.travel} agent={title} server={chosen.label} />
-
-        {/*
-          MAR-874. The card that was a section, now a row under the state line
-          it used to restate. Every sentence is unchanged and so is every
-          control: *send it again*, and a per-server *bring it home* which is
-          the only place that press lives once there is more than one server.
-        */}
-        <SentServers
-          targets={targets}
-          travel={deploy.travel}
-          busy={busy}
-          canAct={canAct}
-          onSendAgain={onSendAgain}
-          onBringHome={onBringHomeRequest}
-        />
-      </WhyDisclosure>
     </section>
   );
 }

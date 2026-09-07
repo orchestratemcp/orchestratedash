@@ -423,7 +423,7 @@ function ModelAdoption({
  * show the first one, and a person would see the recommended setting on an agent
  * that is not on it.
  */
-function ModelPicker({
+export function ModelPicker({
   chosen,
   unpinned,
   models,
