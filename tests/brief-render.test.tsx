@@ -291,3 +291,111 @@ describe("the author's own panel", () => {
     expect(html).toContain('href="https://news.test/prices"');
   });
 });
+
+/**
+ * MAR-884. Proof Scout's real shape: thirty collected items, one paragraph
+ * citing every one of them. `tests/panel-render.test.tsx`'s 4px-grid gate and
+ * `electron/capture-cockpit.ts`'s `qa-mar884-citation-wrap-*` frames hold the
+ * layout claim (the row wraps instead of overflowing the stage); a
+ * `renderToStaticMarkup` string has no layout at all, so what this covers
+ * instead is the two things a render test *can* settle: that all thirty
+ * marks are actually in the markup with a followable accessible name each,
+ * and that nothing in the component itself hardcodes an inline style that
+ * would defeat a stylesheet fix — the failure mode a CSS-only fix like
+ * MAR-884's own is one edit away from reintroducing.
+ */
+describe("thirty citations in one line (MAR-884)", () => {
+  const THIRTY_ITEMS = Array.from({ length: 30 }, (_, index) => ({
+    headline: `Collected headline number ${String(index + 1)}`,
+    source_name: "Feed A",
+    source_url: "https://feed.test/a",
+    item_url: `https://news.test/item-${String(index + 1)}`,
+  }));
+
+  const THIRTY_DIGEST: DigestArtifact = {
+    artifact_version: 1,
+    kind: "digest",
+    agent: AGENT,
+    run_id: "run-thirty",
+    artifact_id: "digest-thirty",
+    title: "Thirty collected items",
+    generated_at: "2026-09-07T09:00:00.000Z",
+    sources_fetched: [
+      { source_name: "Feed A", source_url: "https://feed.test/a", status: "ok", item_count: 30 },
+    ],
+    items: THIRTY_ITEMS,
+  };
+
+  const THIRTY_BRIEF: BriefArtifact = {
+    artifact_version: 2,
+    kind: "brief",
+    agent: AGENT,
+    run_id: "run-thirty",
+    artifact_id: "brief-thirty",
+    title: "What the scout found among thirty items",
+    generated_at: "2026-09-07T09:01:00.000Z",
+    document: {
+      model: "some-provider/some-model",
+      sections: [
+        {
+          heading: "Everything collected today",
+          paragraphs: [
+            {
+              body: "Thirty items came in today, and every one of them is cited below.",
+              items: THIRTY_ITEMS.map((_, index) => index),
+            },
+          ],
+        },
+      ],
+    },
+    derived_from: {
+      artifact_id: "digest-thirty",
+      run_id: "run-thirty",
+      item_count: THIRTY_ITEMS.length,
+      items_digest: fingerprintItems(THIRTY_ITEMS),
+    },
+  };
+
+  function thirtyHtml(): string {
+    const briefCard = buildArtifactCards(
+      [record(THIRTY_BRIEF), record(THIRTY_DIGEST)],
+      undefined,
+      (entry) =>
+        entry.artifact.kind === "brief"
+          ? resolveBriefCitations(entry.artifact, [THIRTY_DIGEST])
+          : null,
+    ).filter((card) => card.artifact.kind === "brief");
+    return decode(renderToStaticMarkup(<OutputsPanel cards={briefCard} grounding={null} />));
+  }
+
+  it("renders all thirty marks, each a followable anchor with its own accessible name", () => {
+    const html = thirtyHtml();
+    expect(html).toContain(BRIEF_CITED_LABEL);
+    for (let position = 1; position <= 30; position += 1) {
+      const mark = `[${String(position)}]`;
+      expect(html, `mark ${mark} missing`).toContain(mark);
+      const headline = `Collected headline number ${String(position)}`;
+      // The mark's own hover text and its accessible name — both survive the
+      // compression from thirty headlines to thirty numbers.
+      expect(html, `title for ${mark} missing`).toContain(`title="${headline}"`);
+      expect(html, `visually-hidden name for ${mark} missing`).toContain(
+        `<span class="visually-hidden"> ${headline}</span>`,
+      );
+      // A real anchor to the row's own collected address, not a bare span.
+      expect(html, `anchor for ${mark} missing`).toMatch(
+        new RegExp(`<a[^>]*href="https://news\\.test/item-${String(position)}"[^>]*>\\[${String(position)}\\]`),
+      );
+    }
+    expect((html.match(/class="brief-citation"/g) ?? []).length).toBe(30);
+  });
+
+  it("carries no inline nowrap that a stylesheet fix could not reach", () => {
+    // MAR-884's own fix lives entirely in `app/globals.css`. If a future
+    // change reached for `style={{ whiteSpace: "nowrap" }}` on the row or on
+    // an individual mark instead, no CSS override could undo it — the same
+    // failure mode this issue was filed on, reintroduced one layer down.
+    const html = thirtyHtml();
+    expect(html).not.toMatch(/style="[^"]*nowrap/);
+    expect(html).not.toContain("white-space");
+  });
+});

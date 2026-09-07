@@ -138,6 +138,15 @@ const VIEWPORT = { name: "1280", width: 1280, height: 900 } as const;
  */
 const NARROW = { name: "375", width: 375, height: 812 } as const;
 
+/**
+ * MAR-884. The width the ticket names beside 1280 — a tablet-width stage,
+ * where the three-track layout still shows rail, stage and chief side by
+ * side (unlike `NARROW`'s 375px, where they stack), so the citation row is
+ * measured against the same kind of narrow content column Henrik saw it
+ * overflow in, not against the phone-width case `NARROW` already covers.
+ */
+const TABLET = { name: "768", width: 768, height: 900 } as const;
+
 const THEMES = ["light", "dark"] as const;
 
 /** Every part of an agent, from `AGENT_STAGES`. Seven when Health arrives. */
@@ -552,6 +561,114 @@ function seedPlanAgent(): void {
     throw new Error(`the plan agent's manifest was refused: ${JSON.stringify(imported)}`);
   }
   console.log(`[cockpit] seeded ${PLAN_AGENT}: 6-step plan, no runs`);
+}
+
+/** MAR-884's own agent, for the citation-wrap scene below. */
+const CITATION_WRAP_AGENT = "citation-wrap-scout";
+
+/** The artifact id the scene opens on the Output stage. */
+const CITATION_WRAP_BRIEF = "brief-citation-wrap-0";
+
+/**
+ * MAR-884. Thirty collected items and a brief that cites every one of them
+ * in a single paragraph — the exact shape Proof Scout's real 30-item run
+ * had, and the shape none of `seed()`'s fixtures reach (its own brief cites
+ * two). A wholly separate agent from `AGENT`, imported after every other
+ * scene has already run and measured, so nothing about this seed can move a
+ * number an earlier frame already recorded: a second agent does not change
+ * what `news-scout`'s own pages draw, only what a fleet-wide element count
+ * would see, and no scene after this one reads such a count.
+ *
+ * `page_overflows` / `widest_overflow` come from `measure()`, which already
+ * computes them for every frame — MAR-646 built that measurement to answer a
+ * different question (is the rail's list repeated on the stage), but the two
+ * fields it also reports are exactly MAR-884's own claim, unmodified.
+ */
+function seedCitationWrap(): void {
+  const manifest = example("agent.manifest.example.json") as Record<string, unknown> & {
+    agent: { name: string; display_name?: string };
+  };
+  manifest.agent.name = CITATION_WRAP_AGENT;
+  manifest.agent.display_name = "Citation Wrap Scout";
+  const imported = importManifest(manifest);
+  if (!imported.ok) {
+    throw new Error(`the citation-wrap agent's manifest was refused: ${JSON.stringify(imported)}`);
+  }
+
+  const items = Array.from({ length: 30 }, (_, index) => ({
+    headline: `Collected headline number ${String(index + 1)} of thirty, long enough to be a real title`,
+    summary: `A one-line summary of collected item ${String(index + 1)}.`,
+    source_name: "Hacker News",
+    source_url: "https://hn.algolia.com/api/v1/search",
+    item_url: `https://hn.algolia.com/api/v1/search?query=item-${String(index + 1)}`,
+  }));
+
+  const digestAccepted = ingestArtifacts([
+    {
+      artifact_version: 1,
+      agent: CITATION_WRAP_AGENT,
+      run_id: "run-citation-wrap-0",
+      artifact_id: "digest-citation-wrap-0",
+      kind: "digest",
+      title: "Thirty collected items",
+      generated_at: daysAgo(0),
+      sources_fetched: [
+        {
+          source_name: "Hacker News",
+          source_url: "https://hn.algolia.com/api/v1/search",
+          status: "ok",
+          item_count: items.length,
+        },
+      ],
+      items,
+    },
+  ]);
+  if (digestAccepted.accepted !== 1) {
+    throw new Error(`the citation-wrap digest was refused: ${JSON.stringify(digestAccepted.rejected)}`);
+  }
+
+  /*
+   * One paragraph, citing every one of the thirty positions — the row MAR-884
+   * is about. `items: [0..29]` rather than spread across paragraphs: the
+   * defect was one "Written from" line running past the edge, and splitting
+   * the citations across paragraphs would photograph a line this issue was
+   * never filed on.
+   */
+  const briefAccepted = ingestArtifacts([
+    {
+      artifact_version: 2,
+      agent: CITATION_WRAP_AGENT,
+      run_id: "run-citation-wrap-0",
+      artifact_id: CITATION_WRAP_BRIEF,
+      kind: "brief",
+      title: "What the scout found among thirty items",
+      generated_at: daysAgo(0),
+      document: {
+        model: "openai/gpt-5-mini",
+        sections: [
+          {
+            heading: "Everything collected today",
+            paragraphs: [
+              {
+                body: "Thirty items came in today, and every one of them is cited below.",
+                items: Array.from({ length: items.length }, (_, index) => index),
+              },
+            ],
+          },
+        ],
+      },
+      derived_from: {
+        artifact_id: "digest-citation-wrap-0",
+        run_id: "run-citation-wrap-0",
+        item_count: items.length,
+        items_digest: fingerprintItems(items),
+      },
+    },
+  ]);
+  if (briefAccepted.accepted !== 1) {
+    throw new Error(`the citation-wrap brief was refused: ${JSON.stringify(briefAccepted.rejected)}`);
+  }
+  console.log(`[cockpit] seeded ${CITATION_WRAP_AGENT}: 1 digest of 30 items, 1 brief citing all 30`);
 }
 
 /* ---------------------------------------------------------------------- *
@@ -2116,6 +2233,86 @@ async function run(): Promise<void> {
   /* MAR-680 and MAR-681, the group-D proving sweep's two agent-page scenes. */
   await proveRunProgress(window);
   await proveStandingAnswers(window);
+
+  /*
+   * MAR-884's scene: the numbered citation row, thirty marks wide, at the
+   * width the ticket names (1280) and at a tablet width the ticket asks for
+   * too (768). A separate agent (`seedCitationWrap`, above) so nothing here
+   * can move a number an earlier scene already recorded.
+   *
+   * Both frames named `qa-mar884-*` rather than `agent-output-*`, so a
+   * reviewer sorting this run's images by name finds this scene as one
+   * group rather than interleaved with MAR-646's `agent-output-*` set.
+   */
+  nativeTheme.themeSource = "light";
+  await settle(300);
+  seedCitationWrap();
+  const citationWrapRoute =
+    `/agents/detail?agent=${encodeURIComponent(CITATION_WRAP_AGENT)}` +
+    `&stage=output&output=${encodeURIComponent(CITATION_WRAP_BRIEF)}`;
+
+  for (const viewport of [VIEWPORT, TABLET]) {
+    await go(window, citationWrapRoute);
+    const at = await resizeTo(window, viewport.width, viewport.height);
+    await go(window, citationWrapRoute);
+    const citationMeasured = await measure(window);
+    /*
+     * `measure()`'s own `widest_overflow` is the worst single element on the
+     * WHOLE page — useful as a general alarm, but not this scene's own claim,
+     * because a page this rich in fixtures can have an unrelated overflow
+     * elsewhere (MAR-879's own prose change on the same page, an existing
+     * `.visually-hidden` artefact, and so on) that outweighs the citation
+     * row and would make the page-wide number rise or fall for a reason that
+     * has nothing to do with this fix. So the row itself is read directly:
+     * its own `scrollWidth` against its own `clientWidth`, scoped to
+     * `.cockpit-stage` so a same-named element in the rail or elsewhere on
+     * the page can never be the one answering.
+     */
+    const citationRow = (await within(
+      "read the citation row's own overflow",
+      5_000,
+      window.webContents.executeJavaScript(
+        `(() => {
+           const row = document.querySelector(".cockpit-stage .output-card .brief-cited");
+           if (row === null) return { found: false };
+           const box = row.getBoundingClientRect();
+           return {
+             found: true,
+             scroll_width: row.scrollWidth,
+             client_width: row.clientWidth,
+             overflow: row.scrollWidth - row.clientWidth,
+             box_height: box.height,
+             mark_count: row.querySelectorAll(".brief-citation").length,
+           };
+         })()`,
+      ),
+    )) as {
+      found: boolean;
+      scroll_width?: number;
+      client_width?: number;
+      overflow?: number;
+      box_height?: number;
+      mark_count?: number;
+    };
+    measurements.push({
+      stage: "citation-wrap",
+      theme: "light",
+      viewport: viewport.name,
+      citation_row_found: citationRow.found,
+      citation_row_scroll_width: citationRow.scroll_width ?? null,
+      citation_row_client_width: citationRow.client_width ?? null,
+      citation_row_overflow: citationRow.overflow ?? null,
+      citation_row_box_height: citationRow.box_height ?? null,
+      citation_row_mark_count: citationRow.mark_count ?? null,
+      ...(citationMeasured as object),
+    });
+    console.log(
+      `[cockpit] citation-wrap/${viewport.name} (window reports ${String(at)}px) ` +
+        `row=${JSON.stringify(citationRow)} page=${JSON.stringify(citationMeasured)}`,
+    );
+    await shoot(window, `qa-mar884-citation-wrap-${viewport.name}`);
+  }
+  await resizeTo(window, VIEWPORT.width, VIEWPORT.height);
 
   writeFileSync(
     path.join(OUT, "layout.json"),

@@ -9482,3 +9482,37 @@ details.agent-settings-danger > summary {
 }
 
 /* ==== MAR-879 end ==== */
+
+/* ==== MAR-884 begin ==== */
+/* ---------------------------------------------------------------------- *
+ * The numbered citation row wraps (MAR-884)
+ *
+ * MAR-875's `.brief-citation { white-space: nowrap; }` was written to keep a
+ * single mark — `[1]`, `[30]` — from splitting across two lines. It reaches
+ * further than that. `BriefParagraphBody` in `app/_components/digest.tsx`
+ * puts the separating space *inside* each mark's own span (`{index === 0 ?
+ * null : " "}`, then the mark, in the same element) rather than between two
+ * sibling spans, so that one space is the only place a browser could ever
+ * break the "Written from: [1] [2] … [30]" line — and `nowrap` forbids a
+ * break at any character inside the element it is set on, that space
+ * included. With thirty marks there is now not one legal break point in the
+ * whole line, so it renders as a single run as wide as all thirty marks laid
+ * end to end, which is wider than the stage at ordinary window widths.
+ * Fixture digests carry 3-4 items, short enough that this never crossed the
+ * edge, which is why `electron/capture-cockpit.ts`'s `page_overflows` never
+ * saw it.
+ *
+ * The fix is to give the line its break points back rather than to add new
+ * ones: plain `white-space: normal` still keeps a single mark on one line
+ * because there is no space *inside* `[12]` for the browser to break at —
+ * `overflow-wrap`'s default only breaks inside a word that alone exceeds the
+ * container, never true here — so this preserves MAR-875's actual intent
+ * (a mark is never split) and only removes the accidental side effect that
+ * suppressed wrapping between marks. No `display` or `gap` is added: the
+ * existing space character already is the gap, and turning it into a flex
+ * row would print it twice.
+ * ---------------------------------------------------------------------- */
+.brief-citation {
+  white-space: normal;
+}
+/* ==== MAR-884 end ==== */
