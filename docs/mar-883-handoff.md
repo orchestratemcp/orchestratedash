@@ -109,7 +109,21 @@ Run from **PowerShell** in the worktree.
 | `pnpm vitest run tests/fleet-grants.test.ts tests/connectors.test.ts tests/fleet-connector-render.test.tsx tests/service-row-render.test.tsx tests/connections-list.test.ts tests/agent-labels.test.ts tests/fleet-connections.test.ts` | **7 files, 134 tests, all passed** |
 | `pnpm test` | **279 test files passed, 5311 tests passed, 13 skipped, exit 0** |
 
-No failing file, first run, no re-run needed.
+No failing file, first run, no re-run needed. This was run before merging in
+`origin/master`'s two new commits (MAR-881 merged, four session-prompt docs) —
+see below.
+
+**After merging `origin/master`** (fab9dce → d3ce841, MAR-881's own PR plus
+session-prompt docs; no overlap with this lane's files — `git diff --stat`
+confirmed), `pnpm typecheck` stayed clean and `pnpm test` was run again:
+`tools/dash-mcp/tests/template-run.test.ts` failed 6/11 with
+`EPERM, Permission denied` on `rmSync` in its `afterEach` — the exact
+pre-existing "cleanup racing a live child" flake MAR-877's own handoff hit on
+this same branch lineage (its §7.3) and MEMORY's MAR-702 note names. This
+branch touches nothing under `tools/dash-mcp/**`. Re-run alone immediately
+after: **11/11 passed**, confirming the flake rather than a regression. Full
+counts both times: 279 test files, 5311 tests passed, 13 skipped — only that
+one file's transient failure differed between the two full runs.
 
 ## 4. What is NOT done
 
