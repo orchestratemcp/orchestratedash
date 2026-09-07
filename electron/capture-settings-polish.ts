@@ -478,6 +478,15 @@ async function layout(target: BrowserWindow): Promise<unknown> {
                model_select: section?.querySelector("#model-default-select") != null,
              };
            })(),
+           /* MAR-877: every fold this page put its content behind, by the
+              word on the fold, plus whether the repair control is mounted at
+              all. A restructure that folds something away and a restructure
+              that loses it look identical in a word count, and the whole
+              claim of this packet is that it is the first. */
+           folds: [...document.querySelectorAll("summary")].map((one) =>
+             (one.textContent ?? "").trim(),
+           ),
+           refresh_control: document.querySelector("#connections-refresh") !== null,
            /* MAR-877's first-key chooser: the state a DASH with no model key
               opens on. Null on a DASH that holds one, which is how a frame
               says which of the two states it photographed. */
