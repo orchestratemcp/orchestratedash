@@ -115,3 +115,4 @@ class (fixture / installed shell / real network), and what is NOT proven.
 - 2026-09-07 — worktree created from cb2cb1c; `pnpm install --offline` done;
   `pnpm state:check` valid (96 drift warnings, all pre-existing). No product
   change yet.
+- 2026-09-07 — stage 8 delivered for review: PR #355 (docs/funding/*, 12 files; lane F8, Opus). Evidence class: repository reads + web fetches, nothing runtime. Findings: Walrus Memory exists (pitch re-scoped to passive ProofPack); starkclaw exists (pitch re-scoped to the run↔tx join + enforcement table). Readiness: neither track ready; all stage 1–7 rows planned. Owner decisions: licence boundary; open the Walrus RFP list/docs in a real browser (fetcher 403).
