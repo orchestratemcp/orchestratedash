@@ -73,7 +73,9 @@ export function AgentSettings({
   setFeedback,
   title,
   trigger,
-  children,
+  advanced,
+  model,
+  where,
   danger,
 }: {
   avatar: OName | null;
@@ -101,9 +103,21 @@ export function AgentSettings({
    * this drawer never has to decide what an absent schedule means.
    */
   schedule: AgentScheduleView;
-  /** `ModelChoice`, `FolderUpdate` — the settings that can actually be written. */
-  children?: ReactNode;
-  /** `RemoveAgent`. Last, under its own heading. See the danger block below. */
+  /**
+   * `DeployToServer`. Section 2 (MAR-874).
+   *
+   * Named slots rather than one `children`, and that is this packet's whole
+   * structural change. The order of these sections is the answer to *where does
+   * it run, when does it run, what does it talk with* — the three questions
+   * Henrik said this page failed to answer — and a single `children` left that
+   * order for the caller to remember. Four names make it this component's.
+   */
+  where?: ReactNode;
+  /** `ModelChoice`. Section 4. */
+  model?: ReactNode;
+  /** `FolderUpdate`, `RepairAgent`, `StandingAnswers`. Behind Advanced. */
+  advanced?: ReactNode;
+  /** `RemoveAgent`. Last, behind its own disclosure. */
   danger?: ReactNode;
 }): ReactNode {
   return (
@@ -115,52 +129,69 @@ export function AgentSettings({
         </button>
       </div>
 
-      <section className="agent-settings-block">
+      {/*
+        1. Name and character — one row (MAR-874).
+
+        The avatar, the name and the two presses that change them, on one line.
+        What left the row is the pair of provenance sentences under each and the
+        ID, all three of which are now behind this section's own *Why?*: they
+        answer "where did this name come from", which is a question somebody has
+        once, and they were costing three lines of a page whose first section
+        should be one.
+      */}
+      <section className="agent-settings-block agent-settings-identity">
         <h3>{AGENT_SETTINGS_COPY.identity.heading}</h3>
-        <dl className="facts">
-          <div>
-            <dt>{AGENT_SETTINGS_COPY.identity.name_label}</dt>
-            {/* Not `.value`. Under MAR-589 the name is prose and only the id
-                gets the monospace face — that distinction is the whole ruling,
-                and a drawer that set them in the same type would undo it in the
-                one place a person comes to look at both. */}
-            <AgentNameField
-              agentId={id}
-              canAct={canAct}
-              onRenamed={onRenamed}
-              renamed={renamed}
-              setFeedback={setFeedback}
-              title={title}
-            />
-            <dd className="muted">
-              {renamed
-                ? AGENT_SETTINGS_COPY.identity.name_source_renamed
-                : AGENT_SETTINGS_COPY.identity.name_source}
-            </dd>
-          </div>
-          <div>
-            <dt>{AGENT_SETTINGS_COPY.identity.id_label}</dt>
-            <dd className="value">{id}</dd>
-            <dd className="muted">{AGENT_SETTINGS_COPY.identity.id_source}</dd>
-          </div>
-          <div>
-            <dt>{AGENT_SETTINGS_COPY.identity.avatar_label}</dt>
-            <AgentAvatarField
-              agentId={id}
-              avatar={avatar}
-              canAct={canAct}
-              onChanged={onAvatarChanged}
-              setFeedback={setFeedback}
-            />
-            <dd className="muted">{AGENT_SETTINGS_COPY.identity.avatar_source}</dd>
-          </div>
-        </dl>
+        <div className="settings-state settings-identity-row">
+          <AgentAvatarField
+            agentId={id}
+            avatar={avatar}
+            canAct={canAct}
+            onChanged={onAvatarChanged}
+            setFeedback={setFeedback}
+          />
+          {/* Not `.value`. Under MAR-589 the name is prose and only the id
+              gets the monospace face — that distinction is the whole ruling,
+              and a drawer that set them in the same type would undo it in the
+              one place a person comes to look at both. */}
+          <AgentNameField
+            agentId={id}
+            canAct={canAct}
+            onRenamed={onRenamed}
+            renamed={renamed}
+            setFeedback={setFeedback}
+            title={title}
+          />
+        </div>
+        <WhyDisclosure>
+          <dl className="facts">
+            <div>
+              <dt>{AGENT_SETTINGS_COPY.identity.name_label}</dt>
+              <dd className="muted">
+                {renamed
+                  ? AGENT_SETTINGS_COPY.identity.name_source_renamed
+                  : AGENT_SETTINGS_COPY.identity.name_source}
+              </dd>
+            </div>
+            <div>
+              <dt>{AGENT_SETTINGS_COPY.identity.avatar_label}</dt>
+              <dd className="muted">{AGENT_SETTINGS_COPY.identity.avatar_source}</dd>
+            </div>
+            <div>
+              <dt>{AGENT_SETTINGS_COPY.identity.id_label}</dt>
+              <dd className="value">{id}</dd>
+              <dd className="muted">{AGENT_SETTINGS_COPY.identity.id_source}</dd>
+            </div>
+          </dl>
+        </WhyDisclosure>
       </section>
 
-      {/* MAR-742 item 8, ADR 0029. `onRenamed` is the re-read this drawer
-          already has — the panel needs the workspace re-read for the same reason
-          a rename does, so it rides the same one rather than adding a second
-          callback that means the same thing. */}
+      {/* 2. Where it runs. */}
+      {where}
+
+      {/* 3. When it runs. MAR-742 item 8, ADR 0029. `onRenamed` is the re-read
+          this drawer already has — the panel needs the workspace re-read for the
+          same reason a rename does, so it rides the same one rather than adding
+          a second callback that means the same thing. */}
       <TriggerSwitch
         agentId={id}
         canAct={canAct}
@@ -170,24 +201,92 @@ export function AgentSettings({
         setFeedback={setFeedback}
       />
 
-      <section className="agent-settings-block">
-        <h3>{AGENT_SETTINGS_COPY.notifications.heading}</h3>
-        <p className="muted wrap">{AGENT_SETTINGS_COPY.notifications.scope}</p>
-        <p>
-          <Link href="/settings/notifications">{AGENT_SETTINGS_COPY.notifications.link}</Link>
-        </p>
-      </section>
+      {/* 4. Which model it talks with. */}
+      {model}
 
-      {children}
+      {/*
+        5. Advanced — four sections that were four sections (MAR-874).
+
+        A `details` rather than four headings, because none of these is a
+        decision anybody arrives with. The notification link is the same link it
+        always was, and it sits here rather than in a section of its own because
+        a sentence explaining that DASH has one channel for everything is exactly
+        the kind of explanation this packet moved off the first screen.
+      */}
+      <details className="agent-settings-block settings-advanced">
+        <summary>{AGENT_SETTINGS_COPY.advanced.heading}</summary>
+        <p className="muted wrap">{AGENT_SETTINGS_COPY.advanced.detail}</p>
+
+        <section className="agent-settings-block">
+          <h3>{AGENT_SETTINGS_COPY.notifications.heading}</h3>
+          <p className="muted wrap">{AGENT_SETTINGS_COPY.notifications.scope}</p>
+          <p>
+            <Link href="/settings/notifications">{AGENT_SETTINGS_COPY.notifications.link}</Link>
+          </p>
+        </section>
+
+        {advanced}
+      </details>
 
       {danger === undefined ? null : (
-        <section className="agent-settings-block agent-settings-danger">
-          <h3>{AGENT_SETTINGS_COPY.danger.heading}</h3>
+        /* 6. Remove — collapsed, at the bottom, both buttons (MAR-874). A
+           disclosure rather than a heading over two live controls: this is the
+           one section on the stage whose presses cannot be undone, and MAR-595's
+           finding was that they were unfindable rather than that they were
+           un-pressable. Named plainly in the summary, so it stays one press away
+           from anybody who came for it. */
+        <details className="agent-settings-block agent-settings-danger">
+          <summary>{AGENT_SETTINGS_COPY.danger.heading}</summary>
           <p className="muted">{AGENT_SETTINGS_COPY.danger.detail}</p>
           {danger}
-        </section>
+        </details>
       )}
     </section>
+  );
+}
+
+/**
+ * One closed disclosure, named with one word (MAR-874).
+ *
+ * ## What this is for
+ *
+ * Henrik's complaint about this stage was a count rather than a judgement about
+ * any one sentence: seven sections and roughly forty sentences standing between
+ * him and the three facts the page exists to state. The rule adopted in answer
+ * is that **each section shows its current state in one sentence and offers one
+ * action, and every explanation moves behind a *Why?* that is closed by
+ * default**.
+ *
+ * The word "moves" is load-bearing. Nothing in `lib/copy/agent-page.ts` was
+ * deleted to make this stage shorter, including the sentences that are
+ * warnings — ADR 0029's third liveness sentence, MAR-784's spending line, the
+ * deploy receipt's limits. A warning nobody reads because it is the fourteenth
+ * paragraph is not better protection than a warning one press away under a
+ * question the person is already asking.
+ *
+ * ## Closed by default, and it stays that way
+ *
+ * No `open` prop and nothing remembered. A disclosure whose openness persisted
+ * would make the shape of this stage depend on what a previous visit happened
+ * to leave open, which a person cannot predict and a capture cannot photograph
+ * twice the same way. A real `details` rather than a hidden div, so a screen
+ * reader gets the expandable it expects and the keyboard reaches it — and so
+ * the closed state keeps its layout boxes, which is how every geometry check on
+ * this page tells "collapsed" from "gone".
+ */
+export function WhyDisclosure({
+  children,
+  label = AGENT_SETTINGS_COPY.why,
+}: {
+  children: ReactNode;
+  /** A named prop so a section needing a longer question has one. Nothing overrides it today. */
+  label?: string;
+}): ReactNode {
+  return (
+    <details className="settings-why">
+      <summary>{label}</summary>
+      {children}
+    </details>
   );
 }
 
@@ -233,10 +332,10 @@ function AgentNameField({
      * true statement is about which window this is.
      */
     return (
-      <dd className="agent-name-field">
+      <div className="agent-name-field">
         <span>{title}</span>
         <span className="muted wrap">{AGENT_SETTINGS_COPY.identity.rename_read_only}</span>
-      </dd>
+      </div>
     );
   }
 
@@ -259,7 +358,7 @@ function AgentNameField({
 
   if (!editing) {
     return (
-      <dd className="agent-name-field">
+      <div className="agent-name-field">
         <span>{title}</span>
         <span className="button-row">
           <button
@@ -286,12 +385,12 @@ function AgentNameField({
             </button>
           ) : null}
         </span>
-      </dd>
+      </div>
     );
   }
 
   return (
-    <dd className="agent-name-field">
+    <div className="agent-name-field">
       <label className="visually-hidden" htmlFor={`agent-name-${agentId}`}>
         {AGENT_SETTINGS_COPY.identity.rename_placeholder}
       </label>
@@ -324,7 +423,7 @@ function AgentNameField({
           {AGENT_SETTINGS_COPY.identity.rename_cancel}
         </button>
       </span>
-    </dd>
+    </div>
   );
 }
 
@@ -378,10 +477,10 @@ function AgentAvatarField({
        greyed-out Change here would read as a claim about this agent, and the
        true statement is about which window this is. */
     return (
-      <dd className="agent-avatar-field">
+      <div className="agent-avatar-field">
         {portrait}
         <span className="muted wrap">{AGENT_SETTINGS_COPY.identity.avatar_read_only}</span>
-      </dd>
+      </div>
     );
   }
 
@@ -402,17 +501,17 @@ function AgentAvatarField({
 
   if (!picking) {
     return (
-      <dd className="agent-avatar-field">
+      <div className="agent-avatar-field">
         {portrait}
         <button type="button" className="button-link" disabled={busy} onClick={() => setPicking(true)}>
           {AGENT_SETTINGS_COPY.identity.avatar_edit}
         </button>
-      </dd>
+      </div>
     );
   }
 
   return (
-    <dd className="agent-avatar-field">
+    <div className="agent-avatar-field">
       <ul className="avatar-picker" aria-label={AGENT_SETTINGS_COPY.identity.avatar_label}>
         {O_FLEET.map((character) => (
           <li key={character}>
@@ -435,7 +534,7 @@ function AgentAvatarField({
       <button type="button" className="button-secondary" disabled={busy} onClick={() => setPicking(false)}>
         {AGENT_SETTINGS_COPY.identity.avatar_cancel}
       </button>
-    </dd>
+    </div>
   );
 }
 
@@ -711,7 +810,11 @@ export function TriggerSwitch({
   return (
     <section className="agent-settings-block agent-trigger">
       <h3>{AGENT_TRIGGER_COPY.heading}</h3>
-      <p className="wrap">{schedule.standing_line}</p>
+      {/* MAR-874. The one state sentence. It says *On command* or *Every day at
+          18:20, on <machine>*, which is the whole of what somebody opening this
+          stage came here to read — and, since MAR-874, it names the machine that
+          will actually honour it. See `AgentScheduleView.resident_on`. */}
+      <p className="settings-state wrap">{schedule.standing_line}</p>
 
       <ul className="trigger-options">
         <TriggerOption
@@ -768,14 +871,24 @@ export function TriggerSwitch({
                   </button>
                 ) : null}
               </span>
-              <p className="muted wrap">{AGENT_TRIGGER_COPY.time_hint}</p>
+              {/* MAR-874. Which clock this number is read by, worded by the
+                  view rather than picked here — see `AgentScheduleView.time_hint`.
+                  It stays outside the disclosure: it is the label of the field
+                  directly above it, and a label behind a press is not a label. */}
+              <p className="muted wrap">{schedule.time_hint}</p>
               {/* MAR-784. Where the time is set, because that is where the
                   decision is — the ceiling and the cadence are one press. It is
                   above Save and inside the same block for that reason: turning
                   it on is not a save on its own, exactly as picking the radio
                   is not, and for the same argument spelled out on `onSelect`
                   above. A control whose subject is a machine spending money
-                  without anybody watching gets a confirmation. */}
+                  without anybody watching gets a confirmation.
+
+                  MAR-874 left the switch here and moved only its *hint* into
+                  the section's Why?. The switch is a control and this section
+                  is allowed one; the paragraph under it explaining what a model
+                  call costs is an explanation, which is exactly what this
+                  packet agreed to fold away. */}
               <label className="trigger-allowance" htmlFor={`agent-schedule-spend-${agentId}`}>
                 <input
                   checked={allow}
@@ -788,9 +901,6 @@ export function TriggerSwitch({
                 />
                 <span>{AGENT_TRIGGER_COPY.allowance_label}</span>
               </label>
-              <p className="muted wrap">
-                {AGENT_TRIGGER_COPY.allowance_hint(schedule.allowance_choice)}
-              </p>
             </div>
           ) : (
             /*
@@ -809,25 +919,60 @@ export function TriggerSwitch({
         />
       </ul>
 
-      {/* Only while something is standing. See the header. */}
-      {standing ? (
-        <>
-          <ul className="trigger-liveness">
-            {schedule.liveness.map((sentence) => (
-              <li className="muted wrap" key={sentence}>
-                {sentence}
-              </li>
-            ))}
-          </ul>
-          <p className="muted wrap">{schedule.spend_line}</p>
-          {/* Only under the allowance sentence, and never under the no-spend
-              one. See `AgentScheduleView.spend_bound` — an empty string here is
-              the view saying there is nothing to bound, not a missing value. */}
-          {schedule.spend_bound === "" ? null : (
-            <p className="muted wrap">{schedule.spend_bound}</p>
-          )}
-        </>
-      ) : null}
+      {/*
+        MAR-874. Everything that explains rather than states, behind one press.
+
+        ## What moved, and the promise that it only moved
+
+        The three liveness sentences, the spending line, its bound, the
+        allowance hint and the author's-trigger note. Not one of them is
+        deleted, and the ones that are warnings are still warnings —
+        ADR 0029's third liveness sentence, which is the whole of what ADR 0007
+        left open, and MAR-784's *this may charge your own model account*, which
+        is the sentence that costs this feature something.
+
+        The reason it is safe to fold them is the reason this section is
+        allowed to be one line: they are answers to *why*, and a person setting
+        a time does not read seven paragraphs before pressing Save either way.
+        A warning at position fourteen protects nobody; a warning one press
+        under the question a person is already asking is read by everybody who
+        is asking it.
+
+        Rendered whenever there is anything to say, including with no schedule
+        standing — the liveness sentences and the spend lines are empty then,
+        exactly as they were before, so an unscheduled agent's Why? holds the
+        allowance hint and, if there is one, the author's own claim about its
+        cadence.
+      */}
+      <WhyDisclosure>
+        {standing ? (
+          <>
+            <ul className="trigger-liveness">
+              {schedule.liveness.map((sentence) => (
+                <li className="muted wrap" key={sentence}>
+                  {sentence}
+                </li>
+              ))}
+            </ul>
+            <p className="muted wrap">{schedule.spend_line}</p>
+            {/* Only under the allowance sentence, and never under the no-spend
+                one. See `AgentScheduleView.spend_bound` — an empty string here is
+                the view saying there is nothing to bound, not a missing value. */}
+            {schedule.spend_bound === "" ? null : (
+              <p className="muted wrap">{schedule.spend_bound}</p>
+            )}
+          </>
+        ) : null}
+        <p className="muted wrap">
+          {AGENT_TRIGGER_COPY.allowance_hint(schedule.allowance_choice)}
+        </p>
+        {conflicts ? (
+          <>
+            <p className="wrap">{AGENT_TRIGGER_COPY.declared(declared)}</p>
+            <p className="wrap">{AGENT_TRIGGER_COPY.declared_conflict}</p>
+          </>
+        ) : null}
+      </WhyDisclosure>
 
       {/* The record, and it outlives the schedule on purpose — somebody who
           switched a cadence off because it kept failing is exactly the person
@@ -860,12 +1005,6 @@ export function TriggerSwitch({
         </div>
       )}
 
-      {conflicts ? (
-        <div className="notice" role="status">
-          <p>{AGENT_TRIGGER_COPY.declared(declared)}</p>
-          <p>{AGENT_TRIGGER_COPY.declared_conflict}</p>
-        </div>
-      ) : null}
     </section>
   );
 }

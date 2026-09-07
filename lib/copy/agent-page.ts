@@ -389,6 +389,48 @@ export const AGENT_TRIGGER_COPY = {
     "If this computer is asleep, off, or restarting, nothing runs. DASH will tell you it was missed, and it does not run it late.",
   ] as readonly string[],
   /**
+   * The same three sentences for a schedule that is not on this computer at all
+   * (MAR-874).
+   *
+   * ## The defect these exist for
+   *
+   * `liveness` names *this computer* three times, and for an agent DASH has
+   * enrolled on a server every one of those is about the wrong machine.
+   * `splitSchedules` (`electron/host-residency.ts`) takes an enrolled agent's
+   * schedule **out** of the local runner's push and sends it to the server's
+   * own runner instead, precisely so one instruction cannot produce two runs.
+   * So for that agent the local sentences are not merely imprecise: sentence
+   * two promises a helper on a laptop that is no longer told about it, and
+   * sentence three warns about a laptop being asleep when the laptop has
+   * nothing to do with it.
+   *
+   * ## What is fixed here and what is not
+   *
+   * Only the machine that is named. `at_local` still carries no timezone and
+   * still means *the host's* local clock rather than the person's — which is
+   * MAR-872's, and is deliberately not papered over here. Saying *by that
+   * server's clock* is the honest half DASH can say today: it tells somebody
+   * that the number they typed is read somewhere else, which is exactly the
+   * fact a person setting 20:10 needs before MAR-872 converts it for them.
+   *
+   * Three functions rather than one returning an array, so that
+   * `tests/copy-agent-page.test.ts`'s walk calls each and the plain-language
+   * gate sees all three. An array-valued builder would be invisible to it.
+   */
+  liveness_on_host: {
+    open: (server: string): string => `It runs on ${server}, by that server's clock.`,
+    closed: (server: string): string =>
+      `DASH does not have to be open. ${server} keeps its own copy of this schedule and starts the agent itself.`,
+    asleep: (server: string): string =>
+      `If ${server} is off or cannot be reached, nothing runs. DASH will tell you it was missed once it can reach it again, and it does not run it late.`,
+  },
+  /** `time_hint` for an agent whose schedule is kept by a server. See above. */
+  time_hint_on_host: (server: string): string =>
+    `${server}'s own clock, not this computer's. 24-hour, like 08:00 or 17:30.`,
+  /** `standing` for an agent whose schedule is kept by a server. See above. */
+  standing_on_host: (at: string, server: string): string =>
+    `DASH starts this agent every day at ${at}, on ${server}.`,
+  /**
    * ADR 0029 decision 6 and its amendment, said where the decision is made.
    *
    * Deliberately not hidden behind a disclosure. The agent these are most true
@@ -502,6 +544,109 @@ export const AGENT_TRIGGER_COPY = {
 export const AGENT_SETTINGS_COPY = {
   heading: "Settings",
   close: "Close settings",
+  /**
+   * The one word every explanation on this stage now hides behind (MAR-874).
+   *
+   * Henrik's complaint was a count: seven sections and roughly forty sentences
+   * on a page whose job is to say where an agent runs, when it runs, and which
+   * model it talks with. **Nothing was deleted to answer it.** Every sentence
+   * this module holds is still on the page and still reachable, including the
+   * ones that are load-bearing warnings; what changed is that a person who did
+   * not come to read them no longer has to walk through them to reach the
+   * control they came for.
+   *
+   * One word rather than a label, and a question rather than a noun, because
+   * the person who opens it is already asking it. Closed by default, at every
+   * one of them, so the shape of the page does not depend on which section a
+   * previous visit happened to leave open.
+   */
+  why: "Why?",
+  /**
+   * The Advanced disclosure (MAR-874).
+   *
+   * Four things that were four sections: the notification link, the folder
+   * controls, the repair door and the standing answers. None of them is a
+   * decision somebody arrives with — each is something you go looking for once
+   * — which is exactly the test for what belongs behind a closed disclosure
+   * rather than above the fold.
+   */
+  advanced: {
+    heading: "Advanced",
+    /** Inside the disclosure, above the four blocks. */
+    detail: "Things you set up once, and the door back when something has gone wrong.",
+  },
+  /**
+   * The model row (MAR-874, ADR 0013 moment 2).
+   *
+   * ## Why these sentences are here and not in `lib/ai/model-choice.ts`
+   *
+   * That module words the *choice* — which model, out of what a provider
+   * offers, resolved through a level map and a default. These two sentences
+   * word something else: an agent that has no key at all, and a key DASH is
+   * already holding for the fleet that this agent could be given without
+   * anybody being asked for anything. That is a question about consent rather
+   * than about a catalogue, and it is answered by a press on this stage.
+   *
+   * Keeping it here also keeps it enumerated: `tests/copy-agent-page.test.ts`
+   * walks this whole object, so the sentence is under the plain-language gate
+   * from the moment it exists rather than from the moment somebody remembers.
+   */
+  model: {
+    heading: "Which model it talks with",
+    /**
+     * The adoptable state: this agent declares a provider, holds no key, and
+     * DASH already holds one for the fleet.
+     *
+     * Says what the press *buys* — being able to ask it questions — rather
+     * than naming the mechanism. "Your key" for `describeNoChoice`'s own
+     * reason: every provider DASH brokers starts with a vowel sound, and the
+     * key really is one from the person's own account.
+     */
+    adopt_headline: (provider: string): string =>
+      `Give it your ${provider} key so you can ask it questions`,
+    /**
+     * Under the headline. Two facts, and the second is the one that stops this
+     * reading as a second consent screen: nothing is asked for, and nobody is
+     * contacted.
+     */
+    adopt_detail:
+      "You already gave DASH this key for your other agents. Letting this one use it asks you " +
+      "for nothing and contacts nobody.",
+    /** The button. Short, because buttons are uppercased globally. */
+    adopt_action: "Use my key",
+    adopt_pending: "Connecting…",
+    /**
+     * The one action on the ordinary state: open the picker.
+     *
+     * The picker itself is unchanged and still says everything it always did
+     * about what the recommended option means. What this press buys is that a
+     * dropdown, a provider button and a catalogue sentence are not on screen
+     * for the overwhelming majority of visits, where the answer is already
+     * right and nobody came to change it.
+     */
+    change: "Change",
+  },
+  /**
+   * The two state lines this stage says in its own voice (MAR-874).
+   *
+   * Everything else on the stage is worded by the module that owns the
+   * decision. These two are not: "where does this agent run" is answered by
+   * joining the deploy rows to the fact that an agent always also lives here,
+   * and no existing module says that sentence in one line.
+   */
+  where: {
+    heading: "Where it runs",
+    /** Nothing has been sent anywhere. The ordinary state, and not a gap. */
+    here: "This computer.",
+    /** One server, named. */
+    on_server: (server: string): string => `${server}.`,
+    /**
+     * More than one. Rare, and said as a count rather than a list, because the
+     * list is one press away inside the disclosure and a state line that grew
+     * with the number of servers would stop being a line.
+     */
+    on_servers: (count: number): string => `${String(count)} servers.`,
+  },
   identity: {
     heading: "Name and character",
     name_label: "Name",

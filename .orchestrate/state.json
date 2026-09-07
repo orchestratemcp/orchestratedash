@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 03:25: merged this wave: MAR-880 #322, MAR-878 template half #320, MAR-876 #324, MAR-875 #328, MAR-871 #325, MAR-877 #327. MAR-868 proven. Open: MAR-874 (lane G), MAR-878b #329 (draft). DASH rebuilt on 10efc71 at 03:15; installed proofs queued behind the lock screen.",
+  "lifecycle_note": "2026-09-07 06:50: merged this wave: MAR-880 #322, MAR-878 template half #320, MAR-876 #324, MAR-875 #328, MAR-871 #325, MAR-877 #327, MAR-874 #332. MAR-868 proven. Open: MAR-878b #329 (draft). Installed proof pass pending DASH being frontmost; rebuild after #329.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2043,9 +2043,10 @@
     },
     {
       "id": "MAR-874",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "27b4fe4",
+      "note": "PR #332: agent Settings as one state + one action per section with Why? disclosures; new Which model it talks with row with the Use my key adoption press (ADR 0013 moment 2 via the agent-row connect command); READY vs will-not-run resolved (header was right; heading now uses WorkspaceView.startable); liveness copy names the host by residency. 5253 tests, no frames yet. Proof owed: installed one-screen look + adoption + real question."
     },
     {
       "id": "MAR-875",
