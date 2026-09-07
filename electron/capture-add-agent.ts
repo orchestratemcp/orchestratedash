@@ -69,6 +69,16 @@ const ADD_AGENT = "/settings/add-agent";
  */
 const SCENES = [
   { name: "add-agent", open: null },
+  /*
+   * MAR-879. The builder's setup line, which is a disclosure for the same
+   * reason the two below are: it is done once. A sweep that only shot the page
+   * as it loads would photograph three headings and prove nothing about the one
+   * path that has something to reveal.
+   */
+  {
+    name: "add-agent-assistant",
+    open: "The builder is a plugin for your coding assistant",
+  },
   { name: "add-agent-scaffold", open: "Building an agent from scratch?" },
   { name: "add-agent-plan", open: "I have a plan file instead of a folder" },
 ] as const;
@@ -270,8 +280,17 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            page_overflows: root.scrollWidth > root.clientWidth,
            heading_text: h1 === null ? null : h1.textContent,
            primary_label: primary === null ? null : primary.textContent,
+           // MAR-879. The page offers three doors now, so the claim is no
+           // longer "the first control chooses a folder" — it is that all three
+           // are on the page and the folder chooser is still one of them. The
+           // old boolean is kept beside the new ones so a reader comparing this
+           // record with MAR-598's can see which claim changed and when.
            primary_is_choose_folder:
              primary !== null && primary.textContent.trim() === "Choose a folder",
+           path_headings: Array.from(document.querySelectorAll("main .add-agent-path > h2")).map(
+             (heading) => heading.textContent,
+           ),
+           paths_offered: document.querySelectorAll("main .add-agent-path").length,
            command_visible: shown,
            command_above_fold: preTop !== null && preTop < window.innerHeight,
            agent_links: document.querySelectorAll("main a[href^='/agents']").length,
@@ -299,6 +318,67 @@ async function ensureComfortable(target: BrowserWindow): Promise<void> {
     console.log("[add-agent] ambient density was compact from a prior run — resetting");
     await pressDensityToggle(target);
   }
+}
+
+/**
+ * The same page at the two UI scales MAR-879 names (MAR-879).
+ *
+ * ## Why this is a zoom factor and never a preference
+ *
+ * DASH's UI scale is `webContents.setZoomFactor` — `applyUiScale` in
+ * `electron/main.ts` sets it and *also* writes the chosen value into the user's
+ * profile. This calls only the first half, deliberately. The audit that
+ * produced this packet was taken at 80%, and the packet's own rule is that DASH
+ * must not answer that by changing a setting somebody chose; a harness that
+ * proved the fix by writing the preference would be demonstrating the defect it
+ * was photographing.
+ *
+ * Two widths rather than three and one density rather than two, because the
+ * question this pass answers is narrower than the sweep above it: whether the
+ * three doors and their prose survive a scale change. `page_overflows` is the
+ * measurement that can go red, and 375 at 80% is a wider layout than 375 at
+ * 100%, which the sweep has already shot.
+ *
+ * The zoom is put back to 1 afterwards for the same reason the density is: the
+ * next thing to run against this profile should not inherit it.
+ */
+async function scaleSweep(target: BrowserWindow): Promise<void> {
+  for (const theme of THEMES) {
+    nativeTheme.themeSource = theme;
+    for (const viewport of [VIEWPORTS[0], VIEWPORTS[1]] as const) {
+      for (const scale of [0.8, 1] as const) {
+        /*
+         * Back to 1 before measuring the window, and it cost a run to learn.
+         *
+         * `resizeTo` sets the *content* size in device-independent pixels and
+         * then checks `window.innerWidth`, which is in CSS pixels — and zoom is
+         * exactly the ratio between them. At 0.8 a 1280-wide window reports
+         * 1599, the check never converges, and the harness dies with "the page
+         * reports 1599px" on the second pass rather than the first. So the
+         * window is resized unzoomed and zoomed afterwards, which is also the
+         * order a person does it in.
+         */
+        target.webContents.setZoomFactor(1);
+        await go(target, ADD_AGENT);
+        await resizeTo(target, viewport.width, viewport.height);
+        target.webContents.setZoomFactor(scale);
+        await go(target, ADD_AGENT);
+        await settle(600);
+        const measured = await layout(target);
+        measurements.push({
+          scene: "add-agent-scale",
+          ui_scale: scale,
+          theme,
+          labelled: "comfortable",
+          disclosure_opened: null,
+          ...(measured as object),
+        });
+        await shoot(target, `add-agent-scale${String(scale * 100)}-${viewport.name}-${theme}`);
+      }
+    }
+  }
+  target.webContents.setZoomFactor(1);
+  await settle(300);
 }
 
 async function run(): Promise<void> {
@@ -366,6 +446,8 @@ async function run(): Promise<void> {
     }
   }
 
+  await scaleSweep(window);
+
   writeFileSync(
     path.join(OUT, "layout.json"),
     `${JSON.stringify({ captured_at: new Date().toISOString(), measurements }, null, 2)}\n`,
@@ -373,8 +455,24 @@ async function run(): Promise<void> {
   );
 
   const overflowed = measurements.filter((m) => (m as { page_overflows: boolean }).page_overflows);
-  const wrongPrimary = measurements.filter(
-    (m) => !(m as { primary_is_choose_folder: boolean }).primary_is_choose_folder,
+  /*
+   * MAR-879's claim, where MAR-598's used to be.
+   *
+   * MAR-598 asserted that the page's first control says "Choose a folder",
+   * because the defect then was a page led by two terminal commands. The page
+   * offers three doors now, so the claim that has to hold on every frame is
+   * that all three are on it and the folder chooser is still one of them —
+   * demoting a path and deleting it look identical in a screenshot, which is
+   * the reason this harness exists at all.
+   */
+  const threeDoors = measurements.filter(
+    (m) => (m as { paths_offered: number }).paths_offered !== 3,
+  );
+  const folderDoorMissing = measurements.filter(
+    (m) =>
+      !(m as { path_headings: string[] }).path_headings.some((heading) =>
+        heading.includes("folder"),
+      ),
   );
   const commandsAbove = measurements.filter(
     (m) => (m as { scene: string; command_above_fold: boolean }).scene === "add-agent" &&
@@ -401,7 +499,8 @@ async function run(): Promise<void> {
   console.log(
     `\n[add-agent] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
       `[add-agent] ${overflowed.length === 0 ? "no frame overflowed sideways" : `${String(overflowed.length)} FRAMES OVERFLOWED`}\n` +
-      `[add-agent] ${wrongPrimary.length === 0 ? "every frame's primary control is Choose a folder" : `${String(wrongPrimary.length)} FRAMES HAVE A DIFFERENT PRIMARY CONTROL`}\n` +
+      `[add-agent] ${threeDoors.length === 0 ? "every frame offers all three doors" : `${String(threeDoors.length)} FRAMES DO NOT OFFER THREE DOORS`}\n` +
+      `[add-agent] ${folderDoorMissing.length === 0 ? "every frame still offers the folder chooser" : `${String(folderDoorMissing.length)} FRAMES LOST THE FOLDER DOOR`}\n` +
       `[add-agent] ${commandsAbove.length === 0 ? "no closed-page frame shows a command block" : `${String(commandsAbove.length)} FRAMES SHOW A COMMAND BLOCK UNPROMPTED`}\n` +
       `[add-agent] ${listed.length === 0 ? "no frame lists agents on the add page" : `${String(listed.length)} FRAMES LIST AGENTS`}\n` +
       `[add-agent] ${disclosuresMissed.length === 0 ? "every disclosure scene opened" : `${String(disclosuresMissed.length)} DISCLOSURES NOT FOUND`}\n` +

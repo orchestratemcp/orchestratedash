@@ -291,7 +291,11 @@ export const PANEL_EMPTY_DISCLOSURE = "DASH explains this empty section";
  * that one it is read-only: it submits no command and navigates nowhere.
  */
 export const PANEL_ALREADY_SHOWN =
-  "Shown in full at the top of this page, under Generated assets.";
+  // MAR-879. It names DASH's own heading, so it moves when the heading moves —
+  // which is exactly why a sentence that points at a section by name is the
+  // most expensive kind of copy to let drift. `tests/copy-nouns.test.ts` now
+  // holds both ends of it.
+  "Shown in full at the top of this page, under Results.";
 
 /**
  * The one place a run's collected items are drawn on the Output stage

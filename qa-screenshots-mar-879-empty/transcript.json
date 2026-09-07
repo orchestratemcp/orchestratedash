@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-09-07T06:03:14.837Z",
+  "question": "what agents do I have?",
+  "cold_state": {
+    "composer_found": true,
+    "textarea_found": true,
+    "onboarding_found": true,
+    "agent_cards": 0
+  },
+  "composer_focused": true,
+  "asked": {
+    "asked": true
+  },
+  "turn": {
+    "turn_count": 1,
+    "asked": "Youwhat agents do I have?",
+    "reply": "The chiefThere is nothing I can point you at for that yet. Here is where things stand:\n\nYour fleet is empty — no agents added yet. Choose \"Try a sample agent\" from the menu button at the top left of the window, or add one you built yourself from Settings.",
+    "feedback": "I can read your records, but I cannot write you a sentence yet",
+    "charge": "Answered from your own records. No model was asked and nothing was charged."
+  }
+}

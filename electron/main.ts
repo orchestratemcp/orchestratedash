@@ -1056,10 +1056,33 @@ export function registerCommandChannel(
         action === "link"
           ? openCollectedLink(target.url)
           : openAgentExport(dataDir, target.agent_id ?? "", target.file),
-      // MAR-576. The only route in DASH that rewrites an author's manifest, and
-      // the ownership gate that makes that safe lives inside it rather than at
-      // the seam — see `refreshSampleAgent`.
-      sampleAction: (_action, target) => Promise.resolve(refreshSampleAgent(target.agent_id)),
+      /*
+       * MAR-576, MAR-879. The two routes in DASH that write a document DASH
+       * itself generated.
+       *
+       * `refresh` is the only one that rewrites an author's manifest, and the
+       * ownership gate that makes that safe lives inside it rather than at this
+       * seam — see `refreshSampleAgent`.
+       *
+       * `create` is deliberately **the same call `runMenuAction` makes**, not a
+       * second implementation of it: `offerSampleAgent` writes the project,
+       * mints the nonce and raises the consent dialog, and `lib/sample-agent.ts`
+       * exists to argue that there must be exactly one path which does that. So
+       * the page and the menu are two doors onto one operation, and a change to
+       * how a sample is registered cannot land in one of them and not the other.
+       *
+       * It resolves `ok: true` once the offer has been *made*. That is the
+       * honest claim: whether an agent is added is the person's answer to a
+       * native dialog, which no renderer may learn from a command result and no
+       * renderer may pre-empt.
+       */
+      sampleAction: async (action, target) => {
+        if (action === "create") {
+          await offerSampleAgent(handoffContext);
+          return { ok: true };
+        }
+        return refreshSampleAgent(target.agent_id ?? "");
+      },
       // MAR-586. The one command in DASH about the reader rather than about
       // anything DASH supervises. Main stamps the moment from its own clock —
       // `recordAgentLook`'s default — so a renderer cannot mark an agent as read

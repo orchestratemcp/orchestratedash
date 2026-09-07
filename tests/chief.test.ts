@@ -262,5 +262,18 @@ describe("the chief's quiet state", () => {
     // "Nothing here yet" card to find out what to do next.
     expect(CHIEF_WAITING).toMatch(/empty/i);
     expect(CHIEF_WAITING).toMatch(/add/i);
+    /*
+     * MAR-879. It names a control, not a corner of the window.
+     *
+     * This sentence used to send a person to "the menu button at the top left
+     * of the window" — true while the menu was the sample's only entrance, and
+     * the sort of thing an interface says when it cannot offer the thing
+     * itself. The sample is a press on the Add agent page now. Asserted as a
+     * negative because the failure mode is a well-meaning revert: a future
+     * change that moves the sample back behind a menu has to come here first.
+     */
+    expect(CHIEF_WAITING).not.toMatch(/menu/i);
+    expect(CHIEF_WAITING).not.toMatch(/top left/i);
+    expect(CHIEF_WAITING).toMatch(/Add agent/);
   });
 });

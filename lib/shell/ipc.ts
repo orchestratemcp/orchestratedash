@@ -403,6 +403,58 @@ export const COMMANDS = {
   },
 
   /*
+   * MAR-879. Make the sample agent, from the page rather than only from the
+   * menu.
+   *
+   * ## Why this exists at all
+   *
+   * "Try a sample agent" has been an application-menu item since MAR-423, and
+   * that was right while the menu was the only entrance. MAR-879 puts three
+   * doors on the Add agent page and the sample one could reach nothing:
+   * `shell.menu` carries two numbers and deliberately cannot name an item, so a
+   * button could *show* the menu and never press it. A control that opens a
+   * menu and asks a person to find the thing they just asked for is the defect
+   * that page was rewritten to remove, one layer in.
+   *
+   * ## Why it is safe to expose, and it is the payload that says so
+   *
+   * **There is no payload.** `payload_keys` is empty and there is nothing a
+   * renderer could name: not a template, not a folder, not a project name, not
+   * an agent. Every one of those is main's, computed by `offerSampleAgent` from
+   * DASH's own bundled templates. So the widest thing a compromised renderer
+   * can ask for is the one thing the menu item already asks for, and it cannot
+   * vary it by a single character.
+   *
+   * **It cannot add an agent.** What it starts ends at a native consent dialog
+   * main raises and a person answers — the same dialog a deep link ends at.
+   * Page script cannot answer it, and nothing is imported until somebody does.
+   * That is why `irreversible` is false: refused, nothing exists; agreed, an
+   * agent has been added the way every other agent is added and can be removed
+   * the way every other agent is removed.
+   *
+   * `mutates` is true anyway, and honestly: on the far side of the person's yes
+   * this writes a project folder and a store row. A command whose whole purpose
+   * is to reach a mutation is not a read because a human stands in the middle
+   * of it.
+   *
+   * ## One implementation, not two
+   *
+   * Main routes this to the same `offerSampleAgent(handoffContext)` that
+   * `runMenuAction` calls, and the menu item is untouched.
+   * `lib/sample-agent.ts`' standing argument — that there must be exactly one
+   * path which registers a sample — is the reason this is a second *route* to
+   * that path rather than a second path.
+   */
+  "sample.create": {
+    effect:
+      "Make DASH's sample agent and ask whether to add it. Adds nothing until you say yes.",
+    payload_keys: [],
+    required_keys: [],
+    mutates: true,
+    irreversible: false,
+  },
+
+  /*
    * MAR-586. Remember that this agent's page has just been opened.
    *
    * **A sixth family, and it is about the reader rather than about anything
@@ -2052,21 +2104,29 @@ export function isOpenCommandName(value: CommandName): value is OpenCommandName 
 }
 
 /**
- * Re-importing an agent DASH scaffolded (MAR-576).
+ * The agent DASH writes for you: making one, and re-making one (MAR-576,
+ * MAR-879).
  *
- * A fifth family with one member, on the terms the fourth was created under: it
- * is not an Agent DOM verb, not process lifecycle, not the vault and not a file
- * a person chose. What these touch is **the stored manifest itself** — the one
- * document every other surface in DASH treats as the author's and never edits —
- * and a route that can rewrite it deserves to be findable by name rather than
- * folded in beside three commands that cannot.
+ * A fifth family, on the terms the fourth was created under: it is not an Agent
+ * DOM verb, not process lifecycle, not the vault and not a file a person chose.
+ * What these touch is **a document DASH itself generated** — the one thing every
+ * other surface in DASH treats as the author's and never edits — and a route
+ * that can write one deserves to be findable by name rather than folded in
+ * beside commands that cannot.
  *
- * One member is not a shape waiting to be filled. If nothing ever joins it, a
- * reviewer asking "what in DASH can overwrite an author's document?" still gets
- * a complete answer from one map.
+ * It had one member and now has two, and the second arrived the way a family
+ * member should rather than by widening an existing command's payload:
+ * `sample.create` writes an agent from DASH's own template and
+ * `sample.refresh` rewrites one from the same template, so a reviewer asking
+ * "what in DASH generates or overwrites an author's document?" still gets a
+ * complete answer from one map. Neither takes a document; between them they
+ * take, at most, an id.
  */
 export const SAMPLE_ACTIONS = {
   "sample.refresh": "refresh",
+  // MAR-879. Names nothing at all — see its catalogue entry, where the empty
+  // payload is the security argument rather than a convenience.
+  "sample.create": "create",
 } as const;
 
 export type SampleCommandName = keyof typeof SAMPLE_ACTIONS;
@@ -3565,7 +3625,13 @@ export interface DispatchContext {
    */
   sampleAction(
     action: SampleAction,
-    target: { agent_id: string },
+    /*
+     * Optional since MAR-879, for `folderAction`'s reason: `sample.create` names
+     * nothing, and `reviewCommand` has already decided which member requires the
+     * field. Reading what the payload rules left is honest; coercing an absent
+     * value would hand main the literal word "undefined" as an agent id.
+     */
+    target: { agent_id?: string },
   ): Promise<{ ok: boolean; refusal?: string; detail?: string }>;
   /**
    * Write down that this agent's page has been opened (MAR-586).
@@ -4371,17 +4437,26 @@ export async function dispatchCommand(
 
   if (isSampleCommandName(review.command)) {
     /*
-     * MAR-576. The renderer names an agent and nothing else.
+     * MAR-576. The renderer names an agent, or nothing at all.
      *
-     * It cannot supply a manifest, a template, a version or a path — the
-     * payload rules permit one key, and `reviewCommand` has already enforced
-     * that by here. Main reads the stored document, checks DASH's own scaffold
-     * wrote it, regenerates it and imports it. So the widest thing a
-     * compromised renderer could ask for is "re-import agent X from DASH's own
-     * template", which is the same thing the button asks for.
+     * It cannot supply a manifest, a template, a version or a path — the payload
+     * rules permit one key at most, and `reviewCommand` has already enforced
+     * that by here. For `sample.refresh` main reads the stored document, checks
+     * DASH's own scaffold wrote it, regenerates it and imports it; for MAR-879's
+     * `sample.create` there is no key to permit at all, and main builds the
+     * whole thing from its own bundled template and then asks the person. So the
+     * widest thing a compromised renderer could ask for is "re-import agent X
+     * from DASH's own template" or "offer me the sample" — in both cases the
+     * same thing the button asks for.
      */
+    /*
+     * MAR-879 adds the member of this family that names nothing, and it is read
+     * here rather than coerced — the correction `folder.choose` needed below,
+     * for the same reason.
+     */
+    const sampleAgentId = review.payload["agent_id"];
     const result = await context.sampleAction(SAMPLE_ACTIONS[review.command], {
-      agent_id: String(review.payload["agent_id"]),
+      agent_id: typeof sampleAgentId === "string" ? sampleAgentId : undefined,
     });
     return {
       ok: result.ok,

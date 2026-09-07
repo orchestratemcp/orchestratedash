@@ -197,6 +197,16 @@ describe("the briefing as the model sees it", () => {
     expect(renderBriefing([])).toBe(EMPTY_BRIEFING);
     expect(EMPTY_BRIEFING.length).toBeGreaterThan(0);
     expectPlainLanguage([EMPTY_BRIEFING]);
+    /*
+     * MAR-879, and `CHIEF_WAITING`'s assertion in `tests/chief.test.ts` is the
+     * same one for the same reason. What a model is told about an empty fleet
+     * and what the band says about it have to name the same door — this is the
+     * text a model reads, and a model repeating stale directions is a wrong
+     * answer nobody can trace to a constant.
+     */
+    expect(EMPTY_BRIEFING).not.toMatch(/menu/i);
+    expect(EMPTY_BRIEFING).not.toMatch(/top left/i);
+    expect(EMPTY_BRIEFING).toMatch(/Add agent/);
   });
 });
 

@@ -2,9 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 
-import { CHOOSE_FOLDER_COPY } from "../../lib/copy/add-agent";
+import { ADD_AGENT_PATHS, CHOOSE_FOLDER_COPY } from "../../lib/copy/add-agent";
 import type { AddedAgentReport } from "../../lib/shell/ipc";
-import { chooseAgentFolder } from "../_data/source";
+import { chooseAgentFolder, createSampleAgent } from "../_data/source";
 
 /**
  * The Add agent page's primary action (MAR-598).
@@ -161,4 +161,177 @@ export function AddedReport({ report }: { report: AddedAgentReport }): ReactNode
       )}
     </div>
   );
+}
+
+/**
+ * The sample agent, offered on the page instead of only in a menu (MAR-879).
+ *
+ * ## One press, and why that needed a command
+ *
+ * DASH's sample is a main-process operation: it writes a project, mints a real
+ * nonce and raises a native consent dialog, and until MAR-879 the only way to
+ * reach it was the application menu's `sample_agent` action (`lib/shell/menu.ts`,
+ * `electron/sample-agent.ts`). The renderer's one menu-touching command,
+ * `shell.menu`, deliberately carries two numbers and nothing else — a page can
+ * *show* the menu and can never invoke an item in it — so the first draft of
+ * this control popped the menu and asked the person to find, in it, the thing
+ * they had just pressed. That is the defect this page was rewritten to remove,
+ * one layer in.
+ *
+ * So `sample.create` was added to the audited channel instead. It carries **no
+ * payload at all**, which is the whole of its safety argument: there is nothing
+ * for page script to name, and the widest thing it can ask for is the one thing
+ * the menu item already asks for. See its entry in `lib/shell/ipc.ts`.
+ *
+ * ## Still one registration path
+ *
+ * Main routes the command to the same `offerSampleAgent(handoffContext)` that
+ * `runMenuAction` calls. The menu item is untouched and still says what it has
+ * always said, and `lib/sample-agent.ts`' standing argument — one path that
+ * registers a sample — holds: this is a second door, not a second path. What
+ * the button starts still ends at a native dialog a person answers, which page
+ * script cannot answer and cannot read.
+ */
+export function TrySampleAgent({ canAct }: { canAct: boolean }): ReactNode {
+  return <SampleAgentControl available={canAct} />;
+}
+
+/**
+ * The control itself, taking the decided boolean as a prop.
+ *
+ * Split from the wrapper above for `SettingsTabsStrip`'s reason: a static render
+ * runs no effects, so a component that discovered its own availability could
+ * only ever be tested in one of its two states.
+ *
+ * It words nothing, as `ChooseFolder` words nothing. `createSampleAgent` in
+ * `app/_data/source.ts` composes both refusals — a window with no bridge, and a
+ * shell that has one without this command — and the second is the reason there
+ * is no availability effect here any more: an older build is told about the
+ * menu it still has, rather than shown a control that quietly does nothing.
+ */
+export function SampleAgentControl({ available }: { available: boolean }): ReactNode {
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+
+  async function make(): Promise<void> {
+    setBusy(true);
+    setRefusal(null);
+    const result = await createSampleAgent();
+    setBusy(false);
+    /*
+     * A refusal is worth saying and a success is not.
+     *
+     * What follows a success is a native dialog DASH raises in front of this
+     * window — the person is looking at the thing that happened. A receipt here
+     * would be a second, quieter claim about a decision they have not made yet,
+     * and if they say no it would be a claim that had already been contradicted.
+     * The far side of that dialog is `offerSampleAgent`'s, and the fleet is
+     * where the answer shows up.
+     */
+    if (!result.ok && result.detail !== undefined && result.detail !== "") {
+      setRefusal(result.detail);
+    }
+  }
+
+  if (!available) {
+    /*
+     * Said rather than drawn disabled, for `ChooseFolder`'s reason one door
+     * along: a greyed-out button here would read as a claim about the sample,
+     * and the true statement is about which window this is.
+     */
+    return <p className="muted wrap">{ADD_AGENT_PATHS.sample_read_only}</p>;
+  }
+
+  return (
+    <div className="choose-folder">
+      <button
+        type="button"
+        className="button-primary"
+        disabled={busy}
+        onClick={() => void make()}
+      >
+        {busy ? ADD_AGENT_PATHS.sample_pending : ADD_AGENT_PATHS.sample.action}
+      </button>
+      <p className="muted wrap">{ADD_AGENT_PATHS.sample.detail}</p>
+
+      {refusal === null ? null : (
+        <div className="notice notice-err" role="status">
+          <p className="wrap">{refusal}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One line somebody pastes somewhere else, with a way to get it there
+ * (MAR-879).
+ *
+ * The same shape MAR-871 gave the Servers page's `CopyableText`, down to the
+ * `.copyable` and `.setup-line` classes, and deliberately a second copy rather
+ * than an extraction: that one is private to `server-card.tsx` and lifting it
+ * into a shared component would be editing a file this packet does not own, in
+ * a wave where three other lanes were live in the same tree. The duplication is
+ * eleven lines and is recorded in the handoff as debt.
+ *
+ * Two attempts and a spoken failure, for its reason: `navigator.clipboard` is
+ * gated on a secure context and DASH's pages are served over a custom scheme in
+ * the packaged app and over loopback on the developer path, so the modern route
+ * is the one to try and not the one to rely on. If neither works the button
+ * says so, and the line is still on screen to select by hand.
+ */
+export function CopyableCommand({
+  text,
+  label,
+  copied,
+  failed,
+}: {
+  text: string;
+  label: string;
+  copied: string;
+  failed: string;
+}): ReactNode {
+  const [said, setSaid] = useState<"idle" | "copied" | "failed">("idle");
+  return (
+    <span className="copyable">
+      <pre className="setup-line">{text}</pre>
+      <button
+        type="button"
+        className="button-secondary"
+        onClick={() => {
+          void copyText(text).then((ok) => {
+            setSaid(ok ? "copied" : "failed");
+          });
+        }}
+      >
+        {said === "copied" ? copied : said === "failed" ? failed : label}
+      </button>
+    </span>
+  );
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard !== undefined) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Falls through to the selection route below, which works without a secure
+    // context. A refusal here is a permission answer, not a bug to report.
+  }
+  try {
+    const holder = document.createElement("textarea");
+    holder.value = text;
+    holder.setAttribute("readonly", "");
+    holder.style.position = "fixed";
+    holder.style.opacity = "0";
+    document.body.appendChild(holder);
+    holder.select();
+    const done = document.execCommand("copy");
+    document.body.removeChild(holder);
+    return done;
+  } catch {
+    return false;
+  }
 }
