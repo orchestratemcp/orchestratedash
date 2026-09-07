@@ -117,12 +117,11 @@ src/
   open-in-dash.ts bundled into every scaffold as scripts/open-in-dash.mjs
 template/
   agent.mjs               the program; task logic only
-
-The runtime the program imports is not here. There is one, it lives at
-`agent-kit/template/dash-agent-sdk.mjs`, and this scaffold writes those bytes
-(ADR 0034). A second copy under this directory would be a fork that looks
-maintained.
 ```
+
+The runtime the program imports is not in this directory. There is one, it lives
+at `agent-kit/template/dash-agent-sdk.mjs`, and this scaffold writes those bytes
+(ADR 0034). A second copy here would be a fork that looks maintained.
 
 ## Working on it
 
