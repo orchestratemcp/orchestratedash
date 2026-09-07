@@ -2140,6 +2140,34 @@
         "command": "Proof Scout > Settings on Henrik's DASH, master b0631be (includes #342), 2026-09-07 12:25, via the computer-use grant. Linear MAR-885 proof comment.",
         "run": "Which model it talks with row present (This agent does not use a language model / Build one that can); every-day radio detail says on Vultr box; Scheduled runs reads 6 September 2026 at 20:20, by Vultr box's clock; no ISO instant; Advanced and Remove collapsed."
       }
+    },
+    {
+      "id": "MAR-886",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "[EPIC] DASH agent foundation (plan rev 2, 2026-09-07): SDK, generator/recipe, traces, evals+installed proof, portable ProofPacks, Walrus, Starknet, funding dossier. Worktree Documents/DASH-agent-foundation, branch codex/agent-foundation from cb2cb1c. Stages 4-8 have no Linear id yet (free issue limit); tracked in docs/foundation/README.md."
+    },
+    {
+      "id": "MAR-887",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "Foundation 1: extract the agent runtime into a shared SDK used by agent-kit, tools/dash-mcp and the packaged sample; old fixture agents keep working; installed journey needs no npm/network/extra Node."
+    },
+    {
+      "id": "MAR-888",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "Foundation 2: versioned, validated build recipe + LLM-friendly generator instructions and evals; CLI and installed sample share one generator; MCP contract documented, not live."
+    },
+    {
+      "id": "MAR-889",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "Foundation 3: hierarchical traces (run/span/parent, status, structured error) in the existing run inspector; telemetry v1 compatible; secrets filtered; incompleteness shown."
     }
   ]
 }
