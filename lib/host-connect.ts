@@ -305,7 +305,14 @@ export function describeConnectState(state: HostConnectState): HostStandingCopy 
         detail:
           "DASH knows how to reach this server and has not signed in to it since you opened " +
           "DASH. Nothing is wrong — it simply has not looked.",
-        next_action: "Check this server",
+        /*
+         * MAR-871 renamed the control this names. There is one refresh on the
+         * card now, and a next action naming a button that no longer exists is
+         * the stale direction `describeImportUnavailable` was corrected for: a
+         * wrong instruction is worse than none, because it is checkable and it
+         * fails.
+         */
+        next_action: "Check now",
         reach: "not_asked",
       };
 
@@ -504,11 +511,34 @@ function describeUnreachable(label: string, problem: HostReachProblem): HostStan
       };
 
     case "no_runner_there":
+      /*
+       * The one state on this surface where DASH has good news, worded as good
+       * news (MAR-871).
+       *
+       * It read *"<label> is reachable, with nothing running on it"* — three
+       * clauses, two of them negative, on the state **every freshly enrolled
+       * server is in before its first deploy**. That is the first sentence a
+       * person ever reads about a machine they have just rented and correctly
+       * set up, and the attended run of 2026-09-05 photographed it under a
+       * banner saying nothing had answered. Henrik's own ask for this page is a
+       * clear message that the server is up.
+       *
+       * So the headline says that, and it is the only headline in this function
+       * that does not lead with a fault — because it is the only state that is
+       * not one. The label still appears, because a page can hold several
+       * servers and a sentence about one of them has to say which, and it comes
+       * second so the good news is read first.
+       *
+       * The body is the honest remainder in the order a person needs it: what
+       * DASH established, that this is how every new server starts, and that
+       * the connection itself is fine. `next_action` is unchanged and is still
+       * the card's one primary control.
+       */
       return {
-        headline: `${label} is reachable, with nothing running on it`,
+        headline: `Your server is up. ${label} is signed in and ready.`,
         detail:
-          "DASH signed in and found no agent runner there yet. Nothing is wrong with " +
-          "the connection.",
+          "DASH signed in and found no agent runner there yet, which is how every new " +
+          "server starts. Nothing is wrong with the connection.",
         next_action: "Put an agent on this server",
         reach: "signed_in",
       };

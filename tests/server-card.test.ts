@@ -30,8 +30,17 @@ import {
   describeSameServer,
   describeSignIn,
   everyServerCardSentence,
+  primaryServerAction,
+  reachedTheServer,
+  serverCardState,
   summariseServers,
+  type ServerCheck,
 } from "../lib/server-card";
+import {
+  HOST_REACH_PROBLEMS,
+  type HostConnectState,
+  type HostReachProblem,
+} from "../lib/host-connect";
 import { expectPlainLanguage } from "./helpers/plain-language";
 
 function record(over: Partial<HostRecord> = {}): HostRecord {
@@ -247,6 +256,23 @@ describe("the line above the list", () => {
   const ONE = [{ same_server_count: 1 }];
   const AT = "2026-08-10T21:14:37Z";
 
+  /**
+   * One check, with all four facts stated (MAR-871).
+   *
+   * `ServerCheck` gained `running` and `residency_on` and both are required
+   * rather than optional, so a caller cannot leave one out and get a clause
+   * nothing ever exercised — the trap MAR-620 named as "copy gates only see
+   * populated fields". The defaults live here so a test naming one fact still
+   * has to mean the others.
+   */
+  const check = (over: Partial<ServerCheck> = {}): ServerCheck => ({
+    answered: false,
+    at: AT,
+    running: null,
+    residency_on: false,
+    ...over,
+  });
+
   it("counts rather than asserts", () => {
     expect(summariseServers([])).toContain("No server");
     expect(summariseServers(ONE)).toContain("1 server");
@@ -255,13 +281,72 @@ describe("the line above the list", () => {
   it("says duplicates were kept, not cleaned up", () => {
     const summary = summariseServers(
       [{ same_server_count: 2 }, { same_server_count: 2 }],
-      [
-        { answered: true, at: AT },
-        { answered: true, at: AT },
-      ],
+      [check({ answered: true }), check({ answered: true })],
     );
     expect(summary).toContain("2 of them");
     expect(summary).toContain("rather than deleting");
+  });
+
+  /*
+   * MAR-871, and this is the assertion the attended run of 2026-09-05 is filed
+   * against. The banner read *"1 server is saved. None answered when DASH
+   * checked"* directly above a card reading *"reachable, with nothing running
+   * on it — nothing is wrong with the connection"*, because the page counted a
+   * `step` and the card read a `reach`.
+   *
+   * The join is the page's, so what is asserted here is the half this module
+   * owns: given a check that says DASH got on to the machine, the line says so
+   * — and `reachedTheServer`, one export up, is what the page counts with.
+   */
+  it("says the server answered whenever DASH got on to it", () => {
+    expect(summariseServers(ONE, [check({ answered: true })])).toContain("It answered");
+    expect(summariseServers(ONE, [check({ answered: true })])).not.toContain("None answered");
+  });
+
+  it("counts a server DASH signed in to but found no runner on as having answered", () => {
+    // The state every freshly enrolled server is in, and the first sentence a
+    // new user ever reads about their brand-new machine.
+    expect(reachedTheServer({ step: "unreachable", label: "x", problem: "no_runner_there" })).toBe(
+      true,
+    );
+    expect(
+      reachedTheServer({ step: "unreachable", label: "x", problem: "helper_not_installed" }),
+    ).toBe(true);
+    // And the walls where DASH never got in stay out of the count, which is the
+    // half of MAR-605 this must not undo.
+    for (const problem of ["key_not_on_server", "sign_in_refused", "no_answer_at_address"] as const) {
+      expect(reachedTheServer({ step: "unreachable", label: "x", problem }), problem).toBe(false);
+    }
+  });
+
+  /*
+   * UX-4's rule, asserted as three separate clauses rather than as wording:
+   * last contact, running state and residency are different facts and the line
+   * may not let one of them imply another.
+   */
+  it("keeps what the host reported apart from whether DASH reached it", () => {
+    // Reached, and never asked what was on it. Not the same as empty.
+    const silent = summariseServers(ONE, [check({ answered: true, running: null })]);
+    expect(silent).toContain("It answered");
+    expect(silent).not.toMatch(/reported/);
+
+    // Reached, asked, and the server named nothing.
+    const empty = summariseServers(ONE, [check({ answered: true, running: 0 })]);
+    expect(empty).toContain("It reported nothing running");
+
+    const busy = summariseServers(ONE, [check({ answered: true, running: 2 })]);
+    expect(busy).toContain("It reported 2 agents running");
+  });
+
+  it("says residency as DASH's own act, not as a claim about the machine", () => {
+    /*
+     * `asked_on` is a row in DASH's store and is true with the server asleep.
+     * A line saying "it keeps its agents running" would be a claim only the
+     * server can make — and the card is where the server's own answer goes.
+     */
+    const summary = summariseServers(ONE, [check({ residency_on: true })]);
+    expect(summary).toContain("You have asked it");
+    expect(summary).not.toMatch(/it keeps/i);
   });
 
   /*
@@ -274,40 +359,181 @@ describe("the line above the list", () => {
    */
   it("never calls a saved server connected before a check said so", () => {
     expect(summariseServers(ONE)).not.toContain("connected");
-    expect(summariseServers(ONE, [{ answered: false, at: AT }])).not.toContain("connected");
+    expect(summariseServers(ONE, [check()])).not.toContain("connected");
   });
 
   it("says nothing has been asked, rather than staying quiet about it", () => {
     // Silence here reads as reassurance, because the reader supplies the
     // missing half themselves and supplies the comfortable one.
     expect(summariseServers(ONE)).toContain("has not checked");
-    expect(summariseServers(ONE, [{ answered: false, at: null }])).toContain("has not checked");
+    expect(summariseServers(ONE, [check({ at: null })])).toContain("has not checked");
   });
 
   it("counts only the servers that answered, and stamps the count", () => {
     const mixed = summariseServers(
       [{ same_server_count: 1 }, { same_server_count: 1 }],
-      [
-        { answered: true, at: AT },
-        { answered: false, at: AT },
-      ],
+      [check({ answered: true }), check({ answered: false })],
     );
     expect(mixed).toContain("1 of them answered");
     // The moment is not decoration. A count with no clock on it is the failure
     // this whole surface was built against.
     expect(mixed).toMatch(/at .+\./);
 
-    expect(
-      summariseServers(ONE, [{ answered: false, at: AT }]),
-    ).toContain("None answered");
+    expect(summariseServers(ONE, [check()])).toContain("None answered");
   });
 
   it("still says how many records DASH holds when none of them answered", () => {
     // The saved count is a fact about DASH and stays true whatever the servers
     // do. Dropping it on a bad check would lose the one number that is knowable.
-    expect(summariseServers(ONE, [{ answered: false, at: AT }])).toContain("1 server is saved");
+    expect(summariseServers(ONE, [check()])).toContain("1 server is saved");
   });
 });
+
+/* ---------------------------------------------------------------------- *
+ * One card, one state, one primary action (MAR-871)
+ * ---------------------------------------------------------------------- */
+
+describe("what a card is for", () => {
+  const problems = (...list: HostReachProblem[]): HostConnectState[] =>
+    list.map((problem) => ({ step: "unreachable", label: "My server", problem }));
+
+  it("folds fifteen diagnoses into seven situations without merging any of them", () => {
+    /*
+     * The states stay distinct — MAR-572/573/600 spent three attended runs
+     * pulling them apart and nothing here puts them back. What this asserts is
+     * that the *card* has one behaviour per situation, which is the thing the
+     * shipped page did not have: five controls on every state at once.
+     */
+    expect(serverCardState({ step: "not_checked", label: "x" })).toBe("never_checked");
+    expect(serverCardState({ step: "probing", label: "x" })).toBe("checking");
+    expect(
+      serverCardState({ step: "unreachable", label: "x", problem: "no_runner_there" }),
+    ).toBe("up");
+    expect(
+      serverCardState({
+        step: "reachable",
+        label: "x",
+        runner_build: null,
+        agents_running: 0,
+        agents_there: [],
+      }),
+    ).toBe("up");
+    expect(
+      serverCardState({
+        step: "reachable",
+        label: "x",
+        runner_build: null,
+        agents_running: 1,
+        agents_there: [{ agent_id: "News Scout", running: true }],
+      }),
+    ).toBe("in_use");
+  });
+
+  it("sends every not-set-up wall to the setup text, including a runner that did not know DASH", () => {
+    // One exit for "this server is not set up for DASH yet", whichever of the
+    // three the probe named — the snippet installs the key, the helper and the
+    // introduction, so it is the answer to all of them.
+    for (const state of problems("helper_not_installed", "key_not_on_server", "runner_refused_credential")) {
+      expect(serverCardState(state)).toBe("not_set_up");
+      expect(primaryServerAction(state)?.kind).toBe("setup");
+    }
+  });
+
+  it("gives every state exactly one primary action, and no state two", () => {
+    for (const state of everyStanding()) {
+      const primary = primaryServerAction(state);
+      if (serverCardState(state) === "no_server" || serverCardState(state) === "checking") {
+        // Nothing to press: there is no record, or a check is already running.
+        expect(primary, serverCardState(state)).toBeNull();
+        continue;
+      }
+      expect(primary, serverCardState(state)).not.toBeNull();
+      expect(primary?.label.length ?? 0, serverCardState(state)).toBeGreaterThan(0);
+    }
+  });
+
+  it("offers one refresh, worded the same everywhere it appears", () => {
+    /*
+     * The card carried two — "Check this server" in the button row and "Ask
+     * the server" inside the restart section — and both meant "sign in and find
+     * out". A person had to know which one asked which question.
+     */
+    const refreshes = everyStanding()
+      .map((state) => primaryServerAction(state))
+      .filter((action) => action?.kind === "check")
+      .map((action) => action?.label);
+    expect(new Set(refreshes)).toEqual(new Set(["Check now"]));
+  });
+
+  it("only offers the confirmation where there is something to confirm", () => {
+    /*
+     * `confirm_host_key` carries the fingerprint a person compares; the refusal
+     * that follows the same decision not having been made — `host_key_not_trusted`
+     * — arrives with nothing, because DASH was turned away before it read
+     * anything. A **Yes, this is my server** there would be a control with no
+     * value behind it, and a dead button is worse than a sentence.
+     */
+    expect(
+      primaryServerAction({
+        step: "confirm_host_key",
+        label: "x",
+        fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+        key_type: "ssh-ed25519",
+        offered_count: 3,
+      })?.kind,
+    ).toBe("confirm");
+    const refused = { step: "unreachable", label: "x", problem: "host_key_not_trusted" } as const;
+    expect(serverCardState(refused)).toBe("needs_your_ok");
+    // The state is still its own — the chip says the server answered — and the
+    // control is the one that can actually get the code.
+    expect(primaryServerAction(refused)?.kind).toBe("check");
+  });
+
+  it("never asks somebody to press Check on a server nothing can reach from here", () => {
+    // `no_ssh_on_this_computer` is the one problem where the fault is on this
+    // machine, and pressing Check again is still the honest next thing: the
+    // sentence beside it says what to install, and the button re-runs it once
+    // they have. What must not happen is the card offering to *set up the
+    // server*, which is the wrong machine entirely.
+    for (const state of problems("no_ssh_on_this_computer", "ssh_tools_cannot_check_here")) {
+      expect(primaryServerAction(state)?.kind).toBe("check");
+    }
+  });
+});
+
+/** Every standing a card can be in, so an assertion cannot miss one. */
+function everyStanding(): HostConnectState[] {
+  return [
+    { step: "no_host" },
+    { step: "not_checked", label: "x" },
+    { step: "probing", label: "x" },
+    { step: "awaiting_key_install", label: "x", public_key: "ssh-ed25519 AAAA… dash" },
+    {
+      step: "confirm_host_key",
+      label: "x",
+      fingerprint: "SHA256:FCU60rvm6UzWbFXeMm0CUSO8qid2WYv9v3aymVi51HA",
+      key_type: "ssh-ed25519",
+      offered_count: 3,
+    },
+    {
+      step: "reachable",
+      label: "x",
+      runner_build: "96cef12082fe67afa3a6",
+      agents_running: 0,
+      agents_there: [],
+    },
+    {
+      step: "reachable",
+      label: "x",
+      runner_build: "96cef12082fe67afa3a6",
+      agents_running: 1,
+      agents_there: [{ agent_id: "News Scout", running: true }],
+    },
+    ...HOST_REACH_PROBLEMS.map(
+      (problem): HostConnectState => ({ step: "unreachable", label: "x", problem }),
+    ),
+  ];
+}
 
 describe("every sentence on the card", () => {
   it("is plain language", () => {

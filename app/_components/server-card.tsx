@@ -16,10 +16,12 @@ import {
   describePin,
   describeSameServer,
   describeSignIn,
+  primaryServerAction,
+  serverCardState,
   standingChip,
 } from "../../lib/server-card";
 import { agentStageHref } from "../_data/routes";
-import { describeSetupStep } from "../../lib/host-wizard";
+import { describeSetupRecipe, describeSetupStep } from "../../lib/host-wizard";
 import {
   describeWhatIsOnHost,
   summariseWhatIsOnHost,
@@ -70,6 +72,32 @@ import type { AgentDeployChoice, KeyOfferView, SavedServerView } from "../../lib
  * standing is a sentence before it is a chip, why every failure carries its own
  * next action rather than one shared shrug, and why "nothing is running there"
  * is drawn as an ordinary state and not as a fault.
+ *
+ * ## MAR-871: one card, one state, one primary action
+ *
+ * The order above survived; the *quantity* did not. An attended run against a
+ * real VPS on 2026-09-05 found a card that offered five controls at once — check
+ * this server, ask the server, turn on, put an agent here, stop using this
+ * server — with two of them (check, ask) both meaning "sign in and find out",
+ * and one of them (put an agent here) expanding a list whose own text said the
+ * thing you had just pressed happens somewhere else. Henrik's report of that
+ * screen is that he could not tell what state his server was in or what he was
+ * meant to press, which is the correct reading of a surface where every state
+ * draws the same five buttons.
+ *
+ * So `serverCardState` folds the fifteen diagnoses into the seven situations a
+ * *card* has to behave differently in, and `primaryServerAction` names the one
+ * control each of them gets. Everything a person may still want — the setup
+ * text for a server that is already set up, putting a second agent on a machine
+ * that has one, disconnecting — moves into one overflow rather than being
+ * deleted, because unfindable is the same as missing and this card has already
+ * paid for learning that once.
+ *
+ * The sentences are unchanged and still come from `describeConnectState`. This
+ * decides what the card *does* about a state, never what it says about one:
+ * MAR-605's whole argument is that two places deciding one fact is how a chip
+ * comes to contradict the paragraph under it, and a second set of state
+ * sentences here would be that mistake with more words.
  */
 
 /* ---------------------------------------------------------------------- *
@@ -114,20 +142,17 @@ export interface ServerCardActions {
    */
   installKey(offer: { agent: string; connection_id: string; fingerprint: string }): void;
   /**
-   * Ask this server what it does when it restarts (MAR-795, ADR 0031).
-   *
-   * A read that changes nothing, on the server or here — which is why the card
-   * may call it from a press rather than only from a form. Null when DASH could
-   * not ask; the card says so rather than drawing a switch over a machine it did
-   * not reach.
-   */
-  readResidency(): Promise<HostServiceReport | null>;
-  /**
    * Turn it on, or off (MAR-795, ADR 0031).
    *
    * Answers with what the server said afterwards, never with what was asked —
    * ADR 0030 decision 2's rule about reading the system's own off state, so a
    * press that half-worked draws the half that is true.
+   *
+   * `readResidency` used to sit beside this and had its own button on the card.
+   * MAR-871 removed both: reading the boot entry is part of what one **Check
+   * now** does, so the page asks for it there and hands the answer down as
+   * `residency` below. Two controls that both mean "sign in and find out" were
+   * two controls a person had to tell apart before pressing either.
    */
   setResidency(on: boolean): Promise<HostServiceReport | null>;
 }
@@ -136,6 +161,7 @@ export function ServerCard({
   server,
   standing,
   checkedAt,
+  residency,
   agents,
   busy,
   notice,
@@ -154,6 +180,16 @@ export function ServerCard({
    * `describeAskedAt`.
    */
   checkedAt: string | null;
+  /**
+   * What the server itself last said about restarting, or null (MAR-871).
+   *
+   * Held by the page rather than by the restart section, because the one
+   * **Check now** on this card is what asks for it — the section had its own
+   * **Ask the server** button and its own state, which made two refreshes out
+   * of one question. Null is the honest opening value and stays null for every
+   * server DASH has not signed in to this session.
+   */
+  residency: HostServiceReport | null;
   /** Every agent in this DASH, with whether it can be sent. Empty is a real state. */
   agents: readonly AgentDeployChoice[];
   busy: boolean;
@@ -163,7 +199,15 @@ export function ServerCard({
   canAct: boolean;
 }): ReactNode {
   const [confirmForget, setConfirmForget] = useState(false);
-  const [deploying, setDeploying] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  /**
+   * Whether the setup recipe is open (MAR-871).
+   *
+   * The primary control of a server that is not set up opens it, rather than
+   * fetching a snippet and dropping it on the page. The five steps are what a
+   * person who has never signed in to a server needs *around* the snippet.
+   */
+  const [settingUp, setSettingUp] = useState(false);
   /**
    * The agent id a bring-home is being confirmed for, or null (MAR-611,
    * ADR 0017). One at a time, the same shape `confirmForget` already uses for
@@ -201,8 +245,79 @@ export function ServerCard({
     at: checkedAt,
   });
 
+  /* MAR-871. What this card is for, and the one control it gets. */
+  const cardState = serverCardState(standing);
+  const primary = primaryServerAction(standing);
+  /*
+   * The next action, except where the primary control already *is* it.
+   *
+   * The rule the shipped card had for one state, applied to the four it is true
+   * of: a sentence reading "check now" immediately above a control reading
+   * CHECK NOW is noise, and noise directly above the thing a person is meant to
+   * press is the worst place to put it. `in_use` has no next action of its own and
+   * the unreachable states' next actions are guidance — install the tools,
+   * check the address — which is not what the button does, so it stays.
+   */
+  const sayNextAction =
+    copy.next_action !== null &&
+    /*
+     * `never_checked`'s next action is literally "Check now", which is the
+     * button. Every other suppression is decided by the control rather than
+     * by the state, so a state whose primary is only a *refresh* — the walls
+     * where DASH never got in, and `host_key_not_trusted`, which has no
+     * fingerprint to confirm — keeps its own guidance above the button.
+     */
+    cardState !== "never_checked" &&
+    primary?.kind !== "confirm" &&
+    primary?.kind !== "setup" &&
+    primary?.kind !== "put_agent";
+  /*
+   * The only agent that could go here, when there is exactly one.
+   *
+   * MAR-871, and it is the whole of the D8 fix on the common path: a DASH with
+   * one sendable agent has one destination, so **Put an agent here** goes
+   * straight to it rather than opening a list of one for somebody to press
+   * again. With none or several, the list is the choice and the control opens
+   * it.
+   */
+  const sendable = agents.filter((agent) => agent.deploy.deployable);
+  const onlyOne = sendable.length === 1 && canAct ? sendable[0] : undefined;
+  /*
+   * The restart section renders where it can say something true and actionable,
+   * which is a server that named at least one agent. Asking a machine with no
+   * runner on it what it does at boot is a question the helper answers with a
+   * refusal, and a section that drew the refusal would be a warning about a
+   * server that is fine.
+   */
+  const showResidency = cardState === "in_use";
+  /* Same rule: the keys section says nothing worth a heading until there is a
+     placement to name or an offer to press. */
+  const showKeys = server.placed_keys.length > 0 || server.key_offers.length > 0;
+
+  /*
+   * Built once and rendered in one of two places (MAR-871).
+   *
+   * A card that is not set up opens the recipe from its primary control, so the
+   * recipe belongs under it; every other card offers the same recipe from the
+   * overflow, because the attended run's own finding is that an already-enrolled
+   * server had **no route back to the setup text at all** — the only way to see
+   * it again was to start enrolling a second record for the same machine, which
+   * lands straight in the duplicate this page apologises for. Same for the
+   * chooser. Composed here so the two placements cannot drift into two panels.
+   */
+  const setupPanel = (
+    <SetupPanel
+      server={server}
+      busy={busy}
+      canAct={canAct}
+      fetchScript={actions.setup}
+      onCheck={actions.check}
+    />
+  );
+  const chooser = <SendAnAgentHere server={server} agents={agents} canAct={canAct} />;
+
   return (
-    <article className="row-card server-card">
+    <article className={`row-card server-card is-${cardState.replaceAll("_", "-")}`}>
       <div className="card-head">
         <h2>{server.label}</h2>
         <span className={`chip ${chip.tone}`}>{chip.label}</span>
@@ -225,17 +340,8 @@ export function ServerCard({
         <strong>{copy.headline}</strong>
       </p>
       <p className="wrap">{copy.detail}</p>
-      {/*
-        The next action, except where a button on this card already *is* it.
-        "Check this server" printed immediately above a control reading CHECK
-        THIS SERVER is noise, and noise directly above the thing a person is
-        meant to press is the worst place to put it. Every other state's next
-        action is guidance — copy the key onto the server, check the account
-        name — and stays.
-      */}
-      {copy.next_action === null || standing.step === "not_checked" ? null : (
-        <p className="next-action wrap">{copy.next_action}</p>
-      )}
+      {/* See `sayNextAction` — the button is the instruction wherever it can be. */}
+      {sayNextAction ? <p className="next-action wrap">{copy.next_action}</p> : null}
 
       <p className="card-meta wrap">
         {describeSignIn(server)}. {describeAdded(server.added_at)}.
@@ -246,8 +352,14 @@ export function ServerCard({
         unchecked card's standing already says DASH has not looked, and a second
         sentence saying the same thing in different words — five times down a
         list — is the wall of text this page is trying not to be.
+
+        MAR-871 added `up` to the states that stay quiet, for the same reason
+        one rung along: *"DASH signed in and found no agent runner there yet"*
+        already IS the standing on that card, and a second line reading "the
+        server answered and had no agent runner on it" underneath it was the
+        same fact twice on the one state a new server spends its first day in.
       */}
-      {standing.step === "not_checked" ? null : (
+      {cardState === "never_checked" || cardState === "up" ? null : (
         <p className="card-meta wrap">
           {describeDeployed(standing)}
           {/* MAR-577. The moment the answer was given, beside the answer. Null
@@ -271,7 +383,7 @@ export function ServerCard({
         sent even when nothing has asked the machine yet. That state is what the
         list says it is, in words, rather than an absence.
       */}
-      {contents.length === 0 ? null : (
+      {contents.length === 0 || cardState === "checking" ? null : (
         <WhatIsOnThisServer
           rows={contents}
           /*
@@ -312,14 +424,22 @@ export function ServerCard({
         Below what is on the server and above the identity, which is the order a
         person reads the card in: an agent has to be here before a key can be
         placed for it, and the identity is the thing the ceremony below quotes.
+
+        MAR-871 gated it on having something to say. The section used to draw a
+        heading and *"this server is ready and holding nothing of yours"* on
+        every card in DASH, including on a machine nobody has checked, where it
+        is a heading announcing a feature the reader has not used —
+        `FleetConnectors`' call and `ModelDefault`'s, one page over.
       */}
-      <KeysOnThisServer
-        server={server}
-        standing={standing}
-        busy={busy}
-        canAct={canAct}
-        onPlace={setPlacing}
-      />
+      {showKeys ? (
+        <KeysOnThisServer
+          server={server}
+          standing={standing}
+          busy={busy}
+          canAct={canAct}
+          onPlace={setPlacing}
+        />
+      ) : null}
 
       {/*
         MAR-795, ADR 0031. What this server does when it restarts.
@@ -328,14 +448,20 @@ export function ServerCard({
         read in: an agent has to be here before there is anything to start, a key
         is what it needs to think, and this is what happens to both of them when
         nobody is watching.
+
+        MAR-871: and only where there is an agent, which is what makes those
+        sentences true. On a server with no runner the boot question has no
+        subject, and the helper answers it with a refusal.
       */}
-      <ResidencyOnThisServer
-        server={server}
-        busy={busy}
-        canAct={canAct}
-        onRead={actions.readResidency}
-        onSet={actions.setResidency}
-      />
+      {showResidency ? (
+        <ResidencyOnThisServer
+          server={server}
+          report={residency}
+          busy={busy}
+          canAct={canAct}
+          onSet={actions.setResidency}
+        />
+      ) : null}
 
       {placing === null ? null : (
         <KeyPlacementCeremony
@@ -363,23 +489,6 @@ export function ServerCard({
         />
       )}
 
-      {/*
-        MAR-572, rendered rather than hidden. Every real record has a null
-        fingerprint, so this is the branch a person actually sees, and it is the
-        one fact on the card about *which machine this is* — the question the
-        whole strict-host-key arrangement exists to answer and cannot yet.
-      */}
-      <details className="card-more">
-        <summary>This server&rsquo;s identity</summary>
-        <p className="wrap">
-          <strong>{pin.headline}</strong>
-        </p>
-        <p className="wrap">{pin.detail}</p>
-        {server.fingerprint === null ? null : (
-          <pre className="public-key">{server.fingerprint}</pre>
-        )}
-      </details>
-
       {notice === null ? null : (
         <p className="notice notice-err wrap" role="alert">
           {notice}
@@ -391,80 +500,127 @@ export function ServerCard({
         unpinned today, so the first check of a working server lands here: the
         code is shown, and confirming it is the one part only the person can do.
         The fingerprint they compare is on its own line above, so the button
-        carries a decision they have actually made rather than a blind yes.
+        below carries a decision they have actually made rather than a blind yes.
       */}
-      {standing.step === "confirm_host_key" ? (
-        <section className="enrollment-panel">
-          <pre className="public-key">{standing.fingerprint}</pre>
+      {cardState === "needs_your_ok" && standing.step === "confirm_host_key" ? (
+        <pre className="public-key">{standing.fingerprint}</pre>
+      ) : null}
+
+      {/*
+        The recipe, opened by the primary control (MAR-573, MAR-579, MAR-871).
+
+        The snippet has been reachable since MAR-579 and the attended run still
+        could not get past it: what was missing was everything *around* the
+        snippet — which program to open on this computer, the line that signs
+        you in to your own machine, and whose password the server will ask for.
+        So the control opens five numbered steps with the snippet as step four,
+        rather than a button that fetches a wall of shell script.
+      */}
+      {settingUp && cardState === "not_set_up" ? setupPanel : null}
+
+      {/*
+        One control, and it is the one this state is for (MAR-871).
+
+        `probing` gets a disabled control saying what is happening rather than
+        an empty row: the brief's rule is that nothing moves without saying it
+        did, and a card that lost its button mid-check reads as one that broke.
+      */}
+      <div className="button-row">
+        {primary === null ? (
+          cardState === "checking" ? (
+            <button type="button" className="button-primary" disabled>
+              Checking...
+            </button>
+          ) : null
+        ) : primary.kind === "put_agent" && onlyOne !== undefined ? (
+          /*
+           * One sendable agent, one destination. The press lands on the step
+           * that sends it rather than on a list of one.
+           */
+          <Link className="button-primary" href={agentStageHref(onlyOne.name, "settings")}>
+            {primary.label}
+          </Link>
+        ) : (
           <button
             type="button"
             className="button-primary"
             disabled={busy || !canAct}
+            aria-expanded={
+              primary.kind === "put_agent" ? choosing : primary.kind === "setup" ? settingUp : undefined
+            }
             onClick={() => {
-              actions.trust(standing.fingerprint);
+              switch (primary.kind) {
+                case "check":
+                  actions.check();
+                  return;
+                case "confirm":
+                  if (standing.step === "confirm_host_key") {
+                    actions.trust(standing.fingerprint);
+                  }
+                  return;
+                case "setup":
+                  setSettingUp((open) => !open);
+                  return;
+                case "put_agent":
+                  setChoosing((open) => !open);
+                  return;
+              }
             }}
           >
-            {busy ? "Confirming..." : "Yes, this is my server"}
+            {busy && primary.kind === "confirm" ? "Confirming..." : primary.label}
           </button>
-        </section>
-      ) : null}
-
-      {/*
-        The bootstrap, reachable where it is needed (MAR-573, MAR-579). On a
-        fresh box the walls arrive in order: the host key is confirmed first
-        (above), then the sign-in fails because DASH's key and the helper are not
-        on the server yet. Both are what the one-paste snippet installs, so the
-        setup affordance is offered for `key_not_on_server` as well as
-        `helper_not_installed` — the snippet is the single answer to "this server
-        is not set up for DASH yet", whichever of the two the probe named.
-      */}
-      {standing.step === "unreachable" &&
-      (standing.problem === "helper_not_installed" || standing.problem === "key_not_on_server") ? (
-        <SetupPanel label={server.label} busy={busy} canAct={canAct} fetchScript={actions.setup} />
-      ) : null}
-
-      <div className="button-row">
-        <button
-          type="button"
-          className="button-primary"
-          disabled={busy || !canAct}
-          onClick={() => {
-            actions.check();
-          }}
-        >
-          {standing.step === "probing" ? "Checking..." : "Check this server"}
-        </button>
-        <button
-          type="button"
-          className="button-secondary"
-          disabled={busy || !canAct}
-          onClick={() => {
-            setDeploying((open) => !open);
-          }}
-          aria-expanded={deploying}
-        >
-          Put an agent here
-        </button>
-        <button
-          type="button"
-          className="button-secondary"
-          disabled={busy || !canAct}
-          onClick={() => {
-            setConfirmForget(true);
-          }}
-        >
-          Stop using this server
-        </button>
+        )}
       </div>
 
       {/*
-        MAR-642. The same button, opening a list of doorways rather than a
-        deploy flow. `SendAnAgentHere` argues the demotion; what matters here is
-        that the control kept its word — "put an agent here" still leads to
-        putting an agent here, one press further on, on the page where that
-        agent's own settings already are.
+        MAR-642. The list of destinations, opened by the control above.
+        `SendAnAgentHere` argues the demotion; what matters here is that the
+        control kept its word — "put an agent here" still leads to putting an
+        agent here, one press further on, on the page where that agent's own
+        settings already are.
       */}
-      {deploying ? <SendAnAgentHere server={server} agents={agents} canAct={canAct} /> : null}
+      {choosing && cardState === "up" ? chooser : null}
+
+      {/*
+        Everything else, once (MAR-871).
+        `MoreAboutThisServer` argues why these are behind one summary.
+      */}
+      <MoreAboutThisServer
+        pin={pin}
+        fingerprint={server.fingerprint}
+        busy={busy}
+        canAct={canAct}
+        /*
+         * Not offered twice. Where the primary control already opens one of
+         * these, the overflow does not repeat it — an overflow mirroring the
+         * button above it is a second place to press for one act.
+         */
+        setUp={
+          cardState === "not_set_up"
+            ? null
+            : {
+                open: settingUp,
+                panel: setupPanel,
+                onToggle: () => {
+                  setSettingUp((open) => !open);
+                },
+              }
+        }
+        putAgent={
+          cardState === "up"
+            ? null
+            : {
+                open: choosing,
+                panel: chooser,
+                onToggle: () => {
+                  setChoosing((open) => !open);
+                },
+              }
+        }
+        onForget={() => {
+          setConfirmForget(true);
+        }}
+      />
 
       {confirmForget ? (
         <ForgetConfirmation
@@ -489,6 +645,117 @@ export function ServerCard({
         />
       ) : null}
     </article>
+  );
+}
+
+/**
+ * Everything that is not this card's one question (MAR-871).
+ *
+ * ## Why an overflow and not a deletion
+ *
+ * Four controls came off the face of this card and none of them stopped being
+ * useful. A person with a working server still wants the setup text — the
+ * attended run found there was **no route back to it at all** once a server was
+ * enrolled, so the only way to read it again was to start adding the same
+ * machine twice — still wants to put a second agent on a machine that has one,
+ * and still wants to stop using it. Unfindable is the same as missing, and this
+ * page has already paid once for learning that.
+ *
+ * So they are one summary line rather than four buttons competing with the one
+ * the state is about. A closed disclosure is a control a person can see and
+ * ignore, which is what "one primary action" means in practice.
+ *
+ * ## Why the identity is here now
+ *
+ * MAR-572's pin is a fact about which machine this is and every real record
+ * still has none. It was its own disclosure on the face of the card, which put
+ * a second summary line beside this one saying almost the same thing. It is
+ * unchanged and one level in.
+ *
+ * `setUp` and `putAgent` are null where the card's own primary control already
+ * opens them, so nothing is offered from two places at once.
+ */
+function MoreAboutThisServer({
+  pin,
+  fingerprint,
+  busy,
+  canAct,
+  setUp,
+  putAgent,
+  onForget,
+}: {
+  pin: { headline: string; detail: string };
+  fingerprint: string | null;
+  busy: boolean;
+  canAct: boolean;
+  setUp: { open: boolean; panel: ReactNode; onToggle: () => void } | null;
+  putAgent: { open: boolean; panel: ReactNode; onToggle: () => void } | null;
+  onForget: () => void;
+}): ReactNode {
+  return (
+    <details className="card-more server-more">
+      <summary>More about this server</summary>
+
+      {putAgent === null ? null : (
+        <>
+          <div className="button-row">
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={busy || !canAct}
+              aria-expanded={putAgent.open}
+              onClick={putAgent.onToggle}
+            >
+              Put an agent here
+            </button>
+          </div>
+          {putAgent.open ? putAgent.panel : null}
+        </>
+      )}
+
+      {setUp === null ? null : (
+        <>
+          <div className="button-row">
+            <button
+              type="button"
+              className="button-secondary"
+              disabled={busy || !canAct}
+              aria-expanded={setUp.open}
+              onClick={setUp.onToggle}
+            >
+              Set up this server again
+            </button>
+          </div>
+          {setUp.open ? setUp.panel : null}
+        </>
+      )}
+
+      {/*
+        MAR-572, rendered rather than hidden. Every real record has a null
+        fingerprint, so this is the branch a person actually sees, and it is the
+        one fact about *which machine this is* — the question the whole
+        strict-host-key arrangement exists to answer and cannot yet.
+      */}
+      <section className="card-section">
+        <h4>This server&rsquo;s identity</h4>
+        <p className="wrap">
+          <strong>{pin.headline}</strong>
+        </p>
+        <p className="wrap">{pin.detail}</p>
+        {fingerprint === null ? null : <pre className="public-key">{fingerprint}</pre>}
+      </section>
+
+      <div className="button-row">
+        <button
+          type="button"
+          className="button-secondary"
+          disabled={busy || !canAct}
+          onClick={onForget}
+        >
+          Stop using this server
+        </button>
+      </div>
+    </details>
   );
 }
 
@@ -657,6 +924,27 @@ export function SendAnAgentHere({
   canAct: boolean;
 }): ReactNode {
   const sentHere = new Set(server.sent.map((one) => one.agent));
+  /*
+   * Which display names are shared (MAR-871, D4).
+   *
+   * The attended run found **Meeting Assistant** listed twice with two
+   * different refusal reasons, because two store rows carry a null display name
+   * and both resolve to the same title from their manifests. The list rendered
+   * no other fact, so the two were indistinguishable — and a person asked to
+   * choose between two identical rows with contradictory explanations has been
+   * asked an unanswerable question.
+   *
+   * The id is the fact that tells them apart and it is drawn the way this
+   * codebase already draws an id: as a value, in its own element, never inside
+   * a sentence — the rule the fingerprint and the public key are under, and
+   * `WhatIsOnThisServer` next door does the same. Only where it is needed, so
+   * MAR-589's ruling — a surface prints the name a person chose — still holds
+   * everywhere it can.
+   */
+  const shared = new Map<string, number>();
+  for (const agent of agents) {
+    shared.set(agent.title, (shared.get(agent.title) ?? 0) + 1);
+  }
 
   return (
     <section className="send-here">
@@ -681,6 +969,9 @@ export function SendAnAgentHere({
                       id — the id is what the link's query carries and is not
                       what this row may say. */}
                   <span className="send-here-name">{agent.title}</span>
+                  {(shared.get(agent.title) ?? 0) > 1 ? (
+                    <code className="send-here-id">{agent.name}</code>
+                  ) : null}
                   {sentHere.has(agent.name) ? (
                     <span className="chip chip-ok">already here</span>
                   ) : null}
@@ -691,7 +982,7 @@ export function SendAnAgentHere({
                       className="button-secondary"
                       href={agentStageHref(agent.name, "settings")}
                     >
-                      Open its settings
+                      Put it here
                     </Link>
                   ) : (
                     /*
@@ -703,8 +994,19 @@ export function SendAnAgentHere({
                     <span className="muted">Open the installed DASH app to put an agent here.</span>
                   )
                 ) : (
-                  <span className="wrap muted">
-                    <strong>{refusal.headline}</strong> {refusal.detail}
+                  /*
+                   * Two blocks, not one line (MAR-871, D4). The refusal's
+                   * headline carries no full stop — `describeUndeployable`
+                   * ends it on a noun so a caller may punctuate it — and the
+                   * shipped row ran the two together into *"Meeting Assistant
+                   * cannot be put on a server DASH cannot read what it saved"*.
+                   * Separating them is a renderer's job; rewording the sentence
+                   * would be reaching into `lib/deploy/deploying.ts` to fix a
+                   * layout fault.
+                   */
+                  <span className="wrap muted send-here-refusal">
+                    <strong>{refusal.headline}.</strong>
+                    <span className="wrap">{refusal.detail}</span>
                   </span>
                 )}
               </li>
@@ -746,53 +1048,166 @@ export function SendAnAgentHere({
  * promises.
  */
 function SetupPanel({
-  label,
+  server,
   busy,
   canAct,
   fetchScript,
+  onCheck,
 }: {
-  label: string;
+  server: SavedServerView;
   busy: boolean;
   canAct: boolean;
   fetchScript: () => Promise<string | null>;
+  /** The card's one refresh, offered as the last step rather than named only. */
+  onCheck: () => void;
 }): ReactNode {
   const [script, setScript] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const copy = describeSetupStep(label);
+  const copy = describeSetupStep(server.label);
+  const recipe = describeSetupRecipe(server);
   return (
     <section className="setup-panel">
       <p className="wrap">
-        <strong>{copy.headline}</strong>
+        <strong>{recipe.headline}</strong>
       </p>
       <p className="wrap">{copy.detail}</p>
-      {script === null ? (
-        <button
-          type="button"
-          className="button-secondary"
-          disabled={busy || loading || !canAct}
-          onClick={() => {
-            setLoading(true);
-            void fetchScript().then((text) => {
-              setLoading(false);
-              if (text !== null) {
-                setScript(text);
-              }
-            });
-          }}
-        >
-          {loading ? "Writing the setup text..." : "Show the setup text"}
-        </button>
-      ) : (
-        <>
-          <p className="disclosure wrap" role="note">
-            {copy.disclosure}
-          </p>
-          <pre className="setup-script">{script}</pre>
-          <p className="next-action wrap">{copy.next_action}</p>
-        </>
-      )}
+      <p className="disclosure wrap" role="note">
+        {copy.disclosure}
+      </p>
+
+      <ol className="setup-steps">
+        {recipe.steps.map((step, index) => (
+          <li key={step.text} className="setup-step">
+            <span className="wrap">{step.text}</span>
+            {step.command === null ? null : <CopyableText text={step.command} what="the line" />}
+            {/*
+              The snippet is step four's material and sits inside step four, not
+              under the list. A person following numbered steps should not have
+              to look elsewhere for the thing the step names.
+            */}
+            {index === 3 ? (
+              script === null ? (
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={busy || loading || !canAct}
+                  onClick={() => {
+                    setLoading(true);
+                    void fetchScript().then((text) => {
+                      setLoading(false);
+                      if (text !== null) {
+                        setScript(text);
+                      }
+                    });
+                  }}
+                >
+                  {loading ? "Writing the setup text..." : "Show the setup text"}
+                </button>
+              ) : (
+                <CopyableText text={script} what="the setup text" block />
+              )
+            ) : null}
+            {/*
+              And the last step is the control it names. The recipe's own final
+              instruction is to come back and press Check now, so it is here —
+              the alternative is a sentence pointing at a button somewhere else
+              on a card the reader has scrolled away from.
+            */}
+            {index === recipe.steps.length - 1 ? (
+              <button
+                type="button"
+                className="button-secondary"
+                disabled={busy || !canAct}
+                onClick={onCheck}
+              >
+                Check now
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ol>
     </section>
   );
+}
+
+/**
+ * A value, with a way to get it onto the clipboard (MAR-871).
+ *
+ * ## Why this is not a bridge method
+ *
+ * `electron/preload.ts` exposes no clipboard and does not need to: the value
+ * here is already in the document, and copying it is the browser's own act on
+ * text the person can see. Adding a main-process route would be adding an
+ * audited command whose whole payload is a string the renderer composed.
+ *
+ * ## Why there are two attempts and a spoken failure
+ *
+ * `navigator.clipboard` is gated on a secure context, and DASH's pages are
+ * served over a custom scheme in the packaged app and over loopback on the
+ * developer path — so the modern route is the one to try and not the one to
+ * rely on. The old selection route works in both. If neither does, the button
+ * says so and the text is still on screen to select by hand, because a control
+ * that silently did nothing is the failure this whole product is written
+ * against — see `NoServerYet`, where a dead link is deliberately a sentence.
+ */
+function CopyableText({
+  text,
+  what,
+  block = false,
+}: {
+  text: string;
+  /** What the button is copying, for its own label. Two or three words. */
+  what: string;
+  /** True for a multi-line snippet, which gets the scrolling frame. */
+  block?: boolean;
+}): ReactNode {
+  const [said, setSaid] = useState<"idle" | "copied" | "failed">("idle");
+  return (
+    <span className="copyable">
+      <pre className={block ? "setup-script" : "setup-line"}>{text}</pre>
+      <button
+        type="button"
+        className="button-secondary"
+        onClick={() => {
+          void copyToClipboard(text).then((ok) => {
+            setSaid(ok ? "copied" : "failed");
+          });
+        }}
+      >
+        {said === "copied"
+          ? "Copied"
+          : said === "failed"
+            ? "Select it and copy"
+            : `Copy ${what}`}
+      </button>
+    </span>
+  );
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard !== undefined) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Falls through to the selection route below, which works without a secure
+    // context. A refusal here is a permission answer, not a bug to report.
+  }
+  try {
+    const holder = document.createElement("textarea");
+    holder.value = text;
+    holder.setAttribute("readonly", "");
+    holder.style.position = "fixed";
+    holder.style.opacity = "0";
+    document.body.appendChild(holder);
+    holder.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(holder);
+    return copied;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -1043,96 +1458,108 @@ function ForgetConfirmation({
  */
 export function ResidencyOnThisServer({
   server,
+  report,
   busy,
   canAct,
-  onRead,
   onSet,
 }: {
   server: SavedServerView;
+  /**
+   * What the server itself last said, or null (MAR-871).
+   *
+   * Handed down rather than fetched here. The section used to own a **Ask the
+   * server** button and this state, which put a second refresh on a card that
+   * already had one — and asked a person to know which of the two signs in for
+   * the standing and which signs in for the boot entry. One **Check now** does
+   * both, and this is its second half arriving.
+   */
+  report: HostServiceReport | null;
   busy: boolean;
   canAct: boolean;
-  onRead: () => Promise<HostServiceReport | null>;
   onSet: (on: boolean) => Promise<HostServiceReport | null>;
 }): ReactNode {
-  /** What the server itself said, or null until somebody asked. */
-  const [report, setReport] = useState<HostServiceReport | null>(null);
+  /** What the *press* got back, which supersedes the check's answer. */
+  const [pressed, setPressed] = useState<HostServiceReport | null>(null);
   const [asking, setAsking] = useState(false);
-  /** True once an ask came back with nothing, so the card can say so. */
+  /** True once a press came back with nothing, so the card can say so. */
   const [unreachable, setUnreachable] = useState(false);
 
   const asked = server.residency.asked_on !== null;
-  const live = report === null ? null : describeResidency(report.state, report.starts_at_boot);
-
-  async function ask(action: () => Promise<HostServiceReport | null>): Promise<void> {
-    setAsking(true);
-    const answer = await action();
-    setAsking(false);
-    setUnreachable(answer === null);
-    if (answer !== null) {
-      setReport(answer);
-    }
-  }
+  const said = pressed ?? report;
+  const live = said === null ? null : describeResidency(said.state, said.starts_at_boot);
 
   return (
-    <section className="card-section">
+    <section className="card-section residency-section">
       <h4>{RESIDENCY_COPY.heading}</h4>
 
       {/*
-        DASH's own record first, because it is true whether or not the server is
-        awake. `asked_on` is null for every server nobody has pressed this for,
-        and that is the state the opt-in sentence belongs to.
+        One switch, and one sentence beside it (MAR-871).
+
+        The sentence is the **server's own answer** wherever there is one, never
+        an inference from the switch: a person can turn this on here and somebody
+        can switch it off on the machine itself, and DASH's record would go on
+        saying on. Until a check has asked, the section says exactly that rather
+        than drawing DASH's record as if it were the machine's.
       */}
-      {asked ? (
+      <div className="residency-switch">
         <p className="wrap">
-          <strong>{RESIDENCY_COPY.toggle.label}</strong>
+          <strong>{live === null ? RESIDENCY_COPY.toggle.label : live.headline}</strong>
         </p>
-      ) : (
-        <p className="wrap muted">{RESIDENCY_COPY.opt_in}</p>
-      )}
-      <p className="card-meta wrap">{RESIDENCY_COPY.toggle.detail}</p>
+        <button
+          type="button"
+          className="button-secondary"
+          disabled={busy || asking || !canAct}
+          onClick={() => {
+            setAsking(true);
+            void onSet(!asked).then((answer) => {
+              setAsking(false);
+              setUnreachable(answer === null);
+              if (answer !== null) {
+                setPressed(answer);
+              }
+            });
+          }}
+        >
+          {asking ? "Asking..." : asked ? RESIDENCY_COPY.toggle_off : RESIDENCY_COPY.toggle_on}
+        </button>
+      </div>
 
-      {/*
-        MAR-795. When DASH last handed this server its scheduled times.
-
-        Its own sentence rather than part of the standing above, because "when
-        DASH last looked" and "when DASH last told it" are different facts, and a
-        card that ran them together would let a fresh check imply a fresh
-        instruction.
-      */}
-      <p className="card-meta wrap">
-        {describeSchedulesTold(server.residency.told_count ?? 0, server.residency.told_on)}
+      <p className="wrap">
+        {live === null ? (asked ? RESIDENCY_COPY.not_asked : RESIDENCY_COPY.opt_in) : live.detail}
       </p>
-
       {/*
-        The server's own answer, when there is one. Never inferred from the row
-        above: a person who turned this on months ago and has since switched it
-        off on the machine itself is owed the machine's version.
+        What the switch is for, while there is no answer from the machine to put
+        in its place. Once the server has spoken, its own account is the sentence
+        and this one would be a second, weaker version of it.
       */}
-      {live === null ? null : (
-        <>
-          <p className="wrap">
-            <strong>{live.headline}</strong>
-          </p>
-          <p className="wrap">{live.detail}</p>
-        </>
-      )}
+      {live === null ? <p className="card-meta wrap">{RESIDENCY_COPY.toggle.detail}</p> : null}
+
       {unreachable ? (
         <p className="notice notice-warn wrap" role="status">
           DASH could not reach this server, so it cannot say what it does when it restarts.
         </p>
       ) : null}
 
-      <ul className="plain-list">
-        {(asked ? RESIDENCY_COPY.liveness_on : RESIDENCY_COPY.liveness_off).map((line) => (
-          <li key={line} className="wrap">
-            {line}
-          </li>
-        ))}
-      </ul>
+      {/*
+        Everything else this feature owes its reader, one level in (MAR-871).
 
+        ADR 0030's rules are unchanged and every sentence they require is still
+        rendered: both states described, the missed-window sentence, the sentence
+        saying a run that starts this way cannot reach a model, the three things
+        this switch does not do, and the two lines an operator types on the
+        server to undo it with DASH gone. What changed is that they are behind a
+        summary instead of nine lines between the switch and the next section —
+        a card where every sentence is equally loud is a card where the one that
+        matters is not.
+      */}
       <details className="card-more">
-        <summary>What this does not do</summary>
+        <summary>What this does, and what it does not</summary>
         <ul className="plain-list">
+          {(asked ? RESIDENCY_COPY.liveness_on : RESIDENCY_COPY.liveness_off).map((line) => (
+            <li key={line} className="wrap">
+              {line}
+            </li>
+          ))}
           {RESIDENCY_COPY.not_this.map((line) => (
             <li key={line} className="wrap">
               {line}
@@ -1140,19 +1567,30 @@ export function ResidencyOnThisServer({
           ))}
         </ul>
         {/*
+          MAR-795. When DASH last handed this server its scheduled times.
+
+          Its own sentence rather than part of the standing above, because "when
+          DASH last looked" and "when DASH last told it" are different facts, and
+          a card that ran them together would let a fresh check imply a fresh
+          instruction.
+        */}
+        <p className="card-meta wrap">
+          {describeSchedulesTold(server.residency.told_count ?? 0, server.residency.told_on)}
+        </p>
+        {/*
           ADR 0030 decision 7's third answer, one machine over: somebody whose
           DASH is gone can still undo this from the server. Drawn only once the
           server has named its entries, because the lines are built from the
           names it gave — a card that guessed them would be handing out commands
           for files that may not exist.
         */}
-        {report === null || report.units.length === 0 ? null : (
+        {said === null || said.units.length === 0 ? null : (
           <>
             <p className="wrap">
               <strong>{RESIDENCY_COPY.removal_label}</strong>
             </p>
             <p className="card-meta wrap">{RESIDENCY_COPY.removal_note}</p>
-            {report.units.map((unit) => (
+            {said.units.map((unit) => (
               <pre key={unit} className="setup-script">
                 {describeResidencyRemoval(unit).join("\n")}
               </pre>
@@ -1160,29 +1598,6 @@ export function ResidencyOnThisServer({
           </>
         )}
       </details>
-
-      <div className="button-row">
-        <button
-          type="button"
-          className="button-secondary"
-          disabled={busy || asking || !canAct}
-          onClick={() => {
-            void ask(onRead);
-          }}
-        >
-          {asking ? "Asking..." : "Ask the server"}
-        </button>
-        <button
-          type="button"
-          className={asked ? "button-secondary" : "button-primary"}
-          disabled={busy || asking || !canAct}
-          onClick={() => {
-            void ask(() => onSet(!asked));
-          }}
-        >
-          {asked ? RESIDENCY_COPY.toggle_off : RESIDENCY_COPY.toggle_on}
-        </button>
-      </div>
     </section>
   );
 }

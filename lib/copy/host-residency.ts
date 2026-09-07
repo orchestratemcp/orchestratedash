@@ -66,6 +66,25 @@ export const RESIDENCY_COPY = {
     "This is off until you turn it on. Setting up a server never arranges this on its own.",
 
   /**
+   * Before the server has answered, and it is the honest half of one switch
+   * (MAR-871).
+   *
+   * The section used to carry its own **Ask the server** button beside the
+   * card's **Check this server**, which asked a person to know that one of them
+   * signs in for the standing and the other signs in for the boot entry. There
+   * is one refresh now and it reads both, so this is what stands here until it
+   * has run: DASH's own record, with the machine's answer named as the thing
+   * that is still missing.
+   *
+   * The distinction is not pedantry. Somebody can turn this on here and switch
+   * it off on the server itself, and DASH's record would go on saying on — so
+   * *you asked for this* and *the server is doing it* are two facts, and the
+   * second is only ever the server's to state.
+   */
+  not_asked:
+    "DASH has not asked this server what it does when it restarts. Check now and it will say.",
+
+  /**
    * What is true with it on, and what is still not.
    *
    * Four sentences, and the last two are the ones that must stay. The third is

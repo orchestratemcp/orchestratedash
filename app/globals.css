@@ -8803,6 +8803,182 @@ main:has(.agent-cockpit) {
 }
 /* ==== MAR-875 end ==== */
 
+/* ==== MAR-871 begin ==== */
+
+/* ---------------------------------------------------------------------- *
+ * The server card, in one state at a time (MAR-871)
+ *
+ * Appended rather than edited in place, and every rule here is additive: the
+ * `.server-card` block above still owns the measure, and nothing below changes
+ * a shared class. Two other UX lanes are live in this file at the same time.
+ *
+ * There is no new card system. What is new is that the card now carries its own
+ * state as a class, so the one situation where DASH has good news can look like
+ * good news — Henrik's ruling that a server which is up and empty is a success
+ * and not a warning, and the one thing this page could never say.
+ * ---------------------------------------------------------------------- */
+
+/*
+ * Your server is up. A left rule in the success colour rather than a filled
+ * panel, which is the elevation model's own answer for "this is a card and it
+ * is fine": a background here would make one card in a list look like a
+ * different kind of object.
+ */
+.server-card.is-up,
+.server-card.is-in-use {
+  border-left: 2px solid var(--ok);
+}
+
+/* And a check in flight is not news either way, so it is quiet. */
+.server-card.is-checking {
+  border-left: 2px solid var(--line-strong);
+}
+
+/*
+ * The overflow. It sits under the card's one control with a rule above it, so
+ * a reader who has found their primary action can see where the rest went
+ * without it competing — `card-more` already draws the summary itself.
+ */
+.server-more {
+  margin-top: var(--density-gap);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+}
+
+/* ---------------------------------------------------------------------- *
+ * The setup recipe (MAR-871)
+ *
+ * Five numbered things a person does, with the values they paste inside the
+ * step that names them. An ordered list rather than paragraphs, because the
+ * whole finding is that the shipped step gave a snippet with no order around
+ * it — and a person following instructions to a machine they have never signed
+ * in to needs to know which one they are on.
+ * ---------------------------------------------------------------------- */
+
+.setup-steps {
+  margin: var(--density-gap) 0 0;
+  /* Room for the marker, which is the one piece of a numbered list that must
+     not be clipped: "step 3 of 5" is the whole reason this is an ordered list
+     and not four paragraphs. */
+  padding-left: var(--space-6);
+  display: grid;
+  gap: var(--density-gap);
+  list-style: decimal;
+}
+
+/*
+ * `min-width: 0` on both the step and the list, and it is load-bearing rather
+ * than defensive.
+ *
+ * A grid or flex item's automatic minimum size is its *content* width, so a
+ * `<pre white-space: pre>` holding a shell snippet refuses to shrink and pushes
+ * the card — and then the page — sideways, however many `overflow-x: auto`
+ * rules sit on the pre itself. The first capture run of this panel photographed
+ * exactly that: a horizontal scrollbar on the window and the disclosure clipped
+ * at the right edge, on a page whose own rule (MAR-491) is that content reflows
+ * rather than scrolling the page.
+ */
+.setup-steps,
+.setup-step {
+  min-width: 0;
+}
+
+.setup-step {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+/*
+ * A value and the control that copies it, as one statement. Wrapping rather
+ * than a fixed row: the line is `ssh` plus somebody's own address, which is a
+ * width DASH does not control, and at 375 it has to be able to drop the button
+ * beneath it rather than push the page sideways.
+ */
+.copyable {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* The value scrolls itself rather than widening its parent — see `.setup-steps`
+   for why the minimum size has to be said out loud. */
+.copyable > pre {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/*
+ * One line, and it scrolls itself rather than the page. `.setup-script` above
+ * already does this for the snippet; this is its one-line sibling, without the
+ * height that would make a single command look like a document.
+ */
+.setup-line {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-0);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ---------------------------------------------------------------------- *
+ * One switch, one sentence (MAR-871)
+ * ---------------------------------------------------------------------- */
+
+/*
+ * The claim and the control on one line, so the sentence a person reads and
+ * the thing that changes it are one statement rather than a paragraph and a
+ * button row eight lines apart. Wraps at narrow widths, where the sentence
+ * needs the whole measure.
+ */
+.residency-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.residency-switch p {
+  margin: 0;
+  flex: 1 1 16rem;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Telling two agents with the same name apart (MAR-871)
+ * ---------------------------------------------------------------------- */
+
+/*
+ * Drawn as a value, never as part of the name. Muted and smaller than the
+ * title beside it, because it is the tie-breaker and not the label — MAR-589's
+ * ruling is that a surface prints the name a person chose, and this appears
+ * only where two of them are the same word.
+ */
+.send-here-id {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* A refusal is two blocks, not one run-on line: the headline ends on a noun
+   and the detail is its own sentence. */
+.send-here-refusal {
+  display: grid;
+  gap: var(--space-1);
+  flex: 1 1 20rem;
+}
+
+/* ==== MAR-871 end ==== */
+
 /* ==== MAR-877 begin ==== */
 
 /*

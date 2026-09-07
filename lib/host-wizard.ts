@@ -101,10 +101,23 @@ export function describeStep(step: WizardStep): WizardStepCopy {
         purpose: "The address DASH connects to, and the account it signs in as.",
       };
     case "key":
+      /*
+       * MAR-871 renamed the rail's second step. It read "The key", from the
+       * flow as MAR-498 designed it — and since MAR-573 the step's *content* is
+       * the one-paste setup text, which installs the helper, the pinned runtime
+       * and the restricted allowed-keys line. The attended run recorded the
+       * rail still naming the older, smaller thing, so somebody reading the
+       * rail to find out what was left to do was told the wrong thing about the
+       * step they were standing on.
+       *
+       * The key half has not gone anywhere and is still said on the step, by
+       * `describeKeyStep` — including the refusal. What changed is that the
+       * rail names the act rather than one ingredient of it.
+       */
       return {
-        label: "The key",
+        label: "Set it up",
         purpose:
-          "DASH makes a key for this server and keeps the private half on this computer. You copy the public half onto the server.",
+          "DASH makes a key for this server and keeps the private half on this computer. You run one line of setup text on the server, which installs the public half and the part DASH talks to.",
       };
     case "check":
       return {
@@ -309,6 +322,27 @@ export function canLeave(step: WizardStep, draft: HostDraft): boolean {
  * somebody their address is wrong while they can still see the field.
  */
 export function checkDraft(draft: HostDraft): HostRecordCheck {
+  /*
+   * The empty field, answered before `checkHostRecord` gets to quote it
+   * (MAR-871).
+   *
+   * The attended run left *Account on the server* blank and was shown
+   * `"" is not an account name DASH will sign in with.` — two quote marks, at a
+   * novice, on the one field of the five they genuinely cannot guess. That
+   * refusal interpolates the value it rejected, which is right for a value
+   * somebody typed and useless for one they did not.
+   *
+   * Fixed here rather than in `lib/hosts.ts`, and that is the correct layer
+   * rather than a convenience: an empty string never reaches the store, so
+   * "the person has not typed this yet" is a state only the wizard has. What is
+   * owed there is not a rejection but the answer to the question the field
+   * asked — which is what `describeProviderChoice` and the dropdown beside it
+   * exist for.
+   *
+   * The problem codes are the ones `checkHostRecord` would have returned, so a
+   * caller branching on them cannot tell the two apart, and `option_injection`
+   * and every pattern refusal stay exactly where MAR-484 put them.
+   */
   const port = Number(draft.port);
   const candidate: HostRecord = {
     host_id: "draft",
@@ -320,8 +354,39 @@ export function checkDraft(draft: HostDraft): HostRecordCheck {
     host_fingerprint: null,
     added_at: new Date(0).toISOString(),
   };
-  return checkHostRecord(candidate);
+  const checked = checkHostRecord(candidate);
+  /*
+   * The order, and every other refusal, is `checkHostRecord`'s. Only the two
+   * sentences about a field nobody has typed into are replaced, and only when
+   * that field is genuinely empty — so a wrong address still gets the refusal
+   * that quotes it back, which is what a person who typed one needs.
+   */
+  if (!checked.ok && checked.problem === "malformed_address" && candidate.address === "") {
+    return { ...checked, detail: EMPTY_FIELD.address };
+  }
+  if (!checked.ok && checked.problem === "malformed_username" && candidate.username === "") {
+    return { ...checked, detail: EMPTY_FIELD.username };
+  }
+  return checked;
 }
+
+/**
+ * What an untouched field says, rather than quoting nothing back at somebody.
+ *
+ * Two sentences, one per field a person can leave blank and be stopped by. Each
+ * says what to type **and where to find it**, because "type the account name"
+ * is only useful to somebody who knows what their account name is — and the
+ * attended run's finding is that the person who leaves this field alone is
+ * exactly the person who does not.
+ */
+export const EMPTY_FIELD = {
+  address:
+    "Type the address of your server — the name or the numbers your provider shows on its " +
+    "page for that machine.",
+  username:
+    "Type the account DASH should sign in as. Your provider's page for this server names it, " +
+    "and on a new server it is usually root.",
+} as const;
 
 /* ---------------------------------------------------------------------- *
  * The key step
@@ -399,6 +464,122 @@ export function describeSetupStep(hostLabel: string): {
   };
 }
 
+/* ---------------------------------------------------------------------- *
+ * The recipe (MAR-871)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * One step of setting a server up, as a person does it.
+ *
+ * `command` is the exact text to run and is deliberately **not** a sentence.
+ * The same rule the public key and the fingerprint are already under on this
+ * surface: a value is drawn as a value, in its own element, where it can be
+ * selected and copied without a paragraph around it. It is also why `command`
+ * is excluded from the copy sweep — an address is content the person typed, and
+ * a scanner that read it would be scanning their own server's name.
+ */
+export interface SetupRecipeStep {
+  /** What to do, in the house voice. */
+  text: string;
+  /** The exact thing to paste, or null when this step is not a command. */
+  command: string | null;
+}
+
+/**
+ * Setting a server up, as five numbered things a person does (MAR-871).
+ *
+ * ## The gap this closes
+ *
+ * The card offered a **Show the setup text** button and a snippet. What it
+ * never said was where the snippet goes. The attended run's own words for the
+ * shipped step are that it invites you to *"use any terminal you already sign
+ * in with"* — a sentence that assumes the reader has one, has signed in with it
+ * before, and knows the address to sign in to. Henrik's report of the same
+ * screen is that a person who has never used a server cannot get past it.
+ *
+ * So the missing half is the sign-in itself: which program to open, the exact
+ * line to type, and the fact that the password for it comes from the provider
+ * and not from DASH. That last one is the sentence this function exists for.
+ * DASH cannot supply the password, does not want it, and a recipe that stayed
+ * silent about it would strand somebody at the one prompt that is not DASH's to
+ * answer — which is the same shape of omission as the private-key field this
+ * whole flow is inverted around.
+ *
+ * ## Why it is here and not in the component
+ *
+ * The wizard's step 3 and the saved card's setup panel are two surfaces that
+ * must give one recipe. They already share `describeSetupStep`; the sentences
+ * that got added around it belong in the same place, for the same reason.
+ */
+export function describeSetupRecipe(server: {
+  label: string;
+  address: string;
+  username: string;
+  port: number;
+}): {
+  headline: string;
+  steps: readonly SetupRecipeStep[];
+  next_action: string;
+} {
+  /*
+   * The port only when it is not the ordinary one, which is `describeSignIn`'s
+   * cut applied to a command rather than to a sentence: a person who never
+   * chose a port is not helped by seeing the number everybody uses, and one who
+   * did will not get in without it.
+   */
+  const signIn =
+    server.port === 22
+      ? `ssh ${server.username}@${server.address}`
+      : `ssh -p ${String(server.port)} ${server.username}@${server.address}`;
+  return {
+    headline: `Set ${server.label} up, in five steps`,
+    steps: [
+      {
+        text:
+          "Open the program on this computer that lets you type commands. On Windows that is " +
+          "PowerShell; on a Mac it is Terminal.",
+        command: null,
+      },
+      {
+        text: "Type this line and press Enter. It signs you in to your own server.",
+        command: signIn,
+      },
+      {
+        text:
+          "It will ask for a password. That is the one your provider set for this server, not " +
+          "anything to do with DASH — their page for the server shows it, or lets you set a new one.",
+        command: null,
+      },
+      {
+        text:
+          "Copy the setup text below, paste it in, and press Enter. It prints what it will " +
+          "install before it changes anything.",
+        command: null,
+      },
+      {
+        text: "Come back here and press Check now. That is the whole of it.",
+        command: null,
+      },
+    ],
+    next_action: "Once the setup text has run, come back and press Check now",
+  };
+}
+
+/**
+ * The way out of a duplicate, as a control rather than a warning (MAR-871).
+ *
+ * The attended run typed the address and account of a server that was already
+ * saved, got the correct warning — *"Saving it again would make a second key
+ * for one machine"* — and found **Make key** still enabled beside it, with no
+ * way to take the advice. A refusal that names a consequence and then offers
+ * only the button that causes it is a warning the product does not believe.
+ *
+ * Short because the stylesheet uppercases every button, and worded as the
+ * outcome rather than as the dialog: pressing it leaves the wizard and shows
+ * the record that already exists.
+ */
+export const USE_THE_SAVED_SERVER = "Use the one you have";
+
 /**
  * Every sentence this module can produce, for the copy sweep.
  *
@@ -410,7 +591,19 @@ export function everyWizardSentence(hostLabel = "My server"): string[] {
   const key = describeKeyStep(hostLabel);
   const hosting = describeHostingRecommendation();
   const setup = describeSetupStep(hostLabel);
+  const recipe = describeSetupRecipe({
+    label: hostLabel,
+    address: "example.com",
+    username: "root",
+    port: 22,
+  });
   return [
+    EMPTY_FIELD.address,
+    EMPTY_FIELD.username,
+    USE_THE_SAVED_SERVER,
+    recipe.headline,
+    ...recipe.steps.map((step) => step.text),
+    recipe.next_action,
     ...WIZARD_STEPS.flatMap((step) => {
       const copy = describeStep(step);
       return [copy.label, copy.purpose];
