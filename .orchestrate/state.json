@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 09:05: the approved UX wave is on master: MAR-875 #328, MAR-876 #324, MAR-877 #327, MAR-878 #320+#329, MAR-871 #325, MAR-874 #332, MAR-879 #336, MAR-880 #322. MAR-868 proven. Follow-ups: MAR-881, MAR-882, MAR-883, MAR-884 (lane running). Installed proofs: Output stage and Connections looked at on the rebuilt DASH (b38b28a); MAR-884 found there.",
+  "lifecycle_note": "2026-09-07 11:35: MAR-884 merged (#339); DASH rebuilding on 82e0972 for the installed proof pass (MAR-875/877/874/879/884). Everything else per the 2026-09-07 handoff.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2113,10 +2113,10 @@
     },
     {
       "id": "MAR-884",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "Numbered citation row does not wrap; 30-source briefing scrolls the Output stage sideways (found on the installed build after MAR-875). Lane J dispatched."
+      "commit": "82e0972",
+      "note": "PR #339: .brief-citation white-space nowrap (MAR-875) removed every wrap point; override in the MAR-884 fence. Capture witness before overflow 630 / after 0 on a 30-item scene; the harness page_overflows cannot see this class (nested overflow-x:auto), targeted metric added. Proof owed: installed Output stage with no horizontal scrollbar."
     }
   ]
 }
