@@ -85,18 +85,6 @@ export function ModelChoice({
   const [changing, setChanging] = useState(false);
 
   /*
-   * Nothing at all for an agent with no model in its plan and no levels to show.
-   *
-   * `FolderUpdate` makes the same call for the same reason: a notice explaining
-   * an absence would be DASH describing its own internals at somebody who came
-   * to look at their agent. Every other `can_choose: false` case does draw,
-   * because each of those is a fact about this agent worth knowing.
-   */
-  if (!settings.can_choose && settings.reason === "no_model_needed") {
-    return null;
-  }
-
-  /*
    * MAR-874. The adoptable press, normalised once.
    *
    * `AgentModelSettingsView.adopt` is optional and absent means the same as
@@ -226,7 +214,8 @@ export function ModelChoice({
       <h3 id="model-choice">{AGENT_SETTINGS_COPY.model.heading}</h3>
 
       {/*
-        MAR-874. Four states, one line each, and at most one press.
+        MAR-874, widened by MAR-885. Four states, one line each, and at most
+        one press.
 
         The section used to open with whichever headline
         `lib/ai/model-choice.ts` had composed, follow it with a paragraph of
@@ -244,12 +233,26 @@ export function ModelChoice({
         - **Needs a provider.** The view's own headline and its next action,
           which is a link rather than a button, because the step is on another
           page.
-        - **Cannot talk.** The view's headline with no action at all. Its words
-          are `describeNoChoice`'s and stay that way deliberately: they say the
+        - **Cannot talk**, and **no model needed** — the view's headline, with
+          no action for either reason `describeNoChoice` itself offers
+          (`next_action` is null for both). The "cannot talk" words are
+          `describeNoChoice`'s and stay that way deliberately: they say the
           agent either arranges its own model or names a service DASH cannot
           ask, *because the manifest does not distinguish those two* — and a
           sentence here asserting the agent was built without a model would be
-          this stage guessing at exactly the thing that module refuses to guess.
+          this stage guessing at exactly the thing that module refuses to
+          guess.
+
+          `no_model_needed` used to draw nothing here at all — see the
+          removed early return this comment used to sit above. That made a
+          plan with no model step the one agent in a fleet with no model row,
+          which read as this section being broken rather than as an honest
+          "nothing to choose". It still offers no control *about this agent*,
+          because there genuinely is none; what it offers instead is the one
+          action anywhere near this sentence — building a different agent
+          that can be asked something, on Add agent's assistant path
+          (MAR-879). That is not a fix for this agent and the link says so by
+          where it goes rather than by claiming otherwise.
       */}
       {adoptable !== null ? (
         <ModelAdoption
@@ -304,6 +307,19 @@ export function ModelChoice({
           {settings.next_action === null ? null : (
             <p className="model-next wrap">{settings.next_action}</p>
           )}
+          {/*
+            MAR-885. The one door near a plan that needs no model at all: not a
+            fix for this agent (there is nothing wrong with it), and not drawn
+            for either of the other two no-choice reasons, which already carry
+            their own `next_action` or, for "cannot talk", genuinely have none.
+          */}
+          {settings.reason === "no_model_needed" ? (
+            <p className="model-next wrap">
+              <Link href="/settings/add-agent?path=assistant">
+                {AGENT_SETTINGS_COPY.model.build_with_assistant}
+              </Link>
+            </p>
+          ) : null}
         </>
       )}
 

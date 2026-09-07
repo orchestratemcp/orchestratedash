@@ -827,7 +827,19 @@ export function TriggerSwitch({
         <TriggerOption
           available
           checked={standing}
-          detail={AGENT_TRIGGER_COPY.at_a_time.detail}
+          detail={
+            /*
+             * MAR-885. The same residency predicate as `standing_line` and
+             * `time_hint` above, read from the schedule view rather than
+             * decided here: an enrolled agent's radio must not promise a
+             * helper on a computer `splitSchedules` has already stopped
+             * telling about this row. See `AGENT_TRIGGER_COPY.at_a_time`'s
+             * own note.
+             */
+            schedule.resident_on === null
+              ? AGENT_TRIGGER_COPY.at_a_time.detail
+              : AGENT_TRIGGER_COPY.at_a_time.detail_on_host(schedule.resident_on)
+          }
           label={AGENT_TRIGGER_COPY.at_a_time.label}
           /*
            * Selecting this radio does not save. It is the same press as typing
@@ -986,7 +998,11 @@ export function TriggerSwitch({
             <span className={`chip chip-${schedule.last.outcome_tone}`}>
               {schedule.last.outcome_label}
             </span>{" "}
-            <time dateTime={schedule.last.due_at}>{schedule.last.due_at}</time>
+            {/* MAR-885. The instant, in words — `dateTime` still carries the
+                machine's own ISO spelling, which is exactly what that
+                attribute is for; it is the visible text that used to repeat
+                it. See `ScheduleRunView.due_label`. */}
+            <time dateTime={schedule.last.due_at}>{schedule.last.due_label}</time>
           </p>
           <p className="muted wrap">{schedule.last.detail}</p>
           {/* MAR-784. The receipt, and it is absent rather than zeroed for a

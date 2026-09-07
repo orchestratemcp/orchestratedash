@@ -361,6 +361,19 @@ export const AGENT_TRIGGER_COPY = {
   at_a_time: {
     label: "Every day at a set time",
     detail: "DASH starts it for you, on this computer, at the time you pick.",
+    /**
+     * The same radio, for an agent DASH has enrolled on a server (MAR-885).
+     *
+     * `standing_line` already named the right machine once a time was saved —
+     * `standing_on_host` beside it — but this description sits above that
+     * decision, on the radio itself, and it still said *this computer* for
+     * every agent. A person choosing this option for an enrolled agent read a
+     * promise about a machine that `splitSchedules` had already stopped
+     * telling about this row. Same predicate as everywhere else on this panel:
+     * residency, read from `AgentScheduleView.resident_on`.
+     */
+    detail_on_host: (server: string): string =>
+      `DASH starts it for you, on ${server}, at the time you pick.`,
   },
   on_an_interval: {
     label: "On a schedule you write",
@@ -468,6 +481,28 @@ export const AGENT_TRIGGER_COPY = {
     `${String(calls)} call${calls === 1 ? "" : "s"} each time this schedule starts the agent.`,
   /** The heading over what the schedule has actually done. */
   history_heading: "Scheduled runs",
+  /**
+   * The settled window's own moment, for an agent whose schedule a server
+   * keeps (MAR-885).
+   *
+   * ## The defect this exists for
+   *
+   * `agent_schedule_runs.due_at` is an ISO instant, and this panel printed it
+   * straight — `2026-09-05T18:20:00.000Z` beside the outcome chip, the same
+   * class of failure `lib/copy/when.ts`'s own header describes: a person who
+   * has to read a machine's own spelling of a moment has been handed the
+   * machine's problem.
+   *
+   * `moment` is already `plainMoment`'s words — this function adds only whose
+   * clock it names. **It does not convert anything.** `at_local` carries no
+   * timezone and `nextDueAfter` computes this instant on whichever machine
+   * runs `runner/schedule.ts`, so turning it into the enrolled server's actual
+   * wall time needs that server's offset, which DASH does not keep — that
+   * conversion is MAR-872's. Naming the host beside the figure is the honest
+   * half available today: it tells a person this reading belongs to that
+   * machine's clock rather than claiming it has been translated to theirs.
+   */
+  due_at_on_host: (moment: string, server: string): string => `${moment}, by ${server}'s clock.`,
   /**
    * What the last scheduled run actually spent (MAR-784).
    *
@@ -625,6 +660,20 @@ export const AGENT_SETTINGS_COPY = {
      * right and nobody came to change it.
      */
     change: "Change",
+    /**
+     * The one action on the state that has none (MAR-885).
+     *
+     * `describeNoChoice`'s `no_model_needed` arm rightly offers `next_action:
+     * null` — there is nothing to fix, because nothing is wrong. But the row
+     * used to draw nothing at all for that agent, which left it the one agent
+     * in a fleet with no model row and no way to tell "this agent chose not
+     * to use one" from "this section is broken". The link is not a fix for
+     * *this* agent; it is the door to the one action that exists anywhere
+     * near this sentence — building a different agent that can be asked
+     * something — and it goes to Add agent's assistant path (MAR-879) rather
+     * than claiming this agent could be changed into one.
+     */
+    build_with_assistant: "Build one that can",
   },
   /**
    * The two state lines this stage says in its own voice (MAR-874).

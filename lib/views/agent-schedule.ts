@@ -24,6 +24,7 @@
  */
 
 import { AGENT_TRIGGER_COPY } from "../copy/agent-page";
+import { plainMoment } from "../copy/when";
 import { DEFAULT_SCHEDULE_ALLOWANCE_CALLS } from "../schedule/plan";
 import type { ScheduleOutcome, ScheduleSettlement } from "../schedule/plan";
 import type { AgentSchedule } from "../schedule/plan";
@@ -32,6 +33,20 @@ import type { ScheduleSpend } from "../schedule/store";
 /** One settled window, worded. */
 export interface ScheduleRunView {
   due_at: string;
+  /**
+   * `due_at`, in words (MAR-885).
+   *
+   * DASH used to print the ISO instant straight onto the screen beside the
+   * outcome chip — the same failure `lib/copy/when.ts`'s own header describes,
+   * and this is that module's `plainMoment` pointed at it. "unknown" rather
+   * than the string nothing could read, `plainMoment`'s own rule.
+   *
+   * Named for the machine that will be read out beside it exactly as
+   * `standing_line` and `time_hint` are — see
+   * `AGENT_TRIGGER_COPY.due_at_on_host` for what is and is not fixed by that:
+   * the number itself is not converted, only whose clock it is credited to.
+   */
+  due_label: string;
   outcome: ScheduleOutcome;
   /** "Ran", "Missed" or "Did not start". */
   outcome_label: string;
@@ -386,6 +401,20 @@ export function buildAgentScheduleView(
         ? null
         : {
             due_at: newest.due_at,
+            /*
+             * MAR-885. Read against the *current* residency, `host`'s own
+             * simplification applied one field further: DASH keeps no record
+             * of which machine held a window's schedule at the moment it
+             * settled, only which machine holds it now. A person reading last
+             * night's row cares which clock to compare it against today, and
+             * that is the honest answer available — the same one
+             * `standing_line` and `liveness` already give for the schedule
+             * itself.
+             */
+            due_label:
+              host === null
+                ? (plainMoment(newest.due_at) ?? "unknown")
+                : AGENT_TRIGGER_COPY.due_at_on_host(plainMoment(newest.due_at) ?? "unknown", host),
             outcome: newest.outcome,
             outcome_label: outcomeLabel(newest.outcome),
             outcome_tone: outcomeTone(newest.outcome),

@@ -229,4 +229,38 @@ describe("the agent page's copy", () => {
   it("says notifications are product-wide rather than per agent", () => {
     expect(AGENT_SETTINGS_COPY.notifications.scope).toContain("every agent");
   });
+
+  /**
+   * MAR-885. The trigger radio's own description used to name *this computer*
+   * unconditionally, which was wrong the moment an agent was enrolled on a
+   * server — `standing_line` already carried the residency predicate one
+   * field over. `detail_on_host` is the same fact, said where the radio is
+   * chosen rather than only after a time has been saved.
+   */
+  it("names the enrolled server on the every-day radio, not this computer", () => {
+    const onHost = AGENT_TRIGGER_COPY.at_a_time.detail_on_host("My server");
+    expect(onHost).toContain("My server");
+    expect(onHost).not.toContain("this computer");
+    expect(AGENT_TRIGGER_COPY.at_a_time.detail).toContain("this computer");
+  });
+
+  /**
+   * MAR-885. The settled window's own moment, worded rather than shown as the
+   * raw ISO instant DASH used to print beside the outcome chip. The number is
+   * not converted — MAR-872 owns that — so this only pins the added words.
+   */
+  it("names the host's clock beside a settled window without claiming to convert it", () => {
+    const said = AGENT_TRIGGER_COPY.due_at_on_host("5 September 2026 at 18:20", "My server");
+    expect(said).toContain("5 September 2026 at 18:20");
+    expect(said).toContain("My server's clock");
+  });
+
+  /**
+   * MAR-885. The one door beside a plan that needs no model — not a claim
+   * that this agent could talk, a link to building one that can.
+   */
+  it("offers building an assistant-made agent, not a fix for this one", () => {
+    expect(AGENT_SETTINGS_COPY.model.build_with_assistant).toBeTruthy();
+    expect(AGENT_SETTINGS_COPY.model.build_with_assistant).not.toContain("this agent");
+  });
 });
