@@ -287,6 +287,23 @@ export interface ArtifactDrain {
   dropped: number;
 }
 
+/** One agent-emitted span candidate waiting for DASH to validate it (MAR-889). */
+export interface BufferedSpan {
+  /**
+   * The supervisor identity, for telemetry's reason exactly: the span body is
+   * untrusted and names its own agent, and binding it to the child that wrote
+   * the line is what stops one agent drawing steps under another agent's run.
+   */
+  agent_id: string;
+  span: unknown;
+}
+
+export interface SpanDrain {
+  spans: BufferedSpan[];
+  /** Candidates refused because the bounded buffer was already full. */
+  dropped: number;
+}
+
 /** One brokered-operation request waiting for DASH to adjudicate it (MAR-458). */
 export interface BufferedBrokerRequest {
   /**
@@ -421,6 +438,24 @@ export const MAX_ARTIFACT_BUFFER_BYTES = 4 * 1024 * 1024;
 export const MAX_ARTIFACT_BUFFER_COUNT = 200;
 
 /**
+ * The trace buffer's own bound (MAR-889).
+ *
+ * Sized like telemetry's rather than like the artifact buffer's, because spans
+ * are the same population as events: many small documents produced by the agent
+ * itself, cheap to drop and worthless one at a time. It is deliberately *not* a
+ * share of telemetry's, on the argument MAR-457 made for artifacts — one buffer
+ * would let a chatty tracer starve the events a run's status is derived from,
+ * and the status is the thing a person actually needs.
+ *
+ * Half the count of telemetry's, because a trace is an explanation of a run and
+ * a run that needs five thousand spans between two five-second polls has stopped
+ * being explicable. `MAX_SPANS_PER_RUN` in `lib/store.ts` is the second half of
+ * the same argument, at the durable end.
+ */
+export const MAX_TRACE_BUFFER_BYTES = 4 * 1024 * 1024;
+export const MAX_TRACE_BUFFER_SPANS = 5_000;
+
+/**
  * The broker's own bound (MAR-458).
  *
  * Much smaller than the other two, and smaller on purpose. Telemetry and
@@ -470,6 +505,10 @@ interface BufferedArtifactEntry extends BufferedArtifact {
   bytes: number;
 }
 
+interface BufferedSpanEntry extends BufferedSpan {
+  bytes: number;
+}
+
 interface BufferedBrokerEntry extends BufferedBrokerRequest {
   bytes: number;
 }
@@ -486,6 +525,9 @@ export class Supervisor {
   private readonly artifacts: BufferedArtifactEntry[] = [];
   private artifactBytes = 0;
   private droppedArtifacts = 0;
+  private readonly spans: BufferedSpanEntry[] = [];
+  private spanBytes = 0;
+  private droppedSpans = 0;
   private readonly brokerRequests: BufferedBrokerEntry[] = [];
   private brokerBytes = 0;
   private droppedBrokerRequests = 0;
@@ -712,6 +754,28 @@ export class Supervisor {
     this.telemetryBytes = 0;
     this.droppedTelemetry = 0;
     return { events, dropped };
+  }
+
+  /**
+   * The same bounded drain for spans (MAR-889).
+   *
+   * Its own route and its own buffer rather than a member of the telemetry
+   * reply, for the reason the artifact drain has its own: the two are validated
+   * against different schemas at different boundaries, and one response carrying
+   * both would make Electron main sort untrusted bodies apart again by
+   * inspecting them.
+   *
+   * A runner built before this method exists answers 404 at `/traces/drain`,
+   * which `drainTraces` reads as "this runner has no spans" — not as a failure,
+   * and not as a reason to stop polling the routes it does answer.
+   */
+  drainSpans(): SpanDrain {
+    const spans = this.spans.map(({ agent_id, span }) => ({ agent_id, span }));
+    const dropped = this.droppedSpans;
+    this.spans.length = 0;
+    this.spanBytes = 0;
+    this.droppedSpans = 0;
+    return { spans, dropped };
   }
 
   /**
@@ -1150,6 +1214,15 @@ export class Supervisor {
       return;
     }
 
+    if (message.type === "trace") {
+      this.bufferSpan(
+        entry.registration.agent_id,
+        message.span,
+        Buffer.byteLength(line, "utf8"),
+      );
+      return;
+    }
+
     if (message.type === "artifact") {
       this.bufferArtifact(
         entry.registration.agent_id,
@@ -1281,6 +1354,22 @@ export class Supervisor {
 
     this.telemetry.push({ agent_id: agentId, event, bytes });
     this.telemetryBytes += bytes;
+  }
+
+  private bufferSpan(agentId: string, span: unknown, bytes: number): void {
+    if (
+      this.spans.length >= MAX_TRACE_BUFFER_SPANS ||
+      this.spanBytes + bytes > MAX_TRACE_BUFFER_BYTES
+    ) {
+      this.droppedSpans += 1;
+      this.log(
+        `[runner] ${agentId} emitted a span while the bounded buffer was full; the candidate was dropped`,
+      );
+      return;
+    }
+
+    this.spans.push({ agent_id: agentId, span, bytes });
+    this.spanBytes += bytes;
   }
 
   private bufferArtifact(agentId: string, artifact: unknown, bytes: number): void {

@@ -186,6 +186,34 @@ export interface AgentArtifactMessage {
 }
 
 /**
+ * One span of a run's operation tree (MAR-889).
+ *
+ * `span` stays `unknown` for the reason `event` and `artifact` do one and two
+ * messages up: this parser owns the newline-delimited envelope and not the
+ * contract. `contracts/run-span.schema.json` is the authority and
+ * `lib/store.ts` applies it at ingest, which is the same boundary that refuses a
+ * malformed event without discarding its neighbours.
+ *
+ * ## Why this is not a telemetry event with a new type
+ *
+ * Because telemetry v1 is frozen and its enum is in `contract.lock.json`, which
+ * producers outside this repository validate against — so an eighth type is a
+ * breaking change to a contract DASH does not own both ends of. And because
+ * `listRuns` derives a run's status from its events: a span arriving as an event
+ * would be a *description of the work* able to change what DASH says the run
+ * did. The two travel together and mean different things, and a run whose agent
+ * sends no spans at all is a run DASH reports exactly as it always did.
+ *
+ * An older runner has no `/traces/drain` and an older agent writes no `trace`
+ * lines. Both cases arrive at the same place: DASH holds no spans for the run
+ * and the page says so, rather than drawing a tree it invented.
+ */
+export interface AgentTraceMessage {
+  type: "trace";
+  span: unknown;
+}
+
+/**
  * One brokered-operation request (MAR-458, ADR 0002).
  *
  * `request` stays `unknown` for the same reason `event` and `artifact` do: this
@@ -270,6 +298,7 @@ export type AgentMessage =
   | AgentAckMessage
   | AgentStateMessage
   | AgentTelemetryMessage
+  | AgentTraceMessage
   | AgentArtifactMessage
   | AgentArtifactFileMessage
   | AgentBrokerRequestMessage
@@ -330,6 +359,10 @@ export function parseAgentMessage(line: string): AgentMessage | null {
 
   if (message["type"] === "telemetry" && Object.hasOwn(message, "event")) {
     return { type: "telemetry", event: message["event"] };
+  }
+
+  if (message["type"] === "trace" && Object.hasOwn(message, "span")) {
+    return { type: "trace", span: message["span"] };
   }
 
   if (message["type"] === "artifact" && Object.hasOwn(message, "artifact")) {

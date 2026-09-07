@@ -252,8 +252,18 @@ describe("schema", () => {
     // The index was **assigned as 37 and confirmed against this pin before it
     // was written**. `user_version` was 37 at that branch point, so the step is
     // index 37 and produces 38.
+    //
+    // 39 is MAR-889's `run_spans` and `run_span_drops` — what a run actually
+    // did, one row per operation, and how many rows the per-run cap refused.
+    // Appended on the standing terms; both steps are bare
+    // `CREATE TABLE IF NOT EXISTS` statements, so a store the tests below rewind
+    // runs them again without complaint.
+    //
+    // The index was **assigned as 38 and confirmed against this pin before it
+    // was written**. `user_version` was 38 at that branch point, so the step is
+    // index 38 and produces 39.
     const version = handle.prepare("PRAGMA user_version").get() as { user_version: number };
-    expect(version.user_version).toBe(38);
+    expect(version.user_version).toBe(39);
 
     const tables = handle
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -341,6 +351,13 @@ describe("schema", () => {
     // never the document, which `run_artifacts` above already holds and
     // `brief_digest` names, and never a network's own words about itself.
     expect(tables).toContain("brief_adjudications");
+    // MAR-889. What a run did, one row per operation, on its own side channel
+    // rather than as more telemetry — `events` above still stores the frozen v1
+    // documents whole and a run's status is still derived from them alone. The
+    // second table exists because the first cannot record a row it refused: a
+    // span the per-run cap dropped has nowhere else to be counted.
+    expect(tables).toContain("run_spans");
+    expect(tables).toContain("run_span_drops");
   });
 
   it("carries the provenance columns ADR 0028 added, defaulted to what was true before", async () => {

@@ -24,6 +24,7 @@ const SCHEMA_FILES = [
   "agent.manifest.v2.schema.json",
   "run-event.schema.json",
   "run-artifact.schema.json",
+  "run-span.schema.json",
   "agent-dom-state.schema.json",
   "agent-command.schema.json",
 ] as const;
@@ -119,6 +120,7 @@ function buildValidators(): {
   manifestV2: ValidateFunction;
   event: ValidateFunction;
   artifact: ValidateFunction;
+  span: ValidateFunction;
   state: ValidateFunction;
   command: ValidateFunction;
 } {
@@ -134,6 +136,27 @@ function buildValidators(): {
     // `listRuns` derives run status from events — so an artifact that were an
     // event could change a run's status by existing.
     artifact: ajv.compile(loadSchema(dir, "run-artifact.schema.json")),
+    /*
+     * MAR-889. A third contract beside the two above, on the same argument the
+     * artifact schema was added on and one step further.
+     *
+     * A span could have been an eighth telemetry type — the run-event schema
+     * tolerates additive fields and nothing would have rejected it. It is not,
+     * for two reasons that are the whole design. `contract.lock.json` holds a
+     * semantic digest of `run-event.schema.json` and every producer and consumer
+     * outside this repository validates against it, so widening the enum breaks
+     * a contract DASH does not own both ends of. And `listRuns` derives a run's
+     * status from its events, so a span that arrived as an event would be a
+     * *drawing of the work* that could change what DASH says the run did.
+     *
+     * The lock is deliberately not extended to cover this file. It fingerprints
+     * telemetry v1's two schemas and says so in `docs/telemetry-contract-v1.md`;
+     * `run-artifact.schema.json`, `agent-dom-state.schema.json` and
+     * `agent-command.schema.json` are all compiled here and none of them is in
+     * it, because a lock over a schema no third party validates against is a
+     * ceremony rather than a guard.
+     */
+    span: ajv.compile(loadSchema(dir, "run-span.schema.json")),
     // MAR-417. Both schemas have existed since MAR-382 and neither had ever
     // been compiled by anything; the schema files themselves are untouched.
     state: ajv.compile(loadSchema(dir, "agent-dom-state.schema.json")),
@@ -247,6 +270,24 @@ export function validateArtifact(input: unknown): ValidationResult<RunArtifact> 
   const validate = validators().artifact;
   if (validate(input)) {
     return { ok: true, value: input as RunArtifact };
+  }
+  return { ok: false, errors: formatErrors(validate) };
+}
+
+/**
+ * Validate one run span (MAR-889).
+ *
+ * The same boundary discipline as `validateArtifact`, applied to a document
+ * whose whole purpose is to be drawn as a tree. A malformed span is refused on
+ * its own; its siblings still render, and the node that named it as a parent
+ * renders under an explicit unknown-parent heading rather than being quietly
+ * promoted to the root. An incomplete trace that says it is incomplete is the
+ * point of the feature.
+ */
+export function validateSpan(input: unknown): ValidationResult<RunSpan> {
+  const validate = validators().span;
+  if (validate(input)) {
+    return { ok: true, value: input as RunSpan };
   }
   return { ok: false, errors: formatErrors(validate) };
 }
@@ -583,6 +624,78 @@ export interface RunEvent {
   tokens_out?: number;
   cost_usd?: number;
   detail?: string;
+}
+
+/* ---------------------------------------------------------------------- *
+ * Run spans (MAR-889)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What kind of operation a span stands for.
+ *
+ * A closed vocabulary, and `custom` is why it can stay closed: an operation
+ * DASH has no word for is drawn as one rather than refused, so a span from an
+ * agent written after this list was fixed still renders. Adding a member is a
+ * decision about what DASH draws differently, not about what it accepts.
+ */
+export type RunSpanKind =
+  | "run"
+  | "step"
+  | "source_fetch"
+  | "broker"
+  | "browser"
+  | "artifact"
+  | "custom";
+
+/**
+ * How an operation ended.
+ *
+ * `unknown` is a real answer and the most important one here. A span that is
+ * still open, and a span whose closing message never arrived because the agent
+ * died mid-operation, are both `unknown` — and DASH says so on the page instead
+ * of completing the shape. Nothing infers `ok` from silence.
+ */
+export type RunSpanStatus = "ok" | "error" | "cancelled" | "unknown";
+
+/** What an operation cost, as the agent reported it. Never DASH's own figure. */
+export interface RunSpanUsage {
+  tokens_in?: number;
+  tokens_out?: number;
+  cost_usd?: number;
+  /**
+   * A constant rather than a free string, so every renderer of this number has
+   * to say whose number it is. DASH computes no price — see
+   * `docs/telemetry-contract-v1.md` and `lib/ai/ask.ts` for the one place a
+   * provider-stated charge exists, which is not this one.
+   */
+  source: "reported";
+}
+
+/**
+ * One node of a run's operation tree.
+ *
+ * Sent on the runner's own pipe as `{ type: "trace", span }`, drained at
+ * `POST /traces/drain`, stored in `run_spans`. Emitted twice — on open and on
+ * close — and keyed on `(agent, run_id, span_id)`, so the second write revises
+ * the first and a run in flight has a tree while it is still running.
+ *
+ * `parent_span_id` is a required member that may be null, which is the
+ * difference between *this is the root* and *the author forgot*. See the schema.
+ */
+export interface RunSpan {
+  trace_version: 1;
+  agent: string;
+  run_id: string;
+  span_id: string;
+  parent_span_id: string | null;
+  name: string;
+  kind: RunSpanKind;
+  started_at: string;
+  ended_at?: string | null;
+  status: RunSpanStatus;
+  error?: { code?: string; message?: string } | null;
+  attributes?: Record<string, string | number | boolean | null> | null;
+  usage?: RunSpanUsage | null;
 }
 
 /** How a run reported one source it tried to read. */
