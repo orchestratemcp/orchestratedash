@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "project": "DASH",
-  "updated_at": "2026-09-06",
+  "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 00:15: MAR-868 proven; MAR-880 (#322), MAR-878 template half (#320), MAR-876 (#324) merged. Lanes MAR-875/877/871 resumed after the usage-limit cutoff; MAR-874, MAR-878b, MAR-879 prompts ready, dispatch after MAR-875 lands.",
+  "lifecycle_note": "2026-09-07 03:25: merged this wave: MAR-880 #322, MAR-878 template half #320, MAR-876 #324, MAR-875 #328, MAR-871 #325, MAR-877 #327. MAR-868 proven. Open: MAR-874 (lane G), MAR-878b #329 (draft). DASH rebuilt on 10efc71 at 03:15; installed proofs queued behind the lock screen.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2023,9 +2023,10 @@
     },
     {
       "id": "MAR-871",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "10efc71",
+      "note": "PR #325: server page one card/one state/one action; Your server is up headline; Check now; setup recipe as five steps; 8 of MAR-865 nine defects fixed (D5-D7 go to MAR-874/MAR-864); 35 scratch-store frames. Proof owed: attended first-time enrolment."
     },
     {
       "id": "MAR-872",
@@ -2048,9 +2049,10 @@
     },
     {
       "id": "MAR-875",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "4ae4625",
+      "note": "PR #328: one result per selected run on the Output stage; author panel per run (lib/views/panel-run.ts), Sources (N) closed disclosure, numbered citations, rail grouped by run; smoke 6n/6p rewritten and green on CI (85/85). Proof owed: before/after on the installed build against Proof Scout 30-item brief."
     },
     {
       "id": "MAR-876",
@@ -2061,9 +2063,10 @@
     },
     {
       "id": "MAR-877",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "ca73496",
+      "note": "PR #327: task-first global Settings (AI: connect-then-choose / summary + Advanced routing + Troubleshoot; Connections: services first, lapses summarised, same-name agents disambiguated; Notifications: Alerts vs Chat with the chief, Manage disclosure). Placement only, no copy rewritten. Fixture tests + 17 scratch frames incl. the ADR 0013 adoption scene. Proof owed: installed Connections/AI at 100% and 80%. Follow-ups: disclosure persistence needs a pre-paint script; agent ids as labels on the Gmail row (lib/connectors.ts) wants a packet."
     },
     {
       "id": "MAR-878",

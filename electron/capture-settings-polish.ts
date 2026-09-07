@@ -457,13 +457,45 @@ async function layout(target: BrowserWindow): Promise<unknown> {
              );
              return button === undefined ? null : (button.textContent ?? "").trim();
            })(),
+           /* MAR-877 moved the in-force sentence out of the picker section. It
+              is now the AI tab's own summary line, above the *Advanced
+              routing* fold that holds the picker, so this reads it from
+              whichever of the two sections carries it — otherwise the witness
+              goes quietly empty on a page that still says the sentence, which
+              is a worse failure than one that goes missing. */
            model_default: (() => {
              const section = document.querySelector(".model-default");
+             const standing = document.querySelector(".model-standing");
+             if (section === null && standing === null) return null;
+             const carrier = standing ?? section;
+             return {
+               in_force: (carrier?.querySelector(".model-in-force")?.textContent ?? "").trim(),
+               summary_line: standing !== null,
+               advanced_fold: [...document.querySelectorAll("summary")].some(
+                 (one) => (one.textContent ?? "").trim() === "Advanced routing",
+               ),
+               provider_select: section?.querySelector("#model-default-provider") != null,
+               model_select: section?.querySelector("#model-default-select") != null,
+             };
+           })(),
+           /* MAR-877: every fold this page put its content behind, by the
+              word on the fold, plus whether the repair control is mounted at
+              all. A restructure that folds something away and a restructure
+              that loses it look identical in a word count, and the whole
+              claim of this packet is that it is the first. */
+           folds: [...document.querySelectorAll("summary")].map((one) =>
+             (one.textContent ?? "").trim(),
+           ),
+           refresh_control: document.querySelector("#connections-refresh") !== null,
+           /* MAR-877's first-key chooser: the state a DASH with no model key
+              opens on. Null on a DASH that holds one, which is how a frame
+              says which of the two states it photographed. */
+           ai_first_key: (() => {
+             const section = document.querySelector(".ai-first-key");
              if (section === null) return null;
              return {
-               in_force: (section.querySelector(".model-in-force")?.textContent ?? "").trim(),
-               provider_select: section.querySelector("#model-default-provider") !== null,
-               model_select: section.querySelector("#model-default-select") !== null,
+               heading: (section.querySelector("h2")?.textContent ?? "").trim(),
+               chooser: section.querySelector("#ai-first-key-provider") !== null,
              };
            })(),
 

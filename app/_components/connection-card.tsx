@@ -12,8 +12,14 @@ import {
   summariseUse,
   type StandingCapability,
 } from "../../lib/connection-card";
+import {
+  LAPSES_ARE_NOT_DECISIONS,
+  describeAgentLapseCount,
+  describeLapseSummary,
+} from "../../lib/copy/settings-connections";
 import { plainMoment, plainWindow } from "../../lib/copy/when";
 import type { Recovery } from "../../lib/copy/recovery";
+import { disambiguateAgentTitles } from "../../lib/views/agent-labels";
 import type { BrokerLapseView, ConnectionRowWithCredential } from "../../lib/views/types";
 import { useCanAct } from "../_data/use-view";
 
@@ -560,6 +566,90 @@ export function BrokerLapseNotice({ lapses }: { lapses: BrokerLapseView[] }): Re
             )}
           </li>
         ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * Every agent's lapses, as one line and one fold (MAR-877).
+ *
+ * ## What this replaces, and what it keeps
+ *
+ * `app/settings/page.tsx` drew one `BrokerLapseNotice` per agent, each under its
+ * own heading, above the first service on the page. On Henrik's machine that was
+ * five headings and five folds before the word *Gmail* appeared — a page about
+ * the accounts a person connects, opening with a list of times DASH was closed.
+ *
+ * Everything those five drew is still here. The periods, the windows in words,
+ * the qualifier that keeps each sentence from overclaiming, and the caveat that
+ * these are not decisions — which was repeated under every one of the five and
+ * is one fact about all of them, so it is now said once at the top.
+ *
+ * ## Why the summary carries two numbers
+ *
+ * How much DASH could not account for, and how widely it is spread. One agent
+ * with four gaps and four agents with one each are different situations, and a
+ * single count reads identically for both.
+ *
+ * ## Where the agent's own copy still lives
+ *
+ * `BrokerLapseNotice` above is unchanged and is still what an agent's own
+ * surface draws. This is the fleet-wide roll-up, and it composes from the same
+ * `BrokerLapseView` rows rather than from a second projection of them.
+ */
+export function BrokerLapseSummary({
+  agents,
+}: {
+  agents: readonly { name: string; title: string; lapses: BrokerLapseView[] }[];
+}): ReactNode {
+  const lapsing = agents.filter((agent) => agent.lapses.length > 0);
+  if (lapsing.length === 0) {
+    // The ordinary case, and nothing at all rather than a panel saying so — an
+    // empty state here would be a page reassuring somebody about a thing they
+    // had not asked about, which is `BrokerLapseNotice`'s own call one function
+    // up.
+    return null;
+  }
+
+  const periods = lapsing.reduce((total, agent) => total + agent.lapses.length, 0);
+  // Two agents whose authors gave them the same display name are told apart by
+  // their folder, humanised — never by an id, which MAR-589's ruling keeps out
+  // of a label.
+  const labelled = disambiguateAgentTitles(lapsing);
+
+  return (
+    <details className="broker-lapses broker-lapse-summary">
+      <summary>{describeLapseSummary(periods, lapsing.length)}</summary>
+      <p className="muted wrap">{LAPSES_ARE_NOT_DECISIONS}</p>
+      <ul className="row-list">
+        {lapsing.map((agent, index) => {
+          const suffix = labelled[index]?.suffix ?? null;
+          return (
+            <li key={agent.name} className="broker-lapse-agent">
+              <p className="eyebrow">
+                {agent.title}
+                {suffix === null ? null : (
+                  <span className="muted broker-lapse-which"> — {suffix}</span>
+                )}{" "}
+                <span className="muted">{describeAgentLapseCount(agent.lapses.length)}</span>
+              </p>
+              <ul>
+                {agent.lapses.map((lapse) => (
+                  <li key={`${lapse.kind}:${lapse.from_at}`} className="wrap">
+                    {lapse.sentence}
+                    <div className="muted">
+                      {plainWindow(lapse.from_at, lapse.until_at) ?? "Time not recorded"}
+                    </div>
+                    {lapse.qualifier === null ? null : (
+                      <div className="muted">{lapse.qualifier}</div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          );
+        })}
       </ul>
     </details>
   );

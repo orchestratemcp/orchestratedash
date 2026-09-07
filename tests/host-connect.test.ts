@@ -176,6 +176,39 @@ describe("the states a person can be in", () => {
     expect(copy.next_action).toBe("Put an agent on this server");
   });
 
+  /*
+   * MAR-871, and the one sentence Henrik asked for by name.
+   *
+   * This state is where **every freshly enrolled server sits before its first
+   * deploy**, so its headline is the first thing a person ever reads about a
+   * machine they have just rented and correctly set up. It read *"<label> is
+   * reachable, with nothing running on it"* — three clauses, two of them
+   * negative — and the attended run of 2026-09-05 photographed it under a
+   * banner claiming nothing had answered.
+   *
+   * Asserted as *leading* with the good news rather than merely containing it:
+   * a headline that ended on "your server is up" after two clauses of absence
+   * would pass a `toContain` and fail the person reading it.
+   */
+  it("leads with the good news on the one state that is good news", () => {
+    const copy = describeConnectState({
+      step: "unreachable",
+      label: LABEL,
+      problem: "no_runner_there",
+    });
+    expect(copy.headline).toMatch(/^Your server is up\./u);
+    // The label is still named — a page can hold several servers, and a
+    // sentence about one of them has to say which.
+    expect(copy.headline).toContain(LABEL);
+    // And it is the only headline here that does not open on a fault.
+    for (const other of HOST_REACH_PROBLEMS.filter((one) => one !== "no_runner_there")) {
+      expect(
+        describeConnectState({ step: "unreachable", label: LABEL, problem: other }).headline,
+        other,
+      ).not.toMatch(/^Your server is up/u);
+    }
+  });
+
   /**
    * The public key is a field on the state and never inside a sentence. A
    * sixty-character blob in the middle of a paragraph is not a paragraph, and a

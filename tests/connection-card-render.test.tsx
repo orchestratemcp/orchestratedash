@@ -21,7 +21,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { BrokerLapseNotice, ConnectionCards } from "../app/_components/connection-card";
+import { BrokerLapseNotice, BrokerLapseSummary, ConnectionCards } from "../app/_components/connection-card";
 import type { BrokerLapseView, ConnectionRowWithCredential } from "../lib/views/types";
 
 const SEARCH = {
@@ -274,5 +274,93 @@ describe("what DASH cannot account for", () => {
     expect(html).not.toContain("chip-warn");
     expect(html).not.toContain("allowed");
     expect(html).not.toContain("refused");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The fleet-wide roll-up (MAR-877)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * `BrokerLapseNotice` above is one agent's, and is unchanged.
+ *
+ * This is the roll-up the Connections page draws instead of five of them. The
+ * claim worth pinning is that it is a *summary* and not a *deletion*: every
+ * period, every window and the caveat that these are not decisions survive the
+ * merge, one row per agent, behind one line.
+ */
+describe("every agent's lapses, in one fold (MAR-877)", () => {
+  const AGENTS = () => [
+    {
+      name: "ai-news-scout-4",
+      title: "AI news scout",
+      lapses: [
+        {
+          kind: "dash_closed" as const,
+          sentence: "DASH was closed for part of this window.",
+          qualifier: "There is no record of whether this agent asked for anything.",
+          from_at: "2026-08-02T09:00:00.000Z",
+          until_at: "2026-08-02T10:00:00.000Z",
+        },
+        {
+          kind: "dropped_by_runner" as const,
+          sentence: "The background service discarded 2 requests.",
+          qualifier: null,
+          from_at: "2026-08-03T09:00:00.000Z",
+          until_at: "2026-08-03T09:00:02.000Z",
+        },
+      ],
+    },
+    {
+      name: "proof-scout",
+      title: "Proof Scout",
+      lapses: [
+        {
+          kind: "dash_closed" as const,
+          sentence: "DASH was closed for part of this window.",
+          qualifier: null,
+          from_at: "2026-08-04T09:00:00.000Z",
+          until_at: "2026-08-04T10:00:00.000Z",
+        },
+      ],
+    },
+  ];
+
+  const draw = (agents: ReturnType<typeof AGENTS>): string =>
+    renderToStaticMarkup(<BrokerLapseSummary agents={agents} />);
+
+  it("counts the periods and the agents separately", () => {
+    // One agent with three gaps and three agents with one each are different
+    // situations, and one number reads the same for both.
+    expect(draw(AGENTS())).toContain("DASH cannot account for 3 periods across 2 agents.");
+  });
+
+  it("keeps every period, every window and every qualifier", () => {
+    const html = draw(AGENTS());
+    expect(html).toContain("DASH was closed for part of this window.");
+    expect(html).toContain("The background service discarded 2 requests.");
+    expect(html).toContain("no record of whether this agent asked");
+    // Windows in words, never the stamp — MAR-467's own finding about this
+    // notice, which the roll-up inherits rather than re-decides.
+    expect(html).not.toContain("2026-08-02T09:00:00");
+  });
+
+  it("says the caveat once rather than once per agent", () => {
+    const html = draw(AGENTS());
+    expect(html.split("These are not decisions.")).toHaveLength(2);
+  });
+
+  it("draws one fold, not one per agent", () => {
+    expect(draw(AGENTS()).match(/<details/gu)).toHaveLength(1);
+  });
+
+  it("is nothing at all when no agent has one", () => {
+    // The ordinary case, and the same call `BrokerLapseNotice` makes: an empty
+    // panel saying "no lapses" is a page reassuring somebody about a thing they
+    // had not asked about.
+    expect(draw([])).toBe("");
+    expect(
+      draw([{ name: "quiet", title: "Quiet agent", lapses: [] }]),
+    ).toBe("");
   });
 });

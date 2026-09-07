@@ -272,3 +272,154 @@ it("is plain language throughout", () => {
     allow: ["Copy Webhook URL"],
   });
 });
+
+/* ---------------------------------------------------------------------- *
+ * Two halves, one grammar (MAR-877, UX-3)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What MAR-877 changed here, and what it must not have.
+ *
+ * The page holds two arrangements — DASH posting into a channel, and a person
+ * typing back to the chief — with different credentials, different revocation
+ * and different channels, and it ran them together under one title. The loudest
+ * control on a page about being *told* things was *Replace the bot token*.
+ *
+ * So each half gets a heading, one primary action, and a **Manage** fold
+ * holding what replaces, pauses or ends it. The claims worth pinning are the
+ * ones a screenshot answers badly:
+ *
+ * - stopping is one press from the state line, never two folds deep;
+ * - a credential replacement is not the first control in either half;
+ * - the two halves keep their own credentials and their own revocation.
+ */
+describe("the two halves are named apart (MAR-877)", () => {
+  it("gives each one a heading of its own", () => {
+    const html = markup(CONFIGURED);
+    expect(html).toContain("Alerts DASH sends you");
+    expect(html).toContain("Talk to the chief in Discord");
+    expect(html.indexOf("Alerts DASH sends you")).toBeLessThan(
+      html.indexOf("Talk to the chief in Discord"),
+    );
+  });
+});
+
+describe("the alerts half, once there is a channel (MAR-877)", () => {
+  it("leads with the test, not with the credential replacement", () => {
+    const html = markup(CONFIGURED);
+    const test = html.indexOf("Send a test message");
+    const replace = html.indexOf(">Replace the address<");
+    expect(test).toBeGreaterThan(-1);
+    expect(replace).toBeGreaterThan(-1);
+    expect(test).toBeLessThan(replace);
+    // And the test is the primary control, which is what a person came for.
+    expect(html.lastIndexOf("button-primary", test)).toBeGreaterThan(
+      html.lastIndexOf("button-secondary", test),
+    );
+  });
+
+  it("keeps replace and stop one press away, under Manage", () => {
+    const html = markup(CONFIGURED);
+    const manage = html.indexOf("Manage");
+    expect(manage).toBeGreaterThan(-1);
+    // Both inside the same fold, and that fold is not itself inside another.
+    const fold = html.slice(manage, html.indexOf("</details>", manage));
+    expect(fold).toContain("Replace the address");
+    expect(fold).toContain("Stop posting");
+    expect(fold).not.toContain("<details");
+  });
+
+  it("offers no Manage at all while there is nothing to manage", () => {
+    const off = markup({
+      ...CONFIGURED,
+      configured: false,
+      masked_hint: null,
+      configured_at: null,
+    });
+    // Every press under it would be about an arrangement that does not exist.
+    expect(off).not.toContain("Replace the address");
+    expect(off).not.toContain("Stop posting");
+  });
+});
+
+describe("the chief half (MAR-877)", () => {
+  const CHIEF_ON: NotificationsView["chief"] = {
+    configured: true,
+    enabled: true,
+    channel_id: "111111111111111111",
+    allowed_user_id: "222222222222222222",
+    masked_hint: "••••ABCD",
+    configured_at: "2026-08-20T10:00:00.000Z",
+    state_sentence:
+      "The chief answers in your channel, to the Discord account ending 2345 and to nobody else.",
+    runner_holds: null,
+  };
+
+  it("puts the token press and the two ids together, under Manage", () => {
+    /*
+     * `chiefDiscord.connect` is the only command that writes the two ids and it
+     * always opens the token window first (`electron/chief-discord.ts`), so a
+     * visible field with no visible save would be an edit a person could make
+     * and not commit. The facts they carry are still above the fold, in words,
+     * from `describeChiefDiscordStanding`.
+     */
+    const html = markup({ ...CONFIGURED, chief: CHIEF_ON });
+    const heading = html.indexOf('id="chief-discord"');
+    // The state line this half opens on, composed by
+    // `describeChiefDiscordStanding` rather than by the page.
+    const standing = html.indexOf("notify-standing", heading);
+    const replace = html.indexOf(">Replace the bot token<");
+    expect(standing).toBeGreaterThan(-1);
+    expect(replace).toBeGreaterThan(-1);
+    expect(standing).toBeLessThan(replace);
+    // The ids moved down beside the press that writes them, not off the page.
+    expect(html.indexOf("chief-channel")).toBeGreaterThan(standing);
+    expect(html.indexOf("chief-channel")).toBeLessThan(replace);
+    // And the two facts the ids carry — which channel, and whose account — are
+    // still above the fold, said in words rather than as the values themselves.
+    expect(html.slice(standing, replace)).toContain("answers in your channel");
+    expect(html.slice(standing, replace)).toContain("account ending 2222");
+  });
+
+  it("keeps stopping and forgetting one press from the state line", () => {
+    const html = markup({ ...CONFIGURED, chief: CHIEF_ON });
+    const at = html.indexOf("chief-discord");
+    const manage = html.indexOf("Manage", at);
+    const fold = html.slice(manage, html.indexOf("</details>", manage));
+    expect(fold).toContain("Stop listening");
+    expect(fold).toContain("Forget the bot");
+    expect(fold).not.toContain("<details");
+  });
+
+  it("puts starting again above the fold when the bridge is paused", () => {
+    // A paused bridge has one thing worth doing and it is not a credential
+    // press. Stopping it again stays under Manage, with the rest of what ends
+    // things.
+    const html = markup({ ...CONFIGURED, chief: { ...CHIEF_ON, enabled: false } });
+    const start = html.indexOf("Start listening");
+    const manage = html.indexOf("Manage", html.indexOf("chief-discord"));
+    expect(start).toBeGreaterThan(-1);
+    expect(start).toBeLessThan(manage);
+    expect(html).not.toContain("Stop listening");
+  });
+
+  it("asks for the token by name while nothing is configured", () => {
+    // The unconfigured half is unchanged: fields on the page, one primary
+    // press, and no Manage — MAR-743's flow, which MAR-877 does not touch.
+    const html = markup(CONFIGURED);
+    expect(html).toContain("Add a bot token");
+    expect(html).not.toContain("Replace the bot token");
+    expect(html).not.toContain("Forget the bot");
+  });
+
+  it("still never draws either credential", () => {
+    /*
+     * The two halves take different credentials and neither is on the page. The
+     * masked hint is, and the address-shaped strings are banned above; this is
+     * the same claim for the bot token, which has no masked form here at all.
+     */
+    const html = markup({ ...CONFIGURED, chief: CHIEF_ON });
+    expect(html).toContain("The bot token is a credential.");
+    expect(html).not.toContain("https://");
+  });
+});

@@ -350,9 +350,19 @@ export function summariseWhatIsOnHost(rows: readonly AgentHostStanding[]): strin
   const running = rows.filter((row) => row.standing === "seen_running").length;
   const asked = rows.some((row) => row.standing !== "sent_not_asked");
   if (!asked) {
+    /*
+     * "Check now", because that is what the control on the card says (MAR-871).
+     *
+     * A sentence that tells somebody to press a button by a name the button no
+     * longer carries is a direction that fails while looking authoritative —
+     * the fault `describeImportUnavailable` was corrected for one surface over.
+     * This is the same phrase the card's own primary control renders, so the
+     * two can only drift if somebody renames one of them without the other,
+     * which is what the assertion in `tests/host-sighting.test.ts` is for.
+     */
     return rows.length === 1
-      ? "DASH has sent 1 agent here. Check this server to see what is on it now."
-      : `DASH has sent ${String(rows.length)} agents here. Check this server to see what is on it now.`;
+      ? "DASH has sent 1 agent here. Press Check now to see what is on it."
+      : `DASH has sent ${String(rows.length)} agents here. Press Check now to see what is on it.`;
   }
   return running === 0
     ? "This server named nothing as running when DASH last asked."

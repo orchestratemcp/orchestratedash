@@ -10,6 +10,8 @@ import { describeProof } from "../../lib/connection-card";
 import { describeAccounts, describeExpansion, type ServiceRow as Row } from "../../lib/connections-list";
 import { describeSharedGrant } from "../../lib/connectors";
 import { describeSkip, type FleetSkip } from "../../lib/fleet/grants";
+import { authorizationHeading } from "../../lib/copy/settings-connections";
+import { disambiguateAgentTitles } from "../../lib/views/agent-labels";
 import type { Recovery } from "../../lib/copy/recovery";
 import type { FleetAct } from "./fleet-connector";
 
@@ -94,6 +96,25 @@ export function ServiceRow({
   const proof = tile === null ? null : describeProof(tile.proof, row.service);
   const split = tile === null || proof === null ? null : splitProof(tile.proof as ProofKind, proof);
 
+  /*
+   * Two agents under one service whose authors gave them the same name
+   * (MAR-877).
+   *
+   * Henrik's Gmail row drew two rows both reading **Meeting Assistant**, both
+   * NOT CONNECTED, with a control each — and a grant is keyed per agent, so the
+   * two presses do different things. `disambiguateAgentTitles` adds the agent's
+   * folder, humanised, to each of a colliding pair and nothing to a name nobody
+   * shares; see `lib/views/agent-labels.ts` for why it is words and not an id.
+   */
+  const dependentLabels = disambiguateAgentTitles(
+    (tile?.dependents ?? []).map((dependent) => ({
+      name: dependent.agent,
+      title: dependent.title,
+    })),
+  );
+  const suffixFor = (agent: string): string | null =>
+    dependentLabels.find((one) => one.name === agent)?.suffix ?? null;
+
   async function runFleet(
     action: "connect" | "test" | "disconnect" | "share" | "default" | "assign",
     accountId?: string,
@@ -169,8 +190,15 @@ export function ServiceRow({
               {dependent.avatar === null ? null : (
                 <OAvatar name={dependent.avatar} size={50} />
               )}
-              {/* MAR-589. The name a person reads, never the id. */}
-              <span className="service-needed-name">{dependent.title}</span>
+              {/* MAR-589. The name a person reads, never the id — and, when
+                  another agent on this row was given the same name, the folder
+                  that tells them apart (MAR-877). */}
+              <span className="service-needed-name">
+                {dependent.title}
+                {suffixFor(dependent.agent) === null ? null : (
+                  <span className="service-needed-which"> — {suffixFor(dependent.agent)}</span>
+                )}
+              </span>
               <span className={`chip ${dependent.connected ? "chip-ok" : "chip-muted"}`}>
                 {dependent.connected ? "connected" : "not connected"}
               </span>
@@ -289,19 +317,42 @@ export function ServiceRow({
 
         Nothing here is conditional on anything else being present; a row with
         none of them draws no box at all.
+
+        **MAR-877 changed one thing: whether it is open.** Not a word of it, and
+        not where it sits — it is still above the button, which is ADR 0002
+        amendment 2's whole rule and the only placement that lets a consequence
+        change a decision. What it now has is a `<summary>` naming the moment it
+        belongs to, and it is **open while the decision is live and folded once
+        it has been taken** — MAR-642's own split on the Notifications page, for
+        its reason: after the grant these same paragraphs are the record of a
+        decision already made, and three of them above every already-connected
+        service is what made a page of five services unreadable.
+
+        A person who has not connected this sees every word without pressing
+        anything. That is the case the rule is about, and it is unchanged.
       */}
       {(fleet?.wider_permissions.length ?? 0) === 0 &&
       (fleet?.reach_sentence ?? null) === null &&
       shared === null ? null : (
-        <div className="notice notice-warn wrap">
-          {(fleet?.wider_permissions ?? []).map((sentence) => (
-            <p key={sentence} role="note">
-              {sentence}
-            </p>
-          ))}
-          {fleet?.reach_sentence == null ? null : <p role="note">{fleet.reach_sentence}</p>}
-          {shared === null ? null : <p role="note">{shared}</p>}
-        </div>
+        <details className="card-more section-disclosure" open={!connected}>
+          {/*
+            Which act this is about, taken from the row's own kind rather than
+            from the catalogue entry. `signIn` above is `connector_kind` and is
+            null for a service DASH has built no fleet flow for — which is
+            exactly the row that still opens a browser, through the agent's own
+            connection. `row.kind` is the merged answer both halves agree on.
+          */}
+          <summary>{authorizationHeading(row.kind === "account")}</summary>
+          <div className="notice notice-warn wrap">
+            {(fleet?.wider_permissions ?? []).map((sentence) => (
+              <p key={sentence} role="note">
+                {sentence}
+              </p>
+            ))}
+            {fleet?.reach_sentence == null ? null : <p role="note">{fleet.reach_sentence}</p>}
+            {shared === null ? null : <p role="note">{shared}</p>}
+          </div>
+        </details>
       )}
 
       {outcome === null ? null : (
@@ -498,7 +549,12 @@ export function ServiceRow({
                 not, and this is where that shows. */}
             {(tile?.dependents ?? []).map((dependent) => (
               <section key={dependent.agent} className="service-receipt">
-                <h4>{dependent.title}</h4>
+                <h4>
+                  {dependent.title}
+                  {suffixFor(dependent.agent) === null ? null : (
+                    <span className="service-needed-which"> — {suffixFor(dependent.agent)}</span>
+                  )}
+                </h4>
                 {/* The author's own words about why this agent wants it. */}
                 <p className="muted wrap">{dependent.purpose}</p>
                 <ConnectionCards rows={[dependent.row]} act={agentAct(dependent.agent)} />
