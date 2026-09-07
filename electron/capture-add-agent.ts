@@ -320,6 +320,55 @@ async function ensureComfortable(target: BrowserWindow): Promise<void> {
   }
 }
 
+/**
+ * The same page at the two UI scales MAR-879 names (MAR-879).
+ *
+ * ## Why this is a zoom factor and never a preference
+ *
+ * DASH's UI scale is `webContents.setZoomFactor` — `applyUiScale` in
+ * `electron/main.ts` sets it and *also* writes the chosen value into the user's
+ * profile. This calls only the first half, deliberately. The audit that
+ * produced this packet was taken at 80%, and the packet's own rule is that DASH
+ * must not answer that by changing a setting somebody chose; a harness that
+ * proved the fix by writing the preference would be demonstrating the defect it
+ * was photographing.
+ *
+ * Two widths rather than three and one density rather than two, because the
+ * question this pass answers is narrower than the sweep above it: whether the
+ * three doors and their prose survive a scale change. `page_overflows` is the
+ * measurement that can go red, and 375 at 80% is a wider layout than 375 at
+ * 100%, which the sweep has already shot.
+ *
+ * The zoom is put back to 1 afterwards for the same reason the density is: the
+ * next thing to run against this profile should not inherit it.
+ */
+async function scaleSweep(target: BrowserWindow): Promise<void> {
+  for (const theme of THEMES) {
+    nativeTheme.themeSource = theme;
+    for (const viewport of [VIEWPORTS[0], VIEWPORTS[1]] as const) {
+      for (const scale of [0.8, 1] as const) {
+        await go(target, ADD_AGENT);
+        await resizeTo(target, viewport.width, viewport.height);
+        target.webContents.setZoomFactor(scale);
+        await go(target, ADD_AGENT);
+        await settle(600);
+        const measured = await layout(target);
+        measurements.push({
+          scene: "add-agent-scale",
+          ui_scale: scale,
+          theme,
+          labelled: "comfortable",
+          disclosure_opened: null,
+          ...(measured as object),
+        });
+        await shoot(target, `add-agent-scale${String(scale * 100)}-${viewport.name}-${theme}`);
+      }
+    }
+  }
+  target.webContents.setZoomFactor(1);
+  await settle(300);
+}
+
 async function run(): Promise<void> {
   await app.whenReady();
   mkdirSync(OUT, { recursive: true });
@@ -385,6 +434,8 @@ async function run(): Promise<void> {
     }
   }
 
+  await scaleSweep(window);
+
   writeFileSync(
     path.join(OUT, "layout.json"),
     `${JSON.stringify({ captured_at: new Date().toISOString(), measurements }, null, 2)}\n`,
@@ -392,8 +443,24 @@ async function run(): Promise<void> {
   );
 
   const overflowed = measurements.filter((m) => (m as { page_overflows: boolean }).page_overflows);
-  const wrongPrimary = measurements.filter(
-    (m) => !(m as { primary_is_choose_folder: boolean }).primary_is_choose_folder,
+  /*
+   * MAR-879's claim, where MAR-598's used to be.
+   *
+   * MAR-598 asserted that the page's first control says "Choose a folder",
+   * because the defect then was a page led by two terminal commands. The page
+   * offers three doors now, so the claim that has to hold on every frame is
+   * that all three are on it and the folder chooser is still one of them —
+   * demoting a path and deleting it look identical in a screenshot, which is
+   * the reason this harness exists at all.
+   */
+  const threeDoors = measurements.filter(
+    (m) => (m as { paths_offered: number }).paths_offered !== 3,
+  );
+  const folderDoorMissing = measurements.filter(
+    (m) =>
+      !(m as { path_headings: string[] }).path_headings.some((heading) =>
+        heading.includes("folder"),
+      ),
   );
   const commandsAbove = measurements.filter(
     (m) => (m as { scene: string; command_above_fold: boolean }).scene === "add-agent" &&
@@ -420,7 +487,8 @@ async function run(): Promise<void> {
   console.log(
     `\n[add-agent] wrote ${String(written.length)} images and layout.json to ${OUT}\n` +
       `[add-agent] ${overflowed.length === 0 ? "no frame overflowed sideways" : `${String(overflowed.length)} FRAMES OVERFLOWED`}\n` +
-      `[add-agent] ${wrongPrimary.length === 0 ? "every frame's primary control is Choose a folder" : `${String(wrongPrimary.length)} FRAMES HAVE A DIFFERENT PRIMARY CONTROL`}\n` +
+      `[add-agent] ${threeDoors.length === 0 ? "every frame offers all three doors" : `${String(threeDoors.length)} FRAMES DO NOT OFFER THREE DOORS`}\n` +
+      `[add-agent] ${folderDoorMissing.length === 0 ? "every frame still offers the folder chooser" : `${String(folderDoorMissing.length)} FRAMES LOST THE FOLDER DOOR`}\n` +
       `[add-agent] ${commandsAbove.length === 0 ? "no closed-page frame shows a command block" : `${String(commandsAbove.length)} FRAMES SHOW A COMMAND BLOCK UNPROMPTED`}\n` +
       `[add-agent] ${listed.length === 0 ? "no frame lists agents on the add page" : `${String(listed.length)} FRAMES LIST AGENTS`}\n` +
       `[add-agent] ${disclosuresMissed.length === 0 ? "every disclosure scene opened" : `${String(disclosuresMissed.length)} DISCLOSURES NOT FOUND`}\n` +

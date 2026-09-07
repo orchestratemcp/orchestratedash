@@ -9444,9 +9444,26 @@ details.agent-settings-danger > summary {
   max-width: var(--prose-measure);
 }
 
-/* The folder door's own control block, which brings its own `.section`. */
+/* The folder and sample doors' control blocks, which bring their own
+   `.section`. */
 .add-agent-path .choose-folder {
   margin-bottom: 0;
+}
+
+/*
+ * The sentence under a door's button, at the same measure as the prose above
+ * it.
+ *
+ * `.choose-folder` is a flex column with `align-items: flex-start`, which is
+ * right for the button — it should be the width of its own label — and wrong
+ * for the paragraph beneath it, which shrank to about forty characters and
+ * wrapped four times where the prose above it wrapped twice. Two paragraphs in
+ * one card breaking at two different widths reads as a layout accident, which
+ * is what it was.
+ */
+.add-agent-path .choose-folder > p {
+  align-self: stretch;
+  max-width: var(--prose-measure);
 }
 
 /*
