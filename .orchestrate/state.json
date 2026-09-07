@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 11:40: installed proof pass on 82e0972: MAR-875 and MAR-884 proven; MAR-877 AI/Notifications/Connections seen (100%); MAR-871 Servers and MAR-879 Add agent seen; MAR-874 seen with three residuals -> MAR-885 (lane K). Sample press and Check now next.",
+  "lifecycle_note": "2026-09-07 12:05: every lane of the UX wave is on master (last: MAR-885 #342). Proven this wave: MAR-868, MAR-875, MAR-884. Next: rebuild DASH when Henrik is free; installed look for MAR-885/874; adoption + real question (needs go); MAR-881/882/883 lanes; owner rulings.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2128,10 +2128,10 @@
     },
     {
       "id": "MAR-885",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "Settings page: no model row for an agent without a model; on-this-computer sentence under a host schedule; raw ISO instant in Scheduled runs (found on the installed build). Lane K dispatched."
+      "commit": "64c3386",
+      "note": "PR #342: ModelChoice renders the no_model_needed arm (honest sentence + Build one that can link); every-day radio detail follows residency; Scheduled runs show a plain moment on the host clock. Fixture tests only. Proof owed: installed Settings for proof-scout-mar861."
     }
   ]
 }
