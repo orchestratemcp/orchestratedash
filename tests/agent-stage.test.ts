@@ -11,7 +11,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { agentStageHref, agentWorkspaceHref, AGENT_WORKSPACE_PARAMS } from "../app/_data/routes";
+import {
+  agentStageHref,
+  agentWorkspaceHref,
+  AGENT_WORKSPACE_PARAMS,
+  chiefAskHref,
+  CHIEF_ASK_PARAM,
+} from "../app/_data/routes";
 import {
   AGENT_STAGES,
   isAgentStage,
@@ -131,5 +137,18 @@ describe("the address of one part of one agent", () => {
 
   it("escapes an agent id rather than pasting it into a query", () => {
     expect(agentStageHref("a&b=c", "logs")).toContain("agent=a%26b%3Dc");
+  });
+});
+
+describe("the fleet's own chief-composer prefill link (MAR-882)", () => {
+  it("names the fleet route with the agent on the query string", () => {
+    const href = chiefAskHref("ai-agent-news");
+    expect(href.startsWith("/?")).toBe(true);
+    const query = new URLSearchParams(href.slice(href.indexOf("?") + 1));
+    expect(query.get(CHIEF_ASK_PARAM)).toBe("ai-agent-news");
+  });
+
+  it("escapes an agent id rather than pasting it into a query", () => {
+    expect(chiefAskHref("a&b=c")).toContain("ask=a%26b%3Dc");
   });
 });

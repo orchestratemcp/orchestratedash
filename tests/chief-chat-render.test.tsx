@@ -20,7 +20,12 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { ChiefChat, visibleChiefTurns } from "../app/_components/chief-chat";
+import {
+  ChiefChat,
+  resolveChiefAskPrefill,
+  shouldApplyPrefill,
+  visibleChiefTurns,
+} from "../app/_components/chief-chat";
 import { CHIEF_CHAT_COPY } from "../lib/copy/chief-chat";
 import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../lib/views/types";
 
@@ -395,5 +400,74 @@ describe("visibleChiefTurns — what Clear actually filters", () => {
   it("clears to empty when every turn is at or before the boundary", () => {
     const turns = [turn({ id: 1 }), turn({ id: 2 })];
     expect(visibleChiefTurns(turns, 2)).toEqual([]);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * `shouldApplyPrefill`: the prefill effect's own decision, pure (MAR-882)
+ * ---------------------------------------------------------------------- */
+
+describe("shouldApplyPrefill — whether a new prefill overwrites the field", () => {
+  it("applies a fresh prefill to a field nobody has touched", () => {
+    expect(shouldApplyPrefill("About Scout: ", null, false)).toBe(true);
+  });
+
+  it("applies a later prefill for a different agent, still untouched", () => {
+    expect(shouldApplyPrefill("About Filer: ", "About Scout: ", false)).toBe(true);
+  });
+
+  it("never overwrites a draft the person has edited", () => {
+    // Same case as the row above, except somebody typed in the meantime.
+    expect(shouldApplyPrefill("About Filer: ", "About Scout: ", true)).toBe(false);
+  });
+
+  it("does nothing for the prefill already applied — no `?ask=` at all is also this case", () => {
+    expect(shouldApplyPrefill("About Scout: ", "About Scout: ", false)).toBe(false);
+    expect(shouldApplyPrefill(null, null, false)).toBe(false);
+  });
+
+  it("never applies a null prefill, touched or not", () => {
+    expect(shouldApplyPrefill(null, "About Scout: ", false)).toBe(false);
+    expect(shouldApplyPrefill(null, "About Scout: ", true)).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * `resolveChiefAskPrefill`: `?ask=<agent>` against the fleet (MAR-882)
+ * ---------------------------------------------------------------------- */
+
+describe("resolveChiefAskPrefill — the query id, resolved to a sentence", () => {
+  const fleet = [row({ name: "ai-agent-news", title: "AI agent news" })];
+
+  it("resolves a known agent id to the prefill sentence, by display name", () => {
+    expect(resolveChiefAskPrefill("ai-agent-news", fleet)).toBe("About AI agent news: ");
+  });
+
+  it("is null when there is no id at all", () => {
+    expect(resolveChiefAskPrefill(null, fleet)).toBeNull();
+  });
+
+  it("is null for an id that names nobody in this fleet — never the raw id", () => {
+    const prefill = resolveChiefAskPrefill("no-such-agent", fleet);
+    expect(prefill).toBeNull();
+  });
+
+  it("is null against an empty fleet — the read before the fleet has arrived", () => {
+    expect(resolveChiefAskPrefill("ai-agent-news", [])).toBeNull();
+  });
+});
+
+describe("ChiefChat renders with no `window` at all (MAR-882)", () => {
+  /*
+   * `renderToStaticMarkup` runs in Node, where `window` does not exist and no
+   * effect ever fires — the same reason every other stateful behaviour in
+   * this file is proven through a pure function instead. This is the render
+   * half of that split: the component's mount-time read of
+   * `window.location.search` must not throw just because there is no
+   * `window` to read it from.
+   */
+  it("renders the ordinary composer without a window global", () => {
+    expect(() => chat()).not.toThrow();
+    expect(chat()).toContain(CHIEF_CHAT_COPY.placeholder);
   });
 });
