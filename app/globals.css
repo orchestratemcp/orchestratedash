@@ -8978,3 +8978,119 @@ main:has(.agent-cockpit) {
 }
 
 /* ==== MAR-871 end ==== */
+
+/* ==== MAR-877 begin ==== */
+
+/*
+ * Task-first Settings: the AI, Connections and Discord pages (UX-3).
+ *
+ * Appended rather than woven into the rules above, and every selector here is
+ * new: three other lanes are live in parallel on the same file and a restyled
+ * shared rule is the one edit that cannot be reviewed in isolation.
+ */
+
+/*
+ * The one question a DASH with no model key opens on.
+ *
+ * A section rather than a card, so the provider card it contains is still the
+ * card — nesting a `.row-card` inside a second bordered box would draw two
+ * frames around one decision.
+ */
+.ai-first-key > .field,
+.ai-first-key > .field-label {
+  max-width: 34rem;
+}
+
+/*
+ * What is in force, above the fold.
+ *
+ * The accent bar `.model-in-force` already carries is the whole visual claim
+ * here — this section adds only the room around it, so the summary line and the
+ * setting it summarises read as the same fact in two places rather than two
+ * facts.
+ */
+.model-standing .button-row {
+  margin-top: var(--space-3);
+}
+
+/*
+ * The two folds on the AI tab, and Manage on the Discord page.
+ *
+ * `.section-disclosure` above already styles a summary that holds an `<h2>`.
+ * These summaries hold a word rather than a heading, so they get the same
+ * weight the page's own eyebrows have — enough to be seen as a control, not
+ * enough to compete with the headings either side.
+ */
+.section-disclosure > summary:not(:has(h2)):not(:has(h3)) {
+  font-weight: 700;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  font-size: var(--text-sm);
+  width: fit-content;
+  cursor: pointer;
+}
+
+.section-disclosure > summary:not(:has(h2)):not(:has(h3)):hover {
+  color: var(--accent);
+}
+
+/*
+ * One row per agent inside the lapse roll-up.
+ *
+ * `.broker-lapses ul` above already lays the outer list out; this is the inner
+ * one, which holds the periods belonging to a single agent and needs to read as
+ * subordinate to the name above it.
+ */
+.broker-lapse-agent > ul {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0 0 0 var(--space-4);
+  border-left: 1px solid var(--line);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.broker-lapse-agent > .eyebrow {
+  margin: 0;
+}
+
+/*
+ * The words that tell two identically named agents apart.
+ *
+ * Muted and lighter than the name it follows, because it is not part of the
+ * name: it is the answer to "which one", and a suffix set in the same weight
+ * would read as a longer name rather than as a distinction.
+ */
+.service-needed-which,
+.broker-lapse-which {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+
+/*
+ * A summary holding an h3, which the shared rule only covers for h2.
+ *
+ * The .section-disclosure > summary > h2 rule above sets display:inline so the
+ * platform's triangle sits on the heading's line. The chief bridge's three
+ * disclosures use h3 — they are subordinate to that section's own h2 — so they
+ * fell through it, and each drew a bare triangle on its own line with its
+ * heading orphaned underneath.
+ *
+ * Visible on master in
+ * qa-screenshots-mar-877/before/notifications-1280-light-comfortable.png, and
+ * found by looking at the frame rather than by any measurement: nothing
+ * overflowed, no counter moved and no test could see it.
+ *
+ * Added here rather than beside the h2 rule so that no shared selector is
+ * restyled in place while other lanes are live on this file. The Notifications
+ * page is the only surface in the app that puts an h3 in a disclosure summary.
+ */
+.section-disclosure > summary > h3 {
+  display: inline;
+}
+
+.section-disclosure > summary:hover > h3 {
+  color: var(--accent);
+}
+/* ==== MAR-877 end ==== */

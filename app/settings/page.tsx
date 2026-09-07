@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
-import { BrokerLapseNotice } from "../_components/connection-card";
+import { BrokerLapseSummary } from "../_components/connection-card";
 import { ServiceRow } from "../_components/service-row";
 import { HostNotice, ViewFailed, ViewLoading } from "../_components/view-state";
 import { submitConnectionCommand, submitFleetCommand } from "../_data/source";
@@ -142,13 +142,19 @@ export function ServiceList({
   const rows = serviceRows(fleet, tiles);
 
   /*
-   * Every agent's lapse notices, above the list rather than inside a row.
+   * Every agent's lapse notices — one summary, below the services (MAR-877).
    *
-   * MAR-467's argument for putting these first is unchanged — somebody who
-   * opened this page because an agent did less than they expected is looking for
-   * exactly this. What keeps them out of the rows is that a lapse belongs to an
-   * *agent* and the rows are services, so it cannot live on one of them without
-   * being filed under whichever service happened to be first.
+   * MAR-467's argument for drawing these at all is unchanged, and so is the
+   * reason they are not inside a row: a lapse belongs to an *agent* and the rows
+   * are services, so it cannot live on one of them without being filed under
+   * whichever service happened to be first.
+   *
+   * What changed is that there were five of them, each with its own heading and
+   * its own fold, standing between the page's title and the first service on
+   * it. Every one was true; the *list* of them was not a thing anybody came
+   * here for. `BrokerLapseSummary` keeps every period, every window and every
+   * qualifier, one row per agent, behind one line that says how many and how
+   * widely — and it sits under the services, which is what this page is called.
    */
   const lapsing = view.agents.filter((agent) => agent.lapses.length > 0);
 
@@ -159,13 +165,6 @@ export function ServiceList({
           overlapping sets, which is the arithmetic version of the same defect
           the two lists were. */}
       <p className="page-summary wrap">{summariseServices(rows)}</p>
-
-      {lapsing.map((agent) => (
-        <div key={agent.name} className="connector-lapse">
-          <p className="eyebrow">{agent.name}</p>
-          <BrokerLapseNotice lapses={agent.lapses} />
-        </div>
-      ))}
 
       {rows.length === 0 ? (
         /*
@@ -219,6 +218,8 @@ export function ServiceList({
           ))}
         </ul>
       )}
+
+      <BrokerLapseSummary agents={lapsing} />
 
       {view.older_agent_names.length > 0 ? (
         <p className="muted wrap">
