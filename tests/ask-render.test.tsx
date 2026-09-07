@@ -47,6 +47,7 @@ import {
   describeAskModel,
   describeAskPurpose,
   describeUnavailable,
+  describeAskCapability,
 } from "../lib/copy/ask";
 import type { AgentAskView, AskExchangeView } from "../lib/views/types";
 import { expectPlainLanguage } from "./helpers/plain-language";
@@ -101,6 +102,7 @@ function askable(over: Partial<Extract<AgentAskView, { can_ask: true }>> = {}): 
   return {
     can_ask: true,
     heading: ASK_HEADING,
+    capability: describeAskCapability("available", { agent: AGENT, service: "OpenRouter" }),
     purpose: describeAskPurpose(AGENT),
     custody: ASK_CUSTODY,
     placeholder: ASK_PLACEHOLDER,
@@ -134,6 +136,7 @@ function blocked(reason: Parameters<typeof describeUnavailable>[0], withConnect:
   return {
     can_ask: false,
     heading: ASK_HEADING,
+    capability: describeAskCapability(reason, { agent: AGENT, service: "OpenRouter" }),
     blocked: describeUnavailable(reason, { agent: AGENT, service: "OpenRouter" }),
     connect: withConnect
       ? {

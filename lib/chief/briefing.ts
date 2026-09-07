@@ -41,6 +41,7 @@
  * `tests/chief-briefing.test.ts` with no database.
  */
 
+import type { AskCapability, AskCapabilityReason } from "../copy/ask";
 import { describeFleetPlace, describeRunCount } from "../copy/fleet-status";
 import { plainDay } from "../copy/when";
 import type { AgentRow } from "../views/types";
@@ -66,6 +67,71 @@ export interface ChiefBriefingRow {
   last_run: string | null;
   /** `planned_route[].component_id`, in declared order. Values, never labels. */
   capabilities: readonly string[];
+  /**
+   * Whether this agent can be asked a question, and what would change that
+   * (MAR-878).
+   *
+   * ## Why the chief is told this at all
+   *
+   * MAR-878's defect had a third surface. Proof Scout's page said READY and its
+   * footer said the agent had no way to answer questions; the chief, asked
+   * about the same agent, knew neither and answered from the fleet card alone.
+   * So the one surface a person is sent to when direct chat is unavailable was
+   * the one surface that could not say why it was unavailable.
+   *
+   * ## It is still a screenshot of a card, in words
+   *
+   * This module's rule is that every field on a row is a string DASH already
+   * renders on a screen, and this one keeps it exactly: `requirement` is
+   * `describeUnavailable`'s headline as the footer prints it and `recovery` is
+   * its `next_action` as the fix-it card prints it. Nothing is composed for the
+   * model's benefit. `reason` is the enumerated id and travels as a value —
+   * `renderBriefing` never puts it in the text, for `agent`'s own reason.
+   *
+   * Null for a caller that did not resolve one. Resolving it needs the store,
+   * this module reads nothing, and a row that guessed would be a row asserting
+   * an agent can be asked something when nobody looked.
+   */
+  ask: ChiefBriefingAsk | null;
+}
+
+/**
+ * One agent's ask availability, as the chief is told it.
+ *
+ * Flattened out of `AskCapability` rather than carried whole, because two of
+ * that type's fields are for a renderer — the short chip label and the typed
+ * action with its button word — and a model given a button label will
+ * eventually tell somebody to press a button that is not on the screen they are
+ * looking at.
+ */
+export interface ChiefBriefingAsk {
+  available: boolean;
+  /** The enumerated reason. A value: it is compared, never printed. */
+  reason: AskCapabilityReason;
+  /** `describeUnavailable`'s headline, as the page prints it. */
+  requirement: string;
+  /** `describeUnavailable`'s `next_action`, as the page prints it. */
+  recovery: string;
+}
+
+/**
+ * Two rows saying the same thing about what an agent can be asked.
+ *
+ * Compared field by field like the row around it, and included in the
+ * comparison for the same reason every other field is: a turn answered while an
+ * agent was waiting on a key is a turn whose answer stops being true the moment
+ * the key arrives, and the receipt under it should say so.
+ */
+function sameAsk(left: ChiefBriefingAsk | null, right: ChiefBriefingAsk | null): boolean {
+  if (left === null || right === null) {
+    return left === right;
+  }
+  return (
+    left.available === right.available &&
+    left.reason === right.reason &&
+    left.requirement === right.requirement &&
+    left.recovery === right.recovery
+  );
 }
 
 /**
@@ -94,7 +160,23 @@ export const MAX_BRIEFING_AGENTS = 24;
  * are in the same order, which is what lets a person check one against the
  * other without re-sorting anything in their head.
  */
-export function briefingFor(agents: readonly AgentRow[]): ChiefBriefingRow[] {
+export function briefingFor(
+  agents: readonly AgentRow[],
+  /**
+   * What each agent can be asked, keyed by agent id (MAR-878).
+   *
+   * A lookup handed in rather than a field on `AgentRow`, and rather than a
+   * read here. Resolving one needs the store — the manifest, the key card, the
+   * effective model and the saved reports — and this module is pure so that
+   * `tests/chief-briefing.test.ts` can drive every case with no database.
+   * `askCapabilityFor` in `lib/views/ask.ts` is what a host calls to fill it.
+   *
+   * Optional, and an absent entry is `null` on the row rather than a guess.
+   * A caller that has not resolved capability tells the chief nothing about it,
+   * which is the honest state — see `ChiefBriefingRow.ask`.
+   */
+  capabilities: ReadonlyMap<string, AskCapability> = new Map(),
+): ChiefBriefingRow[] {
   return agents.slice(0, MAX_BRIEFING_AGENTS).map((agent) => ({
     agent: agent.name,
     title: agent.title,
@@ -103,7 +185,25 @@ export function briefingFor(agents: readonly AgentRow[]): ChiefBriefingRow[] {
     runs: describeRunCount(agent.run_count),
     last_run: agent.last_run_at === null ? null : plainDay(agent.last_run_at),
     capabilities: [...agent.capabilities],
+    ask: askRow(capabilities.get(agent.name)),
   }));
+}
+
+/**
+ * One `AskCapability` as the two sentences and the id the chief needs.
+ *
+ * `undefined` in, `null` out: a caller that resolved nothing says nothing.
+ */
+function askRow(capability: AskCapability | undefined): ChiefBriefingAsk | null {
+  if (capability === undefined) {
+    return null;
+  }
+  return {
+    available: capability.reason === "available",
+    reason: capability.reason,
+    requirement: capability.sentence,
+    recovery: capability.recovery,
+  };
 }
 
 /**
@@ -194,6 +294,20 @@ export function renderBriefing(rows: readonly ChiefBriefingRow[]): string {
       if (row.capabilities.length > 0) {
         lines.push(`Declared steps: ${row.capabilities.join(", ")}`);
       }
+      /*
+       * MAR-878. Both sentences, and the recovery one even when the agent can
+       * be asked — "Type a question in the box at the bottom of this page" is
+       * the true answer to *how do I ask it something* and the chief is asked
+       * that more often than anything else.
+       *
+       * The reason id is deliberately **not** written into the line. It is
+       * DASH's key for the state, the same standing `agent` has above, and a
+       * model handed both a sentence and an identifier will eventually write
+       * the identifier into an answer.
+       */
+      if (row.ask !== null) {
+        lines.push(`Questions: ${row.ask.requirement} ${row.ask.recovery}`);
+      }
       return lines.join("\n");
     })
     .join("\n\n");
@@ -265,6 +379,7 @@ function sameRow(left: ChiefBriefingRow, right: ChiefBriefingRow): boolean {
     left.runs === right.runs &&
     left.last_run === right.last_run &&
     left.capabilities.length === right.capabilities.length &&
-    left.capabilities.every((one, index) => one === right.capabilities[index])
+    left.capabilities.every((one, index) => one === right.capabilities[index]) &&
+    sameAsk(left.ask, right.ask)
   );
 }

@@ -48,6 +48,7 @@ const _shapesAgree: ChiefReceiptRow = {
   runs: "Not run yet",
   last_run: null,
   capabilities: [],
+  ask: null,
 } satisfies ChiefBriefingRow;
 void _shapesAgree;
 

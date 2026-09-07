@@ -29,7 +29,9 @@ import {
   ASK_PLACEHOLDER,
   describeAskModel,
   describeChatSubject,
+  describeAskCapability,
   describeUnavailable,
+  ASK_CHIEF_ENTRY,
 } from "../lib/copy/ask";
 import { buildArtifactCards } from "../lib/views/artifacts";
 import { AGENT_STAGES, type AgentStage } from "../lib/views/agent-stage";
@@ -67,6 +69,7 @@ function header(over: Partial<Parameters<typeof AgentCockpitHeader>[0]> = {}): s
         agent={AGENT}
         avatar="wizard"
         busy={null}
+        capability={describeAskCapability("available", { agent: AGENT, service: "OpenRouter" })}
         control={READY}
         goal="Reads the news and writes you a digest."
         hasFolder
@@ -455,6 +458,7 @@ function chatBar(ask: AgentAskView): string {
 const ASKABLE: AgentAskView = {
   can_ask: true,
   heading: ASK_HEADING,
+  capability: describeAskCapability("available", { agent: AGENT, service: "OpenRouter" }),
   purpose: { headline: "Ask this agent about what it has saved.", detail: "It reads its own reports." },
   custody: "Your questions and the answers stay on this computer.",
   placeholder: ASK_PLACEHOLDER,
@@ -510,21 +514,33 @@ describe("the chat bar", () => {
     /*
      * MAR-624 is the issue behind this one: a person who has done the right
      * thing and is told it did not work. A greyed box would be that shape
-     * again. The bar says what is missing in one line and offers the way to the
-     * fix-it card, which is on the Chat stage with the two sentences that
-     * explain it.
+     * again. The bar says what is missing and offers the way to the fix-it
+     * card, which is on the Chat stage with the two sentences that explain it.
+     *
+     * MAR-878 changed the words and kept the shape. The link is labelled with
+     * the act it leads to rather than with "Open chat", and the capability the
+     * header chip names is repeated here — so what is asserted is the
+     * invariant, which is that there is no dead input and there is a named way
+     * out, and not the label of the day.
      */
     const html = chatBar({
       can_ask: false,
       heading: ASK_HEADING,
+      capability: describeAskCapability("no_key", { agent: AGENT, service: "OpenRouter" }),
       blocked: describeUnavailable("no_key", { agent: AGENT, service: "OpenRouter" }),
       connect: null,
       history: [],
       sources_heading: "Where this came from",
       reported: null,
     });
+    const capability = describeAskCapability("no_key", { agent: AGENT, service: "OpenRouter" });
     expect(html).not.toContain("<textarea");
-    expect(html).toContain(AGENT_COCKPIT_COPY.chat_open);
+    expect(html).toContain(capability.label);
+    expect(html).toContain(capability.sentence);
+    expect(html).toContain(capability.action.label);
     expect(html).toContain("stage=chat");
+    /* MAR-878. Direct chat is unavailable, so the chief entry is on screen —
+       and it says which surface it is, not just that it exists. */
+    expect(html).toContain(ASK_CHIEF_ENTRY);
   });
 });

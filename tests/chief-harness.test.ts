@@ -119,6 +119,7 @@ const BRIEFING: ChiefBriefingRow[] = [
   {
     agent: SCOUT,
     title: "AI agent news",
+    ask: null,
     place: "Local",
     standing: "Nothing needs you.",
     runs: "Two runs so far",

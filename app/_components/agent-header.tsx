@@ -17,6 +17,9 @@ import { AGENT_PLAN_EMPTY_SENTENCE, AGENT_PLAN_MODEL_BOUNDARY, type AgentPlanSte
    answer the same question about the same record, and two functions computing
    "Cloud" from `deploy_targets` is how they come to disagree. */
 import { describeFleetPlace } from "../../lib/copy/fleet-status";
+/* MAR-878. The type only — `lib/copy/ask.ts` is pure, but the header needs no
+   more than the shape `lib/views/ask.ts` filled in. */
+import type { AskCapability } from "../../lib/copy/ask";
 /* MAR-602. Safe as a value in this bundle: `lib/copy/where-it-ran.ts` imports
    nothing that reaches a disk, and its one reference to `lib/store.ts` is a
    type. The same arrangement the agent page itself relies on. */
@@ -77,6 +80,7 @@ export function AgentCockpitHeader({
   agent,
   avatar,
   busy,
+  capability,
   control,
   goal,
   hasFolder,
@@ -91,6 +95,15 @@ export function AgentCockpitHeader({
   /** The agent's id, for the stage links. A value, never a label (MAR-589). */
   agent: string;
   avatar: OName | null;
+  /**
+   * What this agent can be asked, as against whether it can run (MAR-878).
+   *
+   * A separate prop from `control` because they are separate facts with
+   * separate owners — `lib/views/agent-control.ts` decides one and
+   * `lib/views/ask.ts` the other — and the whole of this issue is that the
+   * header had a chip for only the first.
+   */
+  capability: AskCapability;
   /**
    * The pending command key, or null. Disables the two buttons left in the
    * band — Refresh and Open folder — while a command is in flight.
@@ -138,6 +151,10 @@ export function AgentCockpitHeader({
           <div className="cockpit-name-row">
             <h1>{title}</h1>
             <StatusPill control={control} />
+            {/* MAR-878. Beside the runtime pill and never instead of it: READY
+                is about running its plan, this is about answering a question,
+                and the two were one chip until now. */}
+            <CapabilityChip capability={capability} />
             {/* Clicks through to the stage that owns where an agent lives.
                 MAR-641's deploy move is not made here — this is a link to the
                 block that already exists, not a claim about where deploying
@@ -403,6 +420,45 @@ function StatusPill({ control }: { control: AgentControlView }): ReactNode {
       <span className="status-dot" aria-hidden="true" />
       <span>{status.label}</span>
       <span className="visually-hidden">. {status.detail}</span>
+    </p>
+  );
+}
+
+/**
+ * What this agent can be *asked*, beside what it is *doing* (MAR-878).
+ *
+ * ## Why a second chip and not a longer status detail
+ *
+ * The header said READY while the footer said the agent had no way to answer
+ * questions. Neither was wrong. `StatusPill` above answers "can DASH make this
+ * agent run its own plan", which is what READY has always meant, and a person
+ * reading it beside a chat box reasonably takes it to mean the chat works too.
+ * Folding the answer into `status.detail` would have made one sentence carry
+ * two facts that fail apart — an agent can be running perfectly and answer
+ * nothing, and an agent that has never started can answer everything it saved
+ * before it stopped.
+ *
+ * So it is its own chip, in its own words, in every state including the good
+ * one. `AskCapability` has an `available` member for exactly this: a chip that
+ * appeared only on failure would teach a reader that its absence means nothing
+ * is wrong, which is the reading that produced the defect.
+ *
+ * The sentence is the chip's `title` and its accessible description rather than
+ * a line beside it — `StatusPill`'s own rule about permanent screen space, and
+ * the same sentence is on screen in full in the footer for anybody who does not
+ * hover.
+ *
+ * It is not a control. ADR 0008 keeps this band free of them, and the action
+ * that meets the requirement lives in the footer and on the Chat stage where
+ * the two explaining sentences are.
+ */
+function CapabilityChip({ capability }: { capability: AskCapability }): ReactNode {
+  const tone = capability.reason === "available" ? "calm" : "attention";
+  return (
+    <p className={`ask-capability-chip is-${tone}`} title={capability.sentence}>
+      <span className="ask-capability-label">{AGENT_COCKPIT_COPY.capability_label}</span>
+      <span className="ask-capability-value">{capability.label}</span>
+      <span className="visually-hidden">. {capability.sentence}</span>
     </p>
   );
 }

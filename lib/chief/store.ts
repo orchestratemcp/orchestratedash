@@ -339,9 +339,42 @@ function parseReceipt(value: unknown): ChiefBriefingRow[] {
       capabilities: Array.isArray(one["capabilities"])
         ? one["capabilities"].filter((id): id is string => typeof id === "string")
         : [],
+      /* MAR-878. Null for every receipt written before the field existed, and
+         for every one written by a host that resolved no capability. Null is
+         what `ChiefBriefingRow.ask` documents as "nobody looked", which is the
+         true reading of an older row and the weaker of the two claims — this
+         function's own rule directly above. */
+      ask: parseAsk(one["ask"]),
     });
   }
   return rows;
+}
+
+/**
+ * A stored receipt's ask block, or null (MAR-878).
+ *
+ * Field by field like the row around it. A receipt is frozen JSON written by
+ * some past build, so nothing here trusts a shape: a block missing either
+ * sentence is not half-read into a row that would then compare unequal against
+ * every current one and mark the turn changed forever.
+ */
+function parseAsk(value: unknown): ChiefBriefingRow["ask"] {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const one = value as Record<string, unknown>;
+  const reason = one["reason"];
+  const requirement = one["requirement"];
+  const recovery = one["recovery"];
+  if (typeof reason !== "string" || typeof requirement !== "string" || typeof recovery !== "string") {
+    return null;
+  }
+  const known = ["available", "no_provider", "no_key", "no_model_chosen", "nothing_saved"] as const;
+  const match = known.find((one) => one === reason);
+  if (match === undefined) {
+    return null;
+  }
+  return { available: match === "available", reason: match, requirement, recovery };
 }
 
 function text(value: unknown): string {
