@@ -292,3 +292,20 @@ were corrected with it.
 `app/globals.css`: both packets append a fenced block to the end of it. Resolved
 by keeping **both**, MAR-875's first and MAR-871's after — neither restyles a
 shared rule, which is what the fences are for.
+
+**Verified after the extension.** `pnpm typecheck` clean, `pnpm brand:check`
+passed, focused (11 files) `Test Files 11 passed (11) / Tests 276 passed | 2
+skipped (278)`. Full: `Test Files 4 failed | 267 passed (271) / Tests 5 failed |
+5164 passed | 13 skipped (5182)` — the four are `fleet-decisions`,
+`schedule-store`, `chief-key-delivery` and `store-sqlite`, none of them this
+lane's files and a different set from the previous run's. Re-run together and
+alone: `Test Files 4 passed (4) / Tests 70 passed (70)`. Parallel load, not a
+regression.
+
+**One scene re-shot.** `summariseWhatIsOnHost`'s sentence is on the card in the
+`deployed` scene, so those frames were carrying copy the code no longer
+produces. Re-built and re-run rather than left: a frame showing a sentence the
+product does not say is the mislabelled image this harness's own header warns
+about. The `saved` and `no-server` scenes are unaffected — the renamed
+`not_checked` next action is suppressed on that state anyway, because the button
+is the instruction there.
