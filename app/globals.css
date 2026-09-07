@@ -9516,3 +9516,97 @@ details.agent-settings-danger > summary {
   white-space: normal;
 }
 /* ==== MAR-884 end ==== */
+
+/* ==== MAR-889 begin ==== */
+/* ---------------------------------------------------------------------- *
+ * The run's operation tree (MAR-889)
+ *
+ * Appended rather than folded into the row-card rules above, because other
+ * lanes are live in the same file and restyling a shared rule in place is how
+ * two packets discover each other at merge time.
+ *
+ * The indent is drawn on the left edge rather than by margin, and that is a
+ * legibility decision rather than a decorative one. A tree indented by margin
+ * loses its structure the moment the window narrows enough to wrap a name, and
+ * this section is read at 375px on the same page as everything else. A rule the
+ * row hangs off keeps the nesting visible whatever the text does.
+ *
+ * `--trace-depth` comes from the builder rather than from how deeply the markup
+ * nests, so the visual indent is bounded: past four levels it stops growing,
+ * because a fifth indent on a phone is a column two characters wide.
+ * ---------------------------------------------------------------------- */
+.run-trace-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.run-trace-list .run-trace-list {
+  margin-left: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--line);
+}
+
+.run-trace-row {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Not red. A failed operation is a finding to read, and the page already uses
+   `chip-warn` for the same claim on the events list; painting the whole row in
+   error colour would make an ordinary refusal look like a crash. */
+.run-trace-row.is-failed {
+  border-left: 2px solid var(--warn);
+  padding-left: var(--space-2);
+}
+
+.run-trace-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* Overrides the heading scale on purpose: these are `<h3>` for the document
+   outline a screen reader walks, and a page of 15px headings would read as a
+   page of headings rather than as a list of operations. */
+.run-trace-name {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.run-trace-meta,
+.run-trace-usage {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+}
+
+.run-trace-error {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--warn);
+}
+
+.run-trace-note {
+  margin: var(--space-2) 0;
+  color: var(--warn);
+}
+
+.run-trace-orphans {
+  margin-top: var(--space-5);
+}
+
+.run-trace-ids summary {
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+/* The identifiers inside are long and opaque; letting them push the page wide
+   would make the one section nobody has to read the one that breaks the
+   layout. */
+.run-trace-ids code {
+  overflow-wrap: anywhere;
+}
+/* ==== MAR-889 end ==== */

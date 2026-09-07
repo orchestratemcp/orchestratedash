@@ -7,6 +7,7 @@
  * POST /agents/{id}/lifecycle  start or stop the agent's process
  * POST /telemetry/drain        hosted-agent event candidates since the last poll
  * POST /artifacts/drain        hosted-agent artifact candidates since the last poll
+ * POST /traces/drain           hosted-agent run-span candidates since the last poll
  * GET  /health                 what this runner is supervising
  * POST /store/retire           set a damaged store aside and open a fresh one
  * ```
@@ -724,6 +725,24 @@ async function handle(
     segments[1] === "drain"
   ) {
     send(response, 200, { ok: true, ...options.supervisor.drainArtifacts() });
+    return;
+  }
+
+  // POST /traces/drain — the run-span side channel (MAR-889). Its own route for
+  // the artifact drain's reason: spans are validated against
+  // `contracts/run-span.schema.json` at a different boundary from events, and
+  // one reply carrying both would make main sort untrusted bodies apart by
+  // inspecting them. A runner built before this route answers 404, which DASH
+  // reads as "this runner holds no spans" rather than as a fault — which is what
+  // makes an older runner and an older agent produce the same honest empty
+  // trace rather than two different failures.
+  if (
+    request.method === "POST" &&
+    segments.length === 2 &&
+    segments[0] === "traces" &&
+    segments[1] === "drain"
+  ) {
+    send(response, 200, { ok: true, ...options.supervisor.drainSpans() });
     return;
   }
 

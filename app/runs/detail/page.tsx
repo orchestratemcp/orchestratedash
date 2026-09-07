@@ -3,6 +3,7 @@
 import { Suspense, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { OutputsPanel } from "../../_components/outputs";
+import { RunTraceSection } from "../../_components/run-trace";
 import { RunVerdictChips } from "../../_components/verdict";
 import { HostNotice, ViewFailed, ViewLoading } from "../../_components/view-state";
 import { RUN_DETAIL_PARAMS } from "../../_data/routes";
@@ -192,6 +193,20 @@ function RunDetail(): ReactNode {
           </ol>
         </div>
       ) : null}
+
+      {/* MAR-889. What the run did, above the events it emitted while doing it.
+
+          The order is the point. "Which step failed?" is the question somebody
+          opens a run to ask, and the list below answers it only by being read
+          end to end — it is a flat sequence of markers with no nesting and no
+          ends, which is what the events contract is and what it should stay.
+          The tree answers it at a glance and the events stay underneath as the
+          record they always were.
+
+          It is never absent. A run whose agent sent no spans draws the section
+          saying so, because "DASH holds no trace for this run" and "this page
+          forgot to draw one" must not look the same. */}
+      <RunTraceSection trace={view.trace} />
 
       <div className="section">
         <h2>Events</h2>

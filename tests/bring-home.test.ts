@@ -41,9 +41,13 @@ function pull(over: Partial<EvidencePull> = {}): EvidencePull {
     reached: true,
     telemetry_dropped: 0,
     artifacts_dropped: 0,
+    // MAR-889. A pull now drains the run-span side channel too; a fixture that
+    // omitted these would be a pull claiming it never looked.
+    spans_dropped: 0,
     workspace_truncated: false,
     events_ingested: 3,
     artifacts_ingested: 1,
+    spans_ingested: 0,
     workspace_index: [],
     ...over,
   };
