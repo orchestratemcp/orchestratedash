@@ -83,7 +83,7 @@ export const RECIPE_VERSION = 1;
  * graph, and ADR 0034's whole point is that the runtime is a file that ships
  * inside an agent folder rather than a module DASH links.
  */
-export const SDK_VERSION = "1.0.0";
+export const SDK_VERSION = "1.1.0";
 
 /* ---------------------------------------------------------------------- *
  * The recipe

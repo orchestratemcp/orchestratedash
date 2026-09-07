@@ -286,12 +286,14 @@ document a coding assistant actually reads.
 
 ## The one thing the next session should do first
 
-Read deviation 1 and decide whether `agent.recipe.json` belongs in
-`AGENT_KIT_PROJECT_FILES`. Today an agent imported from the Agent Kit reaches
-DASH without its recipe, and one imported through the MCP reaches it with one,
-because the two handoffs are built differently. That asymmetry is small now and
-will be load-bearing the moment anything in DASH wants to read a stored agent's
-recipe.
+**Answered by the addendum at the end of this file — read that instead.** The
+question was whether `agent.recipe.json` belongs in `AGENT_KIT_PROJECT_FILES`;
+the orchestrator ruled that it does, as an optional entry, and it is there now.
+
+What is left for the next session is smaller: nothing in DASH *reads* a stored
+agent's recipe yet. It now arrives with every newly built agent by both import
+paths, and the first surface that wants to check a stored manifest against its
+own definition will find it already there.
 
 ## Needs orchestrator
 
@@ -312,7 +314,16 @@ recipe.
 5. **Decision wanted on the recipe's home** if a second producer appears: a JSON
    Schema under `contracts/` would make it a cross-repository contract and would
    need an ADR. Not needed while this repository is the only producer.
-6. **`scripts/retire-scratch-runners.mjs` retired lane F3's runner too.** It
+6. **The F3 merge needs one thing checked that is not this lane's.** The union
+   is green (second full run, 288 files, 0 failures), but the first full run on
+   it produced eight `Test timed out in 5000ms` failures, all on the first
+   `freshStore()` in six different files, and all passing when re-run alone.
+   Migration 38 makes every fresh store one migration more expensive and F3 adds
+   four more store-touching suites, so the cold-start cost of the store suites
+   went up on a machine where they already contend. Nothing in this packet
+   touches a store, a migration or any of those tests. Worth watching on CI
+   before somebody spends an afternoon on a flake that has a cause.
+7. **`scripts/retire-scratch-runners.mjs` retired lane F3's runner too.** It
    walks every scratch store it can find, and it reported two:
    `%TEMP%\f2-smoke\orchestratedash` (pid 24876, this lane's) and
    `%TEMP%\f3-smoke-scratch\orchestratedash` (pid 9736, MAR-889's). Both came
@@ -320,3 +331,145 @@ recipe.
    correct end state for both, but if F3 was mid-proof when this ran, that is
    why its runner went away and it should re-run rather than conclude anything
    from the gap.
+
+---
+
+## Addendum — the recipe travels with a kit-built agent
+
+**Added after the orchestrator ruled on deviation 1.** The ruling: put
+`agent.recipe.json` in `AGENT_KIT_PROJECT_FILES` as **optional**, with an
+ownership extension to `agent-kit/open-in-dash.ts` for this one change.
+
+### What changed
+
+`agent-kit/open-in-dash.ts` — one entry, `{ path: "agent.recipe.json",
+required: false }`, placed directly after `agent.manifest.json` so the handoff
+lists the definition beside the document generated from it. The docblock says
+why it is optional, and the reason is a third one, different from both reasons
+already in that list:
+
+- `sources.json`, `README.md` and `.gitignore` are optional because an agent can
+  *outgrow* them (MAR-595 finding 9).
+- The manifest, the package, the program, the runtime and the install script are
+  required because losing one is a real incomplete build.
+- The recipe is optional because every agent scaffolded **before** MAR-888 has
+  none. Requiring it would tell a person their build was incomplete over a file
+  that is missing because of when their agent was made, which is exactly the
+  failure MAR-595 finding 9 was reported for.
+
+This also removes the asymmetry the original deviation flagged: the MCP's
+handoff walks the project directory and has always carried whatever is in it, so
+until now a kit-built agent reached DASH without its recipe while an MCP-built
+one reached it with one, for no reason a reader could find.
+
+### Tests
+
+`tests/agent-kit.test.ts` gained `describe("the recipe travels with the
+agent")`, two cases:
+
+1. **The handoff carries it.** Not merely present in the list — the carried
+   bytes are asserted equal to the file on disk, and the parsed document's
+   `agent.id` is checked. A handoff carrying a stale or empty recipe would be
+   worse than one carrying none, because DASH's drift check would then compare
+   the manifest against a fiction.
+2. **A pre-recipe project still imports.** `agent.recipe.json` is deleted and
+   `writeHandoff` still succeeds, with the manifest and the program still in the
+   list and the recipe absent from it.
+
+### Smoke proof 6b
+
+**Unaffected, and not because it was updated.** `electron/smoke.ts` imports
+neither `AGENT_KIT_PROJECT_FILES`, nor `projectFiles`, nor the kit's
+`writeHandoff` — grep confirms no reference to any of the three. `6b` logs
+`createSampleAgent(...).value.files`, which comes from `planSampleAgent` →
+`planFromRecipe` and is the *plan's* file list rather than the kit's declared
+one. That list already contained `agent.recipe.json` in the 85 PASS / 0 FAIL run
+recorded above, which is why the sample's recipe was already proven to travel.
+No expectation needed changing, and none was changed.
+
+The path this addendum fixes is the other one: a person who runs
+`create-dash-agent` and then `npm run open-in-dash`. That path has no proof in
+this lane beyond the two unit tests above, because the shell smoke exercises the
+sample rather than the CLI.
+
+### Verified
+
+- `pnpm typecheck` — clean, exit 0.
+- Focused suites (PowerShell): `tests/agent-kit.test.ts`,
+  `tests/agent-recipe.test.ts`, `tests/sample-agent.test.ts`,
+  `tests/agent-sdk.test.ts`, `tests/legacy-agent.test.ts`,
+  `tests/sample-refresh.test.ts`, `tests/conformance-v2.test.ts` and
+  `tools/dash-mcp/tests` → **Test Files 17 passed (17) | Tests 260 passed (260)**,
+  and again on the union after the F3 merge → **Test Files 15 passed (15) |
+  Tests 238 passed (238)** (a smaller set: the two suites F3 moved pins in were
+  left to the full run rather than named twice).
+- `git merge origin/master` — twice. The first, at `1d7c4e7`, was *Already up
+  to date*. The second, after lane F3's PR #357 landed at `3e0f63f`, merged
+  cleanly with no textual conflict — and carried one semantic conflict a clean
+  merge cannot see. See below.
+- `pnpm test` on the union — run twice, and the first run is reported here
+  rather than quietly replaced.
+
+  **First run: 6 files failed, 8 tests failed** (288 files, 5450 passed). Every
+  one of the eight was `Error: Test timed out in 5000ms` on the *first* test in
+  its file that calls `freshStore()` — `tests/agent-folders.test.ts`,
+  `tests/brand-surfaces.test.tsx`, `tests/chief-drain.test.ts`,
+  `tests/run-artifact.test.ts`, `tests/store-damage.test.ts` (three) and
+  `tools/dash-mcp/tests/template-run.test.ts`. Not one was an assertion.
+
+  **Re-run alone: `Test Files 6 passed (6) | Tests 118 passed (118)`** in 7.8s.
+
+  **Second full run: `Test Files 288 passed (288) | Tests 5450 passed | 13
+  skipped (5463)`**, exit 0, in 62s against the first run's 140s.
+
+  So: contention on the default 5-second timeout while a loaded machine opened
+  many stores at once, not a behavioural failure. The first run followed
+  immediately after a shell build, an Agent Kit build and an eval run on the same
+  machine. Worth flagging rather than filing away, because F3's merge plausibly
+  raised the cost of every `freshStore()` — it adds migration 38, so each fresh
+  store runs one more migration, and it adds four new store-touching suites to
+  compete for the same cold start. Nothing in this packet touches a store, a
+  migration or a test in that list.
+
+### The merge with F3 that git could not see
+
+`merge-tree` was clean and the merge produced no conflict, because the two
+branches changed two different files. They disagreed anyway:
+
+- F3 instrumented `agent-kit/template/dash-agent-sdk.mjs` and bumped its
+  `SDK_VERSION` to **`1.1.0`**.
+- `agent-kit/recipe.ts` carried `SDK_VERSION = "1.0.0"` — the deliberate second
+  copy of that number, kept in TypeScript so a recipe can record the runtime
+  version without the shell linking the agent runtime into its own bundle graph
+  (ADR 0034).
+
+A clean merge therefore produced a build in which every scaffolded agent would
+ship runtime `1.1.0` while writing `"sdk_version": "1.0.0"` into its own
+`agent.recipe.json` — the recipe lying about the one thing it pins.
+
+`tests/agent-recipe.test.ts`'s first assertion is exactly this pin: it reads
+`export const SDK_VERSION` out of the runtime file and compares it to the
+constant. It failed on the merge, which is the whole reason it was written.
+Fixed by moving the constant to `1.1.0` and regenerating the same field in
+`tests/fixtures/build-brief.recipe.json`, so the fixture stays a faithful
+snapshot of what this repository's MCP scaffolder emits today.
+
+Re-proved on the union rather than assumed: `pnpm build:agent-kit`, the real CLI
+into a fresh scratch folder, then `node evals/run-evals.mjs` against the agent it
+wrote — **4 of 4 checks passed** against F3's instrumented runtime — and
+`create-dash-agent --check` reports the manifest importable and the recipe in
+agreement, with `"sdk_version": "1.1.0"` in the written recipe.
+
+Worth passing on: **two lanes can share no file and still disagree.** The guard
+that caught it is a test that reads one file's source to check another file's
+constant, and it was the only thing standing between a clean merge and a recipe
+that misreports its runtime.
+
+Neither the shell nor the smoke was rebuilt for this change, and the addendum
+does not claim they were: nothing here touches a packaged file, and the smoke's
+own proof does not read the list that changed.
+
+### Deviation 1 is now closed
+
+The "one thing the next session should do first" above is answered by this
+addendum and needs no further action.
