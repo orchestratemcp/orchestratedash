@@ -216,11 +216,23 @@ export function scaffoldAgent(input: ScaffoldInput, now: Date = new Date()): Too
   };
 }
 
+/**
+ * The template files this scaffold writes.
+ *
+ * `agent.mjs` is this package's own — its task logic emits a brief, which the
+ * kit's does not. `dash-agent-sdk.mjs` is the Agent Kit's, deliberately: there
+ * is one runtime, both scaffolders write the same bytes, and a second copy
+ * under this package's `template/` would be a fork nobody would notice had
+ * drifted (ADR 0034).
+ */
 function readTemplates(): TemplateSources {
   const root = templateRoot();
   return {
     agent: readFileSync(path.join(root, "agent.mjs"), "utf8"),
-    fingerprint: readFileSync(path.join(root, "brief-fingerprint.mjs"), "utf8"),
+    sdk: readFileSync(
+      path.join(repoRoot(), "agent-kit", "template", "dash-agent-sdk.mjs"),
+      "utf8",
+    ),
     openInDash: readFileSync(path.join(repoRoot(), "tools", "dash-mcp", "dist", "open-in-dash.mjs"), "utf8"),
   };
 }
@@ -305,10 +317,10 @@ function folderNotes(directory: string, verdict: ManifestVerdict): Record<string
         "say plainly that it cannot run it — no registration is written for a folder with no program.",
     );
   }
-  if (!existsSync(path.join(directory, "brief-fingerprint.mjs"))) {
+  if (!existsSync(path.join(directory, "dash-agent-sdk.mjs"))) {
     notes.push(
-      "There is no brief-fingerprint.mjs. An agent scaffolded by this tool imports it, and " +
-        "one that emits a brief without it will fail on its first line.",
+      "There is no dash-agent-sdk.mjs. An agent scaffolded by this tool imports it on its " +
+        "first line, so one shipped without it cannot start at all.",
     );
   }
   if (verdict.ok && existsSync(path.join(directory, PROGRAM_FILE))) {

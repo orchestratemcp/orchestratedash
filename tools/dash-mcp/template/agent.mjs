@@ -1,26 +1,24 @@
 /**
  * Your agent.
  *
- * One file, no dependencies, and five things wired for you:
+ * ## The two files, and which one is yours
  *
- * 1. **DASH can watch it.** It publishes what it is doing on stdout, in the
- *    shape DASH's runner understands, every couple of seconds.
- * 2. **DASH can control it.** Retry, pause, resume and cancel arrive on stdin
- *    and are acknowledged. An unacknowledged command is reported as
- *    unacknowledged rather than assumed to have worked.
- * 3. **It records what it did.** Every run appends telemetry v1 events to
- *    `runs/events.jsonl` and emits them on the runner pipe.
- * 4. **It records what it produced.** A `digest` artifact — the raw roundup,
- *    every item carrying the address it came from.
- * 5. **It produces something that can be judged.** A `brief` artifact: a short
- *    document about that digest, whose every paragraph cites the items it is
- *    talking about by position, bound to the exact list it was written from.
+ * **This one.** `runOnce` below is the work — what it reads, what it collects,
+ * and the document it writes about what it found. Everything under `runOnce` is
+ * yours to change.
  *
- * The part that is yours is `runOnce`. Everything below it is plumbing you
- * should be able to ignore, and `brief-fingerprint.mjs` is the one file you
- * should not touch at all — see its own header.
+ * `dash-agent-sdk.mjs` beside it is the runtime, and it is **not** yours: DASH
+ * upgrades that file in place, by version, so an edit there is an edit a later
+ * upgrade discards. It publishes progress, answers DASH's commands, records
+ * telemetry, and hands DASH both of this run's documents — including the
+ * fingerprint that binds the brief to its evidence, which is one half of a
+ * function DASH holds the other half of. Read its header once; after that you
+ * should be able to ignore it.
  *
- * ## Why the brief exists, and why it is a second document
+ * `agent.manifest.json` is what DASH holds this agent to, and it is generated
+ * rather than typed: change it through the tool that built this folder.
+ *
+ * ## What a run produces, and why it is two documents
  *
  * "One RAW and one curated. Don't mix them." The digest is the evidence and it
  * is never edited by the act of writing about it; the brief is the account, and
@@ -28,11 +26,10 @@
  * paragraph carries `items`: zero-based positions into the digest's own array.
  *
  * That only means anything if both documents are talking about the same list,
- * which is what `derived_from` is for. It carries the digest's id, its run, how
- * many items it had, and a fingerprint of them in order. DASH recomputes that
- * fingerprint from the digest it holds; if it differs, the brief is drawn with
- * **no citations at all**, because a link under a claim it does not support is
- * worse than no link.
+ * which is what `derived_from` is for — the runtime fills it in from the exact
+ * digest it sent. DASH recomputes that fingerprint from the digest it holds; if
+ * it differs, the brief is drawn with **no citations at all**, because a link
+ * under a claim it does not support is worse than no link.
  *
  * This is what makes an agent's output adjudicable rather than merely readable.
  *
@@ -40,36 +37,31 @@
  *
  * This agent starts idle and stays idle. No run begins at startup and no timer
  * starts one, because an agent that reaches out to the network the instant it
- * is added has acted before the person who added it has seen what it does.
- *
- * It publishes one task — "Waiting to be run" — which is what DASH's Run now
- * targets. That task is load-bearing rather than decoration: a `retry` command
- * has to name a run or a task, and a freshly added agent has no runs. Without
- * it there is nothing for the control to point at.
+ * is added has acted before the person who added it has seen what it does. It
+ * publishes one task — "Waiting to be run" — which is what DASH's Run now
+ * targets.
  *
  * ## The one rule worth knowing
  *
  * Write your own logging with `log()`, never `console.log`. Anything that is
- * not one of this protocol's messages is forwarded to DASH's log, which is
- * fine and deliberate — but a stray `console.log` of an object that happens to
- * have a `type` field would be read as a protocol message. `log()` prefixes its
+ * not one of the protocol's messages is forwarded to DASH's log, which is fine
+ * and deliberate — but a stray `console.log` of an object that happens to have
+ * a `type` field would be read as a protocol message. `log()` prefixes its
  * output so that cannot happen.
  */
 
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { fingerprintItems } from "./brief-fingerprint.mjs";
+import { log, readManifest, startAgent } from "./dash-agent-sdk.mjs";
 
 const projectDir = path.dirname(fileURLToPath(import.meta.url));
 const sourcesFile = path.join(projectDir, "sources.json");
 const reportsDir = path.join(projectDir, "reports");
-const runsDir = path.join(projectDir, "runs");
 
-/** How often the agent tells DASH what it is doing. */
-const PUBLISH_INTERVAL_MS = 2_000;
+const MANIFEST = readManifest(projectDir);
+const AGENT_NAME = String(MANIFEST?.agent?.name ?? "agent");
 
 /** How long one source gets before the agent gives up on it and says so. */
 const FETCH_TIMEOUT_MS = 15_000;
@@ -409,335 +401,16 @@ function isoDate(value) {
 }
 
 /* ---------------------------------------------------------------------- *
- * Talking to DASH
+ * Starting up
  * ---------------------------------------------------------------------- */
 
-/** One protocol message. Newline-delimited JSON on this process's own stdout. */
-function send(message) {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
-}
-
-/** Ordinary logging. Goes to DASH's log; never mistaken for a protocol message. */
-function log(line) {
-  process.stdout.write(`[agent] ${line}\n`);
-}
-
-const MANIFEST = (() => {
-  /*
-   * Two locations, because DASH's copy is not the author's folder.
-   *
-   * On import DASH splits the project: the manifest is written to
-   * `<agents>/<name>/agent.manifest.json` and the program runs from
-   * `<agents>/<name>/code/`. Looking only beside this file finds the manifest
-   * in the author's own project and misses it inside DASH.
-   *
-   * That miss is not cosmetic. `AGENT_NAME` below is stamped on every event
-   * and every artifact, and `ingestArtifacts` in DASH rejects anything whose
-   * `/agent` does not match the agent DASH spawned. An agent that cannot read
-   * its own manifest therefore runs perfectly, writes its report, and has
-   * every artifact silently discarded — on screen, "Nothing has run yet",
-   * forever.
-   */
-  const candidates = [
-    path.join(projectDir, "agent.manifest.json"),
-    path.join(projectDir, "..", "agent.manifest.json"),
-  ];
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(readFileSync(candidate, "utf8"));
-    } catch {
-      // Not this layout. Try the next one.
-    }
-  }
-  return null;
-})();
-
-const AGENT_NAME = String(MANIFEST?.agent?.name ?? "agent");
-
-if (MANIFEST === null) {
-  // Said out loud, because the consequence is invisible otherwise: every
-  // artifact this run produces will be refused by DASH for a name mismatch.
-  log("could not read agent.manifest.json beside this file or one level up; running as \"agent\", and DASH will refuse this run's artifacts");
-}
-
-const ingestUrl = process.env.DASH_INGEST_URL;
-const ingestToken = process.env.DASH_INGEST_TOKEN;
-
-/**
- * Emit one telemetry v1 event.
- *
- * Always to disk, and to DASH as well when this process was given somewhere to
- * post. The local file is the primary record on purpose: an agent whose history
- * exists only in whatever happened to be listening is an agent with no history.
- */
-function emit(event) {
-  const emitted = { event_version: 1, agent: AGENT_NAME, ...event };
-  const line = JSON.stringify(emitted);
-  try {
-    mkdirSync(runsDir, { recursive: true });
-    appendFileSync(path.join(runsDir, "events.jsonl"), `${line}\n`, "utf8");
-  } catch (error) {
-    log(`could not record an event: ${String(error)}`);
-  }
-
-  send({ type: "telemetry", event: emitted });
-
-  if (ingestUrl === undefined) {
-    return;
-  }
-  const headers = { "content-type": "application/json" };
-  if (ingestToken !== undefined) {
-    headers.authorization = `Bearer ${ingestToken}`;
-  }
-  // Fire and forget: a monitor that is not listening must not stop the work.
-  fetch(ingestUrl, { method: "POST", headers, body: line }).catch(() => {});
-}
-
-function sendArtifact(artifact) {
-  send({ type: "artifact", artifact });
-}
-
-/* ---------------------------------------------------------------------- *
- * State
- * ---------------------------------------------------------------------- */
-
-/** The task DASH's Run now targets. See the module header on why it exists. */
-const READY_TASK_ID = "waiting-to-be-run";
-
-/**
- * Fixed at startup rather than recomputed on every publish. A `created_at` that
- * moved every two seconds would make a task that has sat untouched since the
- * agent started look like it had just been created, every time anybody looked.
- */
-const READY_TASK_CREATED_AT = new Date().toISOString();
-
-const state = {
-  status: "ready",
-  runs: [],
-  tasks: [],
-  paused: false,
-  current: null,
-};
-
-/**
- * Publish what the agent knows about itself.
- *
- * Note what is not here: any claim about whether this process is alive. The
- * runner owns that, because it started the process and this process cannot
- * honestly report its own death.
- */
-function publish() {
-  const waiting = {
-    id: READY_TASK_ID,
-    label: state.paused ? "Paused" : "Waiting to be run",
-    status: state.current === null ? "pending" : "in_progress",
-    created_at: READY_TASK_CREATED_AT,
-  };
-  send({
-    type: "state",
-    state: {
-      status: state.paused ? "paused" : state.status,
-      runs: state.runs.slice(-10),
-      tasks: [waiting, ...state.tasks.slice(-20)],
-    },
-  });
-}
-
-function startRun() {
-  const runId = randomUUID();
-  const startedAt = new Date().toISOString();
-  let seq = 0;
-
-  const run = { id: runId, status: "running", started_at: startedAt, progress: 0 };
-  state.runs.push(run);
-  state.status = "running";
-  emit({ run_id: runId, seq: seq++, ts: startedAt, type: "run_started" });
-
-  const step = (componentId, label) => {
-    const ts = new Date().toISOString();
-    state.tasks.push({
-      id: randomUUID(),
-      run_id: runId,
-      label,
-      status: "in_progress",
-      created_at: ts,
-    });
-    run.current_step = componentId;
-    run.progress = Math.min(0.9, run.progress + 0.3);
-    emit({ run_id: runId, seq: seq++, ts, type: "step_started", component_id: componentId });
-    publish();
-  };
-
-  /**
-   * The digest, and the list the brief will be checked against.
-   *
-   * Held in `emitted` after it is sent so `brief` below can fingerprint exactly
-   * the array DASH received. Recomputing it from a second read of the same
-   * sources would be a different list and would fail the join for a reason
-   * nobody could see.
-   */
-  const emitted = { digest: null };
-
-  const digest = (body) => {
-    const artifact = {
-      artifact_version: 1,
-      agent: AGENT_NAME,
-      run_id: runId,
-      artifact_id: `digest-${runId}`,
-      kind: "digest",
-      generated_at: new Date().toISOString(),
-      ...body,
-    };
-    emitted.digest = artifact;
-    sendArtifact(artifact);
-  };
-
-  const brief = (body) => {
-    if (emitted.digest === null) {
-      // A brief with nothing to derive from is not a brief. Refusing here is
-      // better than emitting one with a fingerprint of an empty list, which
-      // would be a document claiming evidence that does not exist.
-      log("a brief was composed before its digest; not sending it");
-      return;
-    }
-    const items = emitted.digest.items;
-    sendArtifact({
-      artifact_version: 2,
-      agent: AGENT_NAME,
-      run_id: runId,
-      artifact_id: `brief-${runId}`,
-      kind: "brief",
-      generated_at: new Date().toISOString(),
-      derived_from: {
-        artifact_id: emitted.digest.artifact_id,
-        run_id: runId,
-        item_count: items.length,
-        items_digest: fingerprintItems(items),
-      },
-      ...body,
-    });
-  };
-
-  const finish = (type, detail, status) => {
-    run.status = status;
-    run.progress = 1;
-    run.finished_at = new Date().toISOString();
-    for (const task of state.tasks) {
-      if (task.run_id === runId && task.status === "in_progress") {
-        task.status = status === "completed" ? "completed" : status;
-      }
-    }
-    state.status = "ready";
-    state.current = null;
-    emit({ run_id: runId, seq: seq++, ts: run.finished_at, type, detail });
-    publish();
-  };
-
-  state.current = {
-    runId,
-    cancel: () => finish("run_failed", "Cancelled from DASH.", "cancelled"),
-  };
-
-  runOnce({ step, digest, brief })
-    .then((detail) => {
-      if (state.current?.runId === runId || run.status === "running") {
-        finish("run_completed", detail, "completed");
-      }
-    })
-    .catch((error) => {
-      finish("run_failed", String(error instanceof Error ? error.message : error), "failed");
-    });
-
-  return runId;
-}
-
-/* ---------------------------------------------------------------------- *
- * Commands from DASH
- * ---------------------------------------------------------------------- */
-
-/**
- * Handle one command and say what happened.
- *
- * Returning `{ ok: false }` is a refusal and DASH shows it as one. That is a
- * better answer than silently ignoring a command DASH offered: a control that
- * does nothing is worse than a control that says no.
- */
-function handleCommand(message) {
-  switch (message.command) {
-    case "retry":
-      if (state.current !== null) {
-        return { ok: false, detail: "A run is already in progress." };
-      }
-      if (state.paused) {
-        return { ok: false, detail: "This agent is paused. Resume it first." };
-      }
-      startRun();
-      return { ok: true, detail: "Started a new run." };
-
-    case "pause":
-      state.paused = true;
-      publish();
-      return { ok: true, detail: "Paused. No run will start until you resume it." };
-
-    case "resume":
-      state.paused = false;
-      publish();
-      return { ok: true, detail: "Resumed. It still only runs when you ask it to." };
-
-    case "cancel":
-      if (state.current === null) {
-        return { ok: false, detail: "There is no run to cancel." };
-      }
-      state.current.cancel();
-      return { ok: true, detail: "Cancelled the current run." };
-
-    default:
-      // Everything else, including the three approval verbs this agent's
-      // manifest deliberately does not declare.
-      return { ok: false, detail: `This agent does not support "${String(message.command)}".` };
-  }
-}
-
-let buffer = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  buffer += chunk;
-  let newline = buffer.indexOf("\n");
-  while (newline !== -1) {
-    const line = buffer.slice(0, newline);
-    buffer = buffer.slice(newline + 1);
-    newline = buffer.indexOf("\n");
-
-    let message;
-    try {
-      message = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (message?.type !== "command") {
-      continue;
-    }
-
-    const result = handleCommand(message);
-    // Acknowledgement is mandatory. A line written to a pipe proves nothing
-    // about whether this process read it, so DASH settles an unacknowledged
-    // command as unacknowledged rather than as success.
-    send({ type: "ack", command_id: message.command_id, ok: result.ok, detail: result.detail });
-  }
+startAgent({
+  definition: {
+    projectDir,
+    // Three steps, so each one moves the bar a third of the way. The runtime
+    // caps it at 0.9 until the run actually ends.
+    stepProgress: 0.3,
+    ready: () => `ready, watching ${String(readSources().length)} sources; waiting to be run`,
+  },
+  runOnce,
 });
-
-/* ---------------------------------------------------------------------- *
- * Running
- * ---------------------------------------------------------------------- */
-
-process.on("SIGTERM", () => {
-  log("stopping");
-  process.exit(0);
-});
-
-log(`ready, watching ${String(readSources().length)} sources; waiting to be run`);
-publish();
-
-// No run here, and no timer. See the module header: this agent acts when a
-// person asks it to, and not before.
-setInterval(publish, PUBLISH_INTERVAL_MS).unref?.();

@@ -550,16 +550,22 @@ await Promise.all([
 ]);
 
 /**
- * The generated agent, copied verbatim beside the bundles.
+ * The generated agent and the runtime it imports, copied verbatim beside the
+ * bundles.
  *
  * Same placement argument as the renderer below: `electron/sample-agent.ts`
- * resolves it relative to `import.meta.url`, which is the one anchor that holds
- * in a development tree and under an immutable MSIX install root alike.
+ * resolves them relative to `import.meta.url`, which is the one anchor that
+ * holds in a development tree and under an immutable MSIX install root alike.
+ *
+ * Two files rather than one since MAR-887. `agent.mjs` imports
+ * `dash-agent-sdk.mjs` by relative path, and copying one without the other
+ * produces a sample that is written, imported and registered and then dies on
+ * its first line — which is why `assertSampleTemplatesPresent` checks for both
+ * at startup rather than trusting this loop (ADR 0034).
  */
-copyFileSync(
-  path.join(repoRoot, "agent-kit", "template", "agent.mjs"),
-  path.join(kitDir, "agent.mjs"),
-);
+for (const file of ["agent.mjs", "dash-agent-sdk.mjs"]) {
+  copyFileSync(path.join(repoRoot, "agent-kit", "template", file), path.join(kitDir, file));
+}
 
 /**
  * The packaged renderer (MAR-432).

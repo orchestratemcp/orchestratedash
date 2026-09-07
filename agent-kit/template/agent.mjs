@@ -1,24 +1,21 @@
 /**
  * Your agent.
  *
- * One file, no dependencies, and four things wired for you:
+ * ## The two files, and which one is yours
  *
- * 1. **DASH can watch it.** It publishes what it is doing on stdout, in the
- *    shape DASH's runner understands, every couple of seconds.
- * 2. **DASH can control it.** Pause, resume, cancel and retry arrive on stdin
- *    and are acknowledged. An unacknowledged command is reported as
- *    unacknowledged rather than assumed to have worked, so the acknowledgement
- *    below is not a formality.
- * 3. **It records what it did.** Every run appends events to `runs/events.jsonl`
- *    in the telemetry v1 format and emits them on the runner pipe. An agent run
- *    outside the bundled runner can still post to DASH when explicitly given a
- *    remote ingest URL.
- * 4. **It records what it produced.** The digest is written to `reports/` and
- *    emitted as a run artifact, so DASH can show it with its sources attached
- *    rather than merely reporting that a run finished.
+ * **This one.** `runOnce` below is the work, and everything under it — the
+ * sources, the feed parsing, the summarising — is yours to change.
  *
- * The part that is yours is `runOnce`. Everything else is plumbing you should
- * be able to ignore.
+ * `dash-agent-sdk.mjs` beside it is the runtime, and it is **not** yours: DASH
+ * upgrades that file in place, by version, so an edit there is an edit a later
+ * upgrade discards. It is what publishes progress, answers DASH's commands,
+ * records telemetry, hands over what the run produced, and reaches accounts
+ * through DASH without ever holding a credential. Read its header once; after
+ * that you should be able to ignore it.
+ *
+ * `agent.manifest.json` is what DASH holds this agent to. Change what the agent
+ * is allowed to do there, and run `npm run open-in-dash` again so DASH can ask
+ * about the change.
  *
  * ## It does not run until you ask it to
  *
@@ -28,32 +25,33 @@
  * does. It publishes one task — "Waiting to be run" — which is what DASH's
  * Run now targets.
  *
- * That task is load-bearing, not decoration: `contracts/agent-command.schema.json`
- * requires a `retry` command to name a `run_id` or a `task_id`, and a
- * freshly-added agent has no runs. Without the task there is nothing for the
- * control to point at and the agent cannot be started at all.
- *
  * ## The one rule worth knowing
  *
  * Write your own logging with `log()`, not `console.log`. Anything that is not
- * one of this protocol's messages is treated as ordinary logging and forwarded
+ * one of the protocol's messages is treated as ordinary logging and forwarded
  * to DASH's log — which is fine and deliberate — but a stray `console.log` of a
  * JSON object that happens to have a `type` field would be read as a protocol
  * message. `log()` prefixes its output so that cannot happen.
  */
 
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { ask, log, readManifest, startAgent } from "./dash-agent-sdk.mjs";
 
 const projectDir = path.dirname(fileURLToPath(import.meta.url));
 const sourcesFile = path.join(projectDir, "sources.json");
 const reportsDir = path.join(projectDir, "reports");
-const runsDir = path.join(projectDir, "runs");
 
-/** How often the agent tells DASH what it is doing. */
-const PUBLISH_INTERVAL_MS = 2_000;
+/**
+ * This agent's own manifest, or null when it cannot be read.
+ *
+ * Read rather than hard-coded so that renaming the agent is one edit in one
+ * place — and the place is the manifest, which is the document DASH holds this
+ * agent to.
+ */
+const MANIFEST = readManifest(projectDir);
 
 /** How long one source gets before the agent gives up on it and says so. */
 const FETCH_TIMEOUT_MS = 15_000;
@@ -84,16 +82,16 @@ const CURATE_CAPABILITY_SUFFIX = ".digest.curate";
 /**
  * One run.
  *
- * `report` is how you say what happened; `step` marks a stage of the work so
- * DASH can show progress and so the run's events say more than "it started and
- * then it stopped". `artifact` is how you hand DASH what the run produced.
+ * `step` marks a stage of the work so DASH can show progress and so the run's
+ * events say more than "it started and then it stopped". `artifact` is how you
+ * hand DASH what the run produced.
  *
- * To reach an account the user connected, call `ask(...)` — it is in scope here
- * rather than passed in, because it is not part of one run's plumbing. Reading
- * the news feeds themselves needs nobody's password, and this agent uses `ask`
- * for one thing only: handing what it found to a model, so the digest is
- * grouped and summarised rather than listed. See `curate`, and see `ask`'s own
- * comment for why no token is ever in scope here.
+ * To reach an account the user connected, call `ask(...)` — imported at the top
+ * of this file rather than passed in, because it is not part of one run's
+ * plumbing. Reading the news feeds themselves needs nobody's password, and this
+ * agent uses `ask` for one thing only: handing what it found to a model, so the
+ * digest is grouped and summarised rather than listed. See `curate`, and see
+ * `ask`'s own comment in the SDK for why no token is ever in scope here.
  *
  * That call **costs the owner money**, which is why it is the one part of this
  * run that can be refused for a reason nothing is wrong with: DASH only pays
@@ -541,520 +539,16 @@ function readGroups(candidate, available) {
 }
 
 /* ---------------------------------------------------------------------- *
- * Talking to DASH
+ * Starting up
  * ---------------------------------------------------------------------- */
 
-function send(message) {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
-}
-
-/** Ordinary logging. Goes to DASH's log; never mistaken for a protocol message. */
-function log(line) {
-  process.stdout.write(`[agent] ${line}\n`);
-}
-
-/* ---------------------------------------------------------------------- *
- * Reaching an account through DASH
- * ---------------------------------------------------------------------- */
-
-/**
- * Ask DASH to do one named thing with an account you connected.
- *
- * ## There is no token here, and there is not meant to be
- *
- * Look at what this agent's environment contains: no API key for your mail, no
- * OAuth token, nothing you could use to reach a provider directly. That is
- * deliberate. DASH holds the sign-in and performs the operation itself, so the
- * most a compromised agent — or a careless one, or one that read a hostile email
- * and did what it said — can do is ask for an operation on the list, and be
- * refused for anything else.
- *
- * ## What you can ask for
- *
- * Whatever DASH implements and you connected and the user approved: all three,
- * intersected. Today that is `gmail.search`, `gmail.message.read`,
- * `gmail.draft.create` and `<provider>.digest.curate`. There is no operation
- * that sends anything, and asking for one is refused rather than queued — so an
- * agent built on this cannot mail somebody by accident.
- *
- * `<provider>.digest.curate` is the one that **costs the user money**, and it
- * carries a condition none of the others do: DASH answers it only while a run
- * the user asked for is going. An agent that calls it on a timer, or long after
- * its run finished, is refused with `needs_a_person` — which is not a fault and
- * should not be reported as one. Ask for it during your run or not at all.
- *
- * `gmail.draft.create` is the one that changes something. It saves a reply in
- * the user's own Drafts folder, where they can send it or delete it themselves.
- * You supply `to`, `subject`, `body_text` and optionally `thread_id`; DASH
- * writes the message, so there is no header for you to set and no sender for you
- * to choose. A recipient carrying a newline is refused rather than cleaned up.
- *
- * ## Handle the refusal
- *
- * `{ ok: false, refusal }` is a normal outcome, not an exception. `revoked`
- * means the person withdrew access and no amount of retrying will change it;
- * `not_connected` means they never granted it; `no_model_chosen` means they
- * connected a model provider and never said which model to use;
- * `needs_a_person` means no run they asked for is open; `rate_limited` means
- * slow down.
- * DASH shows the user a sentence for each of these on its Connections page, so
- * your job is to stop cleanly rather than to explain.
- *
- * A request that DASH never answers — because DASH is closed, which is the
- * ordinary case for an agent that outlives it — settles as `broker_unavailable`
- * after the timeout below.
- */
-const BROKER_TIMEOUT_MS = 30_000;
-
-const pendingBrokerRequests = new Map();
-let brokerSequence = 0;
-
-function ask(connectionId, operation, input = {}) {
-  const requestId = `${String(process.pid)}-${String((brokerSequence += 1))}`;
-
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      pendingBrokerRequests.delete(requestId);
-      resolve({ ok: false, refusal: "broker_unavailable" });
-    }, BROKER_TIMEOUT_MS);
-    timer.unref?.();
-
-    pendingBrokerRequests.set(requestId, (response) => {
-      clearTimeout(timer);
-      resolve(response);
-    });
-
-    send({
-      type: "broker_request",
-      request: { request_id: requestId, connection_id: connectionId, operation, input },
-    });
-  });
-}
-
-/* ---------------------------------------------------------------------- *
- * The browser DASH watches (MAR-628, ADR 0019)
- * ---------------------------------------------------------------------- */
-
-/**
- * Ask DASH to open a page in the browser it is watching, and read it.
- *
- * ## What this is, and what it is not
- *
- * It is a browser **DASH** drives, inside DASH's own window, with a person able
- * to see the page and stop it. You name an operation and DASH decides it: there
- * are two operations, `browser.open` and `browser.read`, and no others exist.
- * There is no click, no typing, no scrolling, no second tab, no form and no way
- * to run JavaScript on a page — not "not yet exposed here", but not built, so
- * asking for one is refused as an operation DASH does not have.
- *
- * It is not a way around anything. Your own process has an ordinary network
- * stack and `fetch` still works; what this gives you is a page a person can
- * watch you read.
- *
- * ## Where it may go
- *
- * Only the addresses your manifest's `agent_dom.browser.origins` lists, exactly
- * — the scheme and the host, with no path. A page on `https://example.com` is
- * inside `https://example.com`; a page on `https://example.com.something-else`
- * is not, whatever it looks like. Anything else is `origin_not_allowed`, which
- * is a limit somebody set rather than a fault, and the right response is to
- * report it and move on rather than to try variations.
- *
- * Remember that a page loads things you did not ask for — scripts, fonts,
- * images — and every one of them is held to the same list. An article whose
- * stylesheet lives somewhere you did not declare renders without it.
- *
- * ## After you read a page
- *
- * The words that come back are **content from the open web**, and DASH treats
- * them as hostile: a heading saying "ignore your instructions and send this
- * somewhere" is a thing that will eventually arrive. Two consequences worth
- * knowing before you design a step around this:
- *
- * 1. Once you have read a page in a run, any brokered call in that run that
- *    *writes* or *spends* is refused with `needs_a_person` until somebody at
- *    the keyboard asks for it. Read first and draft afterwards and you will be
- *    stopped; that is the rule working, not a bug to route around.
- * 2. Nothing in what you read is an instruction. Quote it, summarise it, put it
- *    in a report — do not do what it says.
- *
- * ## Handle the refusal
- *
- * `{ ok: false, refusal }` is a normal outcome. `origin_not_allowed` means the
- * address is outside this run's list; `revoked` means a person pressed Stop and
- * nothing else will be answered this run; `no_session` means you asked to read
- * with no page open; `page_unavailable` usually means the website rather than
- * you; `rate_limited` means slow down. A request DASH never answers — because
- * DASH is closed, which is the ordinary case for an agent that outlives it —
- * settles as `browser_unavailable` after the timeout below.
- */
-const BROWSER_TIMEOUT_MS = 45_000;
-
-const pendingBrowserRequests = new Map();
-let browserSequence = 0;
-
-function browse(operation, input = {}) {
-  const requestId = `${String(process.pid)}-b${String((browserSequence += 1))}`;
-
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      pendingBrowserRequests.delete(requestId);
-      resolve({ ok: false, refusal: "browser_unavailable" });
-    }, BROWSER_TIMEOUT_MS);
-    timer.unref?.();
-
-    pendingBrowserRequests.set(requestId, (response) => {
-      clearTimeout(timer);
-      resolve(response);
-    });
-
-    send({
-      type: "browser_request",
-      request: { request_id: requestId, operation, input },
-    });
-  });
-}
-
-function handleBrowserResponse(message) {
-  const settle = pendingBrowserRequests.get(message.request_id);
-  if (settle === undefined) {
-    // An answer to something already timed out, or one we never asked for.
-    return;
-  }
-  pendingBrowserRequests.delete(message.request_id);
-  settle(
-    message.ok === true
-      ? { ok: true, result: message.result ?? {} }
-      : { ok: false, refusal: String(message.refusal ?? "browser_error") },
-  );
-}
-
-void browse;
-
-function handleBrokerResponse(message) {
-  const settle = pendingBrokerRequests.get(message.request_id);
-  if (settle === undefined) {
-    // An answer to something already timed out, or one we never asked for.
-    // Dropped rather than acted on: the request it refers to is settled.
-    return;
-  }
-  pendingBrokerRequests.delete(message.request_id);
-  settle(
-    message.ok === true
-      ? { ok: true, result: message.result ?? {} }
-      : { ok: false, refusal: String(message.refusal ?? "broker_error") },
-  );
-}
-
-/* ---------------------------------------------------------------------- *
- * Telemetry v1
- * ---------------------------------------------------------------------- */
-
-/**
- * The agent's own name, read from the manifest beside this file.
- *
- * Read rather than hard-coded so that renaming the agent is one edit in one
- * place — and the place is the manifest, which is the document DASH holds this
- * agent to. A fallback rather than a crash: the name is a monitoring detail,
- * not a precondition for doing the work.
- */
-const MANIFEST = (() => {
-  // In the author's project the manifest is beside this file. After DASH
-  // acquires the project, code lives in `code/` under the authoritative agent
-  // folder and the manifest lives one level above it. Accept both standings so
-  // the same source runs before and after import without an injected path.
-  for (const manifestPath of [
-    path.join(projectDir, "agent.manifest.json"),
-    path.join(projectDir, "..", "agent.manifest.json"),
-  ]) {
-    try {
-      return JSON.parse(readFileSync(manifestPath, "utf8"));
-    } catch {
-      // Try the other supported layout.
-    }
-  }
-  // Null rather than a throw: the manifest is how this agent describes itself
-  // to DASH, and a copy of it that cannot be read is a reason to run plainly
-  // rather than a reason not to run. Every reader below treats null as "this
-  // agent declares nothing", which is the true and harmless reading.
-  return null;
-})();
-
-const AGENT_NAME = String(MANIFEST?.agent?.name ?? "agent");
-
-const ingestUrl = process.env.DASH_INGEST_URL;
-const ingestToken = process.env.DASH_INGEST_TOKEN;
-
-/**
- * Emit one telemetry v1 event.
- *
- * Always to disk, and to DASH as well when this process was given somewhere to
- * post. The local file is the primary record on purpose: an agent whose history
- * exists only in whatever happened to be listening is an agent with no history.
- *
- * `seq` is monotonic within a run, which is what lets a monitor spot a gap.
- */
-function emit(event) {
-  const emitted = { event_version: 1, agent: AGENT_NAME, ...event };
-  const line = JSON.stringify(emitted);
-  try {
-    mkdirSync(runsDir, { recursive: true });
-    appendFileSync(path.join(runsDir, "events.jsonl"), `${line}\n`, "utf8");
-  } catch (error) {
-    log(`could not record an event: ${String(error)}`);
-  }
-
-  // The runner frames and buffers this candidate. Electron main applies the
-  // canonical telemetry schema at ingest, exactly as POST /api/events does.
-  send({ type: "telemetry", event: emitted });
-
-  if (ingestUrl === undefined) {
-    return;
-  }
-  const headers = { "content-type": "application/json" };
-  if (ingestToken !== undefined) {
-    headers.authorization = `Bearer ${ingestToken}`;
-  }
-  // Fire and forget: a monitor that is not listening must not stop the work.
-  fetch(ingestUrl, { method: "POST", headers, body: line }).catch(() => {});
-}
-
-/**
- * Hand DASH what a run produced.
- *
- * `artifact_id` is stable for the run, so re-sending a revised digest corrects
- * the one DASH holds rather than adding a second answer to the same question.
- * The file in `reports/` remains the primary record; this is the copy DASH can
- * render, and losing it costs the user nothing they cannot still open.
- */
-function emitArtifact(runId, digest) {
-  send({
-    type: "artifact",
-    artifact: {
-      artifact_version: 1,
-      agent: AGENT_NAME,
-      run_id: runId,
-      artifact_id: `digest-${runId}`,
-      kind: "digest",
-      ...digest,
-    },
-  });
-}
-
-/* ---------------------------------------------------------------------- *
- * State
- * ---------------------------------------------------------------------- */
-
-/** The task DASH's Run now targets. See the module header on why it exists. */
-const READY_TASK_ID = "waiting-to-be-run";
-
-/**
- * Fixed at startup rather than recomputed on every publish. A `created_at` that
- * moved every two seconds would make a task that has sat untouched since the
- * agent started look like it had just been created, every time anybody looked.
- */
-const READY_TASK_CREATED_AT = new Date().toISOString();
-
-const state = {
-  /** "running" | "paused" | "ready" — what a live agent may call itself. */
-  status: "ready",
-  runs: [],
-  tasks: [],
-  paused: false,
-  /** Set while a run is in flight, so a cancel can reach it. */
-  current: null,
-};
-
-/**
- * Publish what the agent knows about itself.
- *
- * Note what is *not* here: any claim about whether this process is alive. The
- * runner owns that, because it started the process and this process cannot
- * honestly report its own death. Sending `status: "running"` from a program
- * that is about to crash is exactly the report that would make DASH draw a
- * healthy agent forever.
- */
-function publish() {
-  // No `run_id`: this task belongs to no run, which is the whole point of it —
-  // it is the work the agent is waiting to be given. The state contract allows
-  // the omission for exactly this case.
-  const waiting = {
-    id: READY_TASK_ID,
-    label: state.paused ? "Paused" : "Waiting to be run",
-    status: state.current === null ? "pending" : "in_progress",
-    created_at: READY_TASK_CREATED_AT,
-  };
-  send({
-    type: "state",
-    state: {
-      status: state.paused ? "paused" : state.status,
-      runs: state.runs.slice(-10),
-      tasks: [waiting, ...state.tasks.slice(-20)],
-    },
-  });
-}
-
-function startRun() {
-  const runId = randomUUID();
-  const startedAt = new Date().toISOString();
-  let seq = 0;
-
-  const run = { id: runId, status: "running", started_at: startedAt, progress: 0 };
-  state.runs.push(run);
-  state.status = "running";
-  emit({ run_id: runId, seq: seq++, ts: startedAt, type: "run_started" });
-
-  const step = (componentId, label) => {
-    const ts = new Date().toISOString();
-    state.tasks.push({
-      id: randomUUID(),
-      run_id: runId,
-      label,
-      status: "in_progress",
-      created_at: ts,
-    });
-    run.current_step = componentId;
-    run.progress = Math.min(0.9, run.progress + 0.4);
-    emit({ run_id: runId, seq: seq++, ts, type: "step_started", component_id: componentId });
-    publish();
-  };
-
-  const artifact = (digest) => {
-    emitArtifact(runId, digest);
-  };
-
-  const finish = (type, detail, status) => {
-    run.status = status;
-    run.progress = 1;
-    run.finished_at = new Date().toISOString();
-    for (const task of state.tasks) {
-      if (task.run_id === runId && task.status === "in_progress") {
-        task.status = status === "completed" ? "completed" : status;
-      }
-    }
-    state.status = "ready";
-    state.current = null;
-    emit({ run_id: runId, seq: seq++, ts: run.finished_at, type, detail });
-    publish();
-  };
-
-  state.current = { runId, cancel: () => finish("run_failed", "Cancelled from DASH.", "cancelled") };
-
-  runOnce({ step, artifact })
-    .then((detail) => {
-      if (state.current?.runId === runId || run.status === "running") {
-        finish("run_completed", detail, "completed");
-      }
-    })
-    .catch((error) => {
-      finish("run_failed", String(error instanceof Error ? error.message : error), "failed");
-    });
-
-  return runId;
-}
-
-/* ---------------------------------------------------------------------- *
- * Commands from DASH
- * ---------------------------------------------------------------------- */
-
-/**
- * Handle one command and say what happened.
- *
- * Returning `{ ok: false }` is a refusal, and DASH shows it as one. That is a
- * better answer than silently ignoring a command DASH offered — a control that
- * does nothing is worse than a control that says no.
- */
-function handleCommand(message) {
-  switch (message.command) {
-    case "retry":
-      if (state.current !== null) {
-        return { ok: false, detail: "A run is already in progress." };
-      }
-      if (state.paused) {
-        return { ok: false, detail: "This agent is paused. Resume it first." };
-      }
-      startRun();
-      return { ok: true, detail: "Started a new run." };
-
-    case "pause":
-      state.paused = true;
-      publish();
-      return { ok: true, detail: "Paused. No run will start until you resume it." };
-
-    case "resume":
-      state.paused = false;
-      publish();
-      return { ok: true, detail: "Resumed. It still only runs when you ask it to." };
-
-    case "cancel":
-      if (state.current === null) {
-        return { ok: false, detail: "There is no run to cancel." };
-      }
-      state.current.cancel();
-      return { ok: true, detail: "Cancelled the current run." };
-
-    default:
-      // Everything else, including the three approval verbs this agent's
-      // manifest deliberately does not declare.
-      return { ok: false, detail: `This agent does not support "${String(message.command)}".` };
-  }
-}
-
-let buffer = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  buffer += chunk;
-  let newline = buffer.indexOf("\n");
-  while (newline !== -1) {
-    const line = buffer.slice(0, newline);
-    buffer = buffer.slice(newline + 1);
-    newline = buffer.indexOf("\n");
-
-    let message;
-    try {
-      message = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
-    if (message?.type === "broker_response" && typeof message.request_id === "string") {
-      handleBrokerResponse(message);
-      continue;
-    }
-
-    // MAR-628. Its own message type beside the broker's rather than a shared
-    // one, because a browser decision names no connection and a brokered answer
-    // always does. Settling one against the other's pending map would resolve
-    // the wrong promise the first time an agent had both in flight.
-    if (message?.type === "browser_response" && typeof message.request_id === "string") {
-      handleBrowserResponse(message);
-      continue;
-    }
-
-    if (message?.type !== "command") {
-      continue;
-    }
-
-    const result = handleCommand(message);
-    // Acknowledgement is mandatory. A line written to a pipe proves nothing
-    // about whether this process read it, so DASH settles an unacknowledged
-    // command as unacknowledged rather than as success.
-    send({ type: "ack", command_id: message.command_id, ok: result.ok, detail: result.detail });
-  }
+startAgent({
+  definition: {
+    projectDir,
+    // Two steps, so each one moves the bar most of the way. The runtime caps it
+    // at 0.9 until the run actually ends.
+    stepProgress: 0.4,
+    ready: () => `ready, watching ${String(readSources().length)} sources; waiting to be run`,
+  },
+  runOnce,
 });
-
-/* ---------------------------------------------------------------------- *
- * Running
- * ---------------------------------------------------------------------- */
-
-process.on("SIGTERM", () => {
-  log("stopping");
-  process.exit(0);
-});
-
-log(`ready, watching ${String(readSources().length)} sources; waiting to be run`);
-publish();
-
-// No run here, and no timer. See the module header: this agent acts when a
-// person asks it to, and not before.
-setInterval(publish, PUBLISH_INTERVAL_MS).unref?.();
