@@ -247,6 +247,19 @@ interface DashShellClient {
    */
   chooseAgentFolder?(): Promise<CommandResult>;
   /**
+   * Making DASH's sample agent (MAR-879).
+   *
+   * Optional for `chooseAgentFolder`'s reason, and the degradation matters more
+   * here than anywhere: this is the first control a person with an empty DASH
+   * meets. A shell older than this command still has the menu item — that is
+   * what the sentence `createSampleAgent` composes for a missing method names,
+   * rather than leaving somebody pressing a button that does nothing.
+   *
+   * It takes nothing, and the absence is the security argument rather than a
+   * convenience — see the `sample.create` entry in `lib/shell/ipc.ts`.
+   */
+  createSampleAgent?(): Promise<CommandResult>;
+  /**
    * Remember that this agent's page has just been opened (MAR-586).
    *
    * Optional for the same reason as the three above, and here the absence is the
@@ -1006,6 +1019,43 @@ export async function chooseAgentFolder(): Promise<CommandResult> {
     };
   }
   return bridge.chooseAgentFolder();
+}
+
+/**
+ * Make DASH's sample agent, and let DASH ask (MAR-879).
+ *
+ * `chooseAgentFolder`'s shape one door along, and its two refusals are the same
+ * two — a window with no bridge, and a shell that has one without this method.
+ * What differs is the second sentence. A person on Add agent with no folder
+ * chooser was sent to the disclosure below it; a person whose shell predates
+ * this command still has the application menu, and its first item is this same
+ * operation. So the refusal names the door that exists on *their* build instead
+ * of describing one that does not.
+ *
+ * It takes nothing, for the reason `chooseAgentFolder` takes nothing: there is
+ * no argument a page could supply. The sample's name, template and folder are
+ * all main's.
+ */
+export async function createSampleAgent(): Promise<CommandResult> {
+  const bridge = typeof window === "undefined" ? undefined : window.dashShell;
+  if (bridge === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail: "Open the installed DASH app to try the sample agent.",
+    };
+  }
+  if (bridge.createSampleAgent === undefined) {
+    return {
+      ok: false,
+      request_id: "",
+      reason: "read_only_host",
+      detail:
+        "This version of the DASH app makes the sample from its menu instead. Open the menu at the top left of the window and choose Try a sample agent.",
+    };
+  }
+  return bridge.createSampleAgent();
 }
 
 /**

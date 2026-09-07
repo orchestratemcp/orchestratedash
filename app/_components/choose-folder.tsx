@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { ADD_AGENT_PATHS, CHOOSE_FOLDER_COPY } from "../../lib/copy/add-agent";
 import type { AddedAgentReport } from "../../lib/shell/ipc";
-import { chooseAgentFolder } from "../_data/source";
+import { chooseAgentFolder, createSampleAgent } from "../_data/source";
 
 /**
  * The Add agent page's primary action (MAR-598).
@@ -166,49 +166,72 @@ export function AddedReport({ report }: { report: AddedAgentReport }): ReactNode
 /**
  * The sample agent, offered on the page instead of only in a menu (MAR-879).
  *
- * ## Why this opens a menu rather than making an agent
+ * ## One press, and why that needed a command
  *
  * DASH's sample is a main-process operation: it writes a project, mints a real
- * nonce and raises a native consent dialog, and it is reached through the
- * application menu's `sample_agent` action (`lib/shell/menu.ts`,
- * `electron/sample-agent.ts`). The renderer has one command that touches the
- * menu at all — `shell.menu` — and that command deliberately carries two
- * numbers and nothing else, so a page can *show* the menu and can never invoke
- * an item in it. `lib/shell/ipc.ts` states the reason in full: every click
- * stays main's own handler.
+ * nonce and raises a native consent dialog, and until MAR-879 the only way to
+ * reach it was the application menu's `sample_agent` action (`lib/shell/menu.ts`,
+ * `electron/sample-agent.ts`). The renderer's one menu-touching command,
+ * `shell.menu`, deliberately carries two numbers and nothing else — a page can
+ * *show* the menu and can never invoke an item in it — so the first draft of
+ * this control popped the menu and asked the person to find, in it, the thing
+ * they had just pressed. That is the defect this page was rewritten to remove,
+ * one layer in.
  *
- * So this button pops DASH's menu under itself, with "Try a sample agent…"
- * first in it, and `ADD_AGENT_PATHS.sample.detail` says that is what will
- * happen. It is one press short of what the issue wants, and the honest
- * version of the shortfall: making it one press means a new command on the
- * audited channel, which is a change to a contract this packet does not own.
+ * So `sample.create` was added to the audited channel instead. It carries **no
+ * payload at all**, which is the whole of its safety argument: there is nothing
+ * for page script to name, and the widest thing it can ask for is the one thing
+ * the menu item already asks for. See its entry in `lib/shell/ipc.ts`.
  *
- * What it is emphatically **not** is a second registration path. There is one
- * sample operation and this reaches it — `lib/sample-agent.ts`' own argument.
+ * ## Still one registration path
+ *
+ * Main routes the command to the same `offerSampleAgent(handoffContext)` that
+ * `runMenuAction` calls. The menu item is untouched and still says what it has
+ * always said, and `lib/sample-agent.ts`' standing argument — one path that
+ * registers a sample — holds: this is a second door, not a second path. What
+ * the button starts still ends at a native dialog a person answers, which page
+ * script cannot answer and cannot read.
  */
 export function TrySampleAgent({ canAct }: { canAct: boolean }): ReactNode {
-  const [hasMenu, setHasMenu] = useState(false);
-  /*
-   * The bridge method is optional on an optional bridge: a shell built before
-   * the title bar has a `dashShell` without it (`app/_data/source.ts`). Read
-   * once at mount, exactly as `TitleBar` reads it, so a build that cannot pop
-   * the menu says so instead of drawing a control that silently does nothing.
-   */
-  useEffect(() => {
-    setHasMenu(typeof window.dashShell?.openAppMenu === "function");
-  }, []);
-  return <SampleAgentControl available={canAct && hasMenu} />;
+  return <SampleAgentControl available={canAct} />;
 }
 
 /**
  * The control itself, taking the decided boolean as a prop.
  *
- * Split from the hook above for `SettingsTabsStrip`'s reason: a static render
+ * Split from the wrapper above for `SettingsTabsStrip`'s reason: a static render
  * runs no effects, so a component that discovered its own availability could
  * only ever be tested in one of its two states.
+ *
+ * It words nothing, as `ChooseFolder` words nothing. `createSampleAgent` in
+ * `app/_data/source.ts` composes both refusals — a window with no bridge, and a
+ * shell that has one without this command — and the second is the reason there
+ * is no availability effect here any more: an older build is told about the
+ * menu it still has, rather than shown a control that quietly does nothing.
  */
 export function SampleAgentControl({ available }: { available: boolean }): ReactNode {
-  const button = useRef<HTMLButtonElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+
+  async function make(): Promise<void> {
+    setBusy(true);
+    setRefusal(null);
+    const result = await createSampleAgent();
+    setBusy(false);
+    /*
+     * A refusal is worth saying and a success is not.
+     *
+     * What follows a success is a native dialog DASH raises in front of this
+     * window — the person is looking at the thing that happened. A receipt here
+     * would be a second, quieter claim about a decision they have not made yet,
+     * and if they say no it would be a claim that had already been contradicted.
+     * The far side of that dialog is `offerSampleAgent`'s, and the fleet is
+     * where the answer shows up.
+     */
+    if (!result.ok && result.detail !== undefined && result.detail !== "") {
+      setRefusal(result.detail);
+    }
+  }
 
   if (!available) {
     /*
@@ -222,29 +245,20 @@ export function SampleAgentControl({ available }: { available: boolean }): React
   return (
     <div className="choose-folder">
       <button
-        ref={button}
         type="button"
         className="button-primary"
-        /*
-         * The menu is popped under the button's own rectangle rather than under
-         * the pointer, so Enter and Space — where there is no pointer position —
-         * open it in the same place a click does. `TitleBar` makes the same
-         * choice for the same reason: passing the mouse event's coordinates is
-         * the sort of thing only somebody who cannot use a mouse ever finds.
-         */
-        aria-haspopup="menu"
-        onClick={() => {
-          const rect = button.current?.getBoundingClientRect();
-          void window.dashShell?.openAppMenu?.(
-            rect === undefined
-              ? undefined
-              : { x: Math.round(rect.left), y: Math.round(rect.bottom) },
-          );
-        }}
+        disabled={busy}
+        onClick={() => void make()}
       >
-        {ADD_AGENT_PATHS.sample.action}
+        {busy ? ADD_AGENT_PATHS.sample_pending : ADD_AGENT_PATHS.sample.action}
       </button>
       <p className="muted wrap">{ADD_AGENT_PATHS.sample.detail}</p>
+
+      {refusal === null ? null : (
+        <div className="notice notice-err" role="status">
+          <p className="wrap">{refusal}</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -155,6 +155,14 @@ export const ADD_AGENT_PATHS = {
   sample_read_only:
     "Open the installed DASH app to try the sample agent. This window can show everything and change nothing.",
   /**
+   * While DASH is writing the project, before the dialog appears.
+   *
+   * `CHOOSE_FOLDER_COPY.pending`'s job on the other door: the operation writes
+   * files and mints a nonce before it can ask anything, and a button that sat
+   * unchanged through that would invite a second press.
+   */
+  sample_pending: "Making it…",
+  /**
    * The one for a person who has nothing.
    *
    * The character, the sources and the summary are named because they are what
@@ -162,14 +170,13 @@ export const ADD_AGENT_PATHS = {
    * `TryTheScout` makes on the Agents page, and it is kept by the same
    * operation.
    *
-   * `detail` names the menu, and that is a compromise rather than a design.
-   * DASH's sample is a main-process operation reachable only through the
-   * application menu; the renderer can *show* that menu at a point it names and
-   * cannot invoke an item in it (see `shell.menu` in `lib/shell/ipc.ts`, which
-   * deliberately carries two numbers and nothing else). So the button opens
-   * DASH's own menu with this item at the top of it, and says so, rather than
-   * pretending to a press it cannot make. A one-press version needs a command
-   * of its own on that channel.
+   * `detail` is the sentence the whole door turns on and it says two things in
+   * order: DASH makes it, and DASH asks. Its first draft named the application
+   * menu, because the press could only open one — the renderer had no way to
+   * invoke a menu item and `shell.menu` deliberately carries two numbers. That
+   * is gone: `sample.create` (MAR-879) reaches `offerSampleAgent` directly, so
+   * the copy describes the operation rather than apologising for the route to
+   * it.
    */
   sample: {
     heading: "Try a sample agent",
@@ -177,7 +184,7 @@ export const ADD_AGENT_PATHS = {
       "DASH makes one for you: a news scout that reads the sources you choose and writes you a short summary of what is new. No account, no password, and it runs only when you ask it to.",
     action: "Try a sample agent",
     detail:
-      "DASH's own menu opens, with Try a sample agent at the top of it. DASH then shows you what it will make and asks before adding anything.",
+      "DASH makes it, shows you what it will do, and asks you before adding anything.",
   },
   /**
    * The one for a person who has an idea and a coding assistant.
@@ -209,10 +216,11 @@ export const ADD_AGENT_PATHS = {
     detail:
       "For an agent somebody has already built — one you made yourself, or one an assistant built earlier.",
   },
-} as const satisfies { lede: string; sample_read_only: string } & Record<
-  "sample" | "assistant" | "folder",
-  AddAgentPath
->;
+} as const satisfies {
+  lede: string;
+  sample_read_only: string;
+  sample_pending: string;
+} & Record<"sample" | "assistant" | "folder", AddAgentPath>;
 
 /**
  * Setting the builder up, in the one line a person pastes.
@@ -249,6 +257,7 @@ export function everyAddAgentPathSentence(): string[] {
   return [
     ADD_AGENT_PATHS.lede,
     ADD_AGENT_PATHS.sample_read_only,
+    ADD_AGENT_PATHS.sample_pending,
     ...(["sample", "assistant", "folder"] as const).flatMap((key) => {
       const path = ADD_AGENT_PATHS[key];
       return [path.heading, path.means, path.action ?? "", path.detail];

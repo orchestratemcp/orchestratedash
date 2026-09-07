@@ -167,8 +167,28 @@ describe("the page's own strings", () => {
       expect(ADD_AGENT_PATHS[key].means, key).not.toBe("");
     }
     // The two that end at DASH's own consent dialog say so before the press.
-    expect(ADD_AGENT_PATHS.sample.detail).toMatch(/asks before adding anything/i);
+    expect(ADD_AGENT_PATHS.sample.detail).toMatch(/asks you before adding anything/i);
     expect(ADD_AGENT_PATHS.assistant.detail).toMatch(/nothing is added until you say yes/i);
+  });
+
+  it("describes the sample as an operation, not as a route to a menu", () => {
+    /*
+     * MAR-879's own regression, and it is a copy one because the shortfall was
+     * a copy one. The first draft of this door could only open the application
+     * menu — `shell.menu` carries two numbers and cannot name an item — so the
+     * sentence under the button had to say "DASH's own menu opens, with Try a
+     * sample agent at the top of it": true, and an interface apologising for
+     * its own plumbing to somebody who had just pressed the thing they wanted.
+     *
+     * `sample.create` removed the reason for that sentence. This holds the copy
+     * to the operation, so that a future change which quietly reverts the door
+     * to a menu-opener has to come here and say so.
+     */
+    expect(ADD_AGENT_PATHS.sample.detail).not.toMatch(/menu/i);
+    expect(ADD_AGENT_PATHS.sample.detail).toMatch(/DASH makes it/i);
+    // The other end of it: an installed build too old for the command is told
+    // about the menu it still has, and that sentence lives in `source.ts`.
+    expect(ADD_AGENT_PATHS.sample_read_only).not.toMatch(/menu/i);
   });
 
   it("keeps the builder's setup line out of the prose it is embedded in", () => {
