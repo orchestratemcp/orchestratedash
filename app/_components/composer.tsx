@@ -163,6 +163,7 @@ export function Composer({
   avatar = null,
   modelChip,
   recallQuestions,
+  focusSignal = 0,
 }: {
   classes: ComposerClassNames;
   /** Whether the room is showing. Owned by the caller, which dims whatever it sits over. */
@@ -219,6 +220,17 @@ export function Composer({
    * differ per surface — so this file stays ignorant of what a turn is.
    */
   recallQuestions: readonly string[];
+  /**
+   * Focus the field, once, whenever this grows (MAR-882).
+   *
+   * A signal rather than a boolean for `scrollSignal`'s own reason: a caller
+   * that set a plain `focus: true` prop would have nothing to flip it back to
+   * `false` with, and a second identical request would then have no way to
+   * ask again. The default is `0`, so a caller that never asks for a focus
+   * never gets one — every existing caller of this component predates this
+   * prop and passes nothing, which must keep behaving exactly as it did.
+   */
+  focusSignal?: number;
 }): ReactNode {
   const thread = useRef<HTMLDivElement | null>(null);
   const field = useRef<HTMLTextAreaElement | null>(null);
@@ -293,6 +305,19 @@ export function Composer({
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: reduce ? "auto" : "smooth" });
   }, [open, scrollSignal]);
+
+  /*
+   * MAR-882. `0` never focuses — see the prop's own header — so this only
+   * fires for a caller that actually asked, and it fires once per ask rather
+   * than once per render because the effect's dependency is the signal's
+   * value, not a boolean that would already be true on the next render too.
+   */
+  useEffect(() => {
+    if (focusSignal <= 0) {
+      return;
+    }
+    field.current?.focus();
+  }, [focusSignal]);
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
     /*
