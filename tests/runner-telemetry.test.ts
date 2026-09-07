@@ -90,6 +90,7 @@ function scaffold(): string {
         "utf8",
       ),
       openInDash: "// bundled by scripts/build-agent-kit.mjs\n",
+      evals: "// the acceptance checks\n",
     },
   );
   if (!planned.ok) {

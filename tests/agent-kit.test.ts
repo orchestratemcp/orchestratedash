@@ -56,6 +56,10 @@ const TEMPLATE_SDK = readFileSync(
   path.join(KIT_ROOT, "template", "dash-agent-sdk.mjs"),
   "utf8",
 );
+const TEMPLATE_EVALS = readFileSync(
+  path.join(KIT_ROOT, "template", "evals", "run-evals.mjs"),
+  "utf8",
+);
 
 const roots: string[] = [];
 const supervisors: Supervisor[] = [];
@@ -97,6 +101,7 @@ const SOURCES: TemplateSources = {
   agent: TEMPLATE_AGENT,
   sdk: TEMPLATE_SDK,
   openInDash: "// bundled by scripts/build-agent-kit.mjs\n",
+  evals: TEMPLATE_EVALS,
 };
 
 function scaffold(agentId = "folder-digest"): string {
@@ -429,6 +434,12 @@ describe("the command", () => {
     mkdirSync(path.join(kitRoot, "dist"), { recursive: true });
     writeFileSync(path.join(kitRoot, "template", "agent.mjs"), TEMPLATE_AGENT, "utf8");
     writeFileSync(path.join(kitRoot, "template", "dash-agent-sdk.mjs"), TEMPLATE_SDK, "utf8");
+    mkdirSync(path.join(kitRoot, "template", "evals"), { recursive: true });
+    writeFileSync(
+      path.join(kitRoot, "template", "evals", "run-evals.mjs"),
+      TEMPLATE_EVALS,
+      "utf8",
+    );
     writeFileSync(path.join(kitRoot, "dist", "open-in-dash.mjs"), "// stub\n", "utf8");
 
     const result = run(["folder-digest"], { kitRoot, kitVersion: "0.1.1", cwd, now: new Date() });
@@ -437,6 +448,7 @@ describe("the command", () => {
     expect(result.output).toContain("npm run open-in-dash");
     expect(existsSync(path.join(cwd, "folder-digest", "agent.mjs"))).toBe(true);
     expect(existsSync(path.join(cwd, "folder-digest", "scripts", "open-in-dash.mjs"))).toBe(true);
+    expect(existsSync(path.join(cwd, "folder-digest", "evals", "run-evals.mjs"))).toBe(true);
   });
 });
 

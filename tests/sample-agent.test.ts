@@ -60,6 +60,7 @@ const SOURCES = {
   agent: "// the agent\n",
   sdk: "// the runtime DASH upgrades\n",
   openInDash: "// open in dash\n",
+  evals: "// the acceptance checks\n",
 };
 
 const IDS = { handoff_id: "a".repeat(32), nonce: "b".repeat(64) };

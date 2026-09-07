@@ -37,10 +37,17 @@
  * declares that operation instead. See `modelProviderConnection` below.
  */
 
-import path from "node:path";
-
+import {
+  SDK_VERSION,
+  dashAgentsRootForThisMachine,
+  defaultAcceptance,
+  manifestFromRecipe,
+  planFromRecipe,
+  type AgentRecipe,
+  type RecipePlan,
+  type TargetState,
+} from "../../../agent-kit/recipe";
 import { FEED_FETCH_COMPONENT, DIGEST_WRITE_COMPONENT, SOURCES_FILE_NAME } from "../../../lib/agent-sources";
-import { isSafeAgentId } from "../../../lib/handoff";
 import { aiProviderById, type AiProviderId } from "../../../lib/ai/providers";
 
 /**
@@ -185,6 +192,17 @@ export interface ScaffoldRequest {
   sources: readonly FeedSource[];
   now: Date;
   /**
+   * What is already at `directory`, when the caller has looked. A caller about
+   * to write should pass `readTargetState(directory)`; `scaffoldAgent` does.
+   */
+  target?: TargetState;
+  /**
+   * Entries in `target` this build is allowed to find there. `scaffoldAgent`
+   * names `.dash`, the folder `dash_agent_interview` saves its draft in, and
+   * nothing else.
+   */
+  overwrite?: readonly string[];
+  /**
    * Which provider the manifest's `model_provider` connection names (MAR-878).
    *
    * Defaults to `DEFAULT_MODEL_PROVIDER`. Match this to whatever the person has
@@ -215,6 +233,13 @@ export type ScaffoldPlan =
 export interface TemplateSources {
   /** `tools/dash-mcp/template/agent.mjs`. */
   agent: string;
+  /**
+   * `agent-kit/template/evals/run-evals.mjs` (MAR-888). The Agent Kit's, for
+   * the same reason the runtime is: there is one set of acceptance checks and
+   * both scaffolders write the same bytes. Everything about *this* agent
+   * reaches it through the generated `evals/cases.json`.
+   */
+  evals: string;
   /**
    * `agent-kit/template/dash-agent-sdk.mjs`. Copied verbatim.
    *
@@ -256,38 +281,215 @@ export const TEMPLATE_SOURCES: readonly FeedSource[] = [
 ];
 
 export function planScaffold(request: ScaffoldRequest, sources: TemplateSources): ScaffoldPlan {
-  if (!isSafeAgentId(request.agent_id)) {
-    return {
-      ok: false,
-      problem:
-        `“${request.agent_id}” cannot be used as an agent name. ` +
-        "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
-    };
-  }
-  if (!path.isAbsolute(request.directory)) {
-    return { ok: false, problem: "The project directory must be a full path." };
-  }
-  if (request.display_name.trim().length === 0 || request.summary.trim().length === 0) {
-    return { ok: false, problem: "An agent needs a name and a one-sentence description." };
-  }
+  return asPlan(
+    planFromRecipe(
+      recipeFor(request),
+      {
+        agent: sources.agent,
+        sdk: sources.sdk,
+        openInDash: sources.openInDash,
+        evals: sources.evals,
+        readme: readme(request),
+        gitignore: gitignore(),
+      },
+      {
+        directory: request.directory,
+        now: request.now,
+        target: request.target,
+        overwrite: request.overwrite,
+        dashAgentsRoot: dashAgentsRootForThisMachine(),
+      },
+    ),
+  );
+}
 
+/**
+ * A recipe plan in this module's older shape.
+ *
+ * `planFromRecipe` reports structured problems and this collapses them into the
+ * one sentence `ScaffoldPlan` carries. Nothing a caller reads is lost:
+ * `scaffoldAgent` puts the manifest through `verdictForManifest` itself and
+ * renders *those* problems, with a JSON pointer and the schema's own words at
+ * each one, which is the shape a coding assistant can act on.
+ */
+function asPlan(plan: RecipePlan): ScaffoldPlan {
+  if (plan.ok) {
+    return { ok: true, files: plan.files };
+  }
+  const detail = plan.problems?.map((entry) => `${entry.where}: ${entry.problem}`).join(" ");
+  return { ok: false, problem: detail === undefined ? plan.problem : `${plan.problem} ${detail}` };
+}
+
+/**
+ * This tool's own recipe for one request (MAR-888).
+ *
+ * Everything that makes an agent this tool builds different from one the Agent
+ * Kit builds is here and nowhere else: a third step that composes a brief, the
+ * pair of documents one run emits, the model-provider connection MAR-878 added
+ * so the agent can be asked a question, the write permission its report file
+ * needs, and a panel with the evidence and the account side by side. The
+ * skeleton the two share — manifest version, safety contract, monitoring,
+ * runtime, trigger, locations, control — is assembled by `manifestFromRecipe`
+ * and is no longer transcribed here.
+ */
+export function recipeFor(request: ScaffoldRequest): AgentRecipe {
+  const provider = request.model_provider ?? DEFAULT_MODEL_PROVIDER;
+  const emits = [
+    { kind: "digest" as const, artifact_version: 1 as const },
+    { kind: "brief" as const, artifact_version: 2 as const },
+  ];
   const feeds = request.sources.length === 0 ? TEMPLATE_SOURCES : request.sources;
 
   return {
-    ok: true,
-    files: [
+    recipe_version: 1,
+    runtime: {
+      sdk_version: SDK_VERSION,
+      kit_version: "dash-mcp",
+      generated_by: "dash-mcp dash_agent_scaffold",
+      // Not a registry build. Saying so is better than borrowing a fingerprint
+      // from a registry this agent was never composed against.
+      registry_fingerprint: "dash-mcp-template",
+      dependencies: {},
+    },
+    agent: {
+      id: request.agent_id,
+      display_name: request.display_name.trim(),
+      summary: request.summary.trim(),
+    },
+    /*
+     * What this agent actually does, in the order it does it — and these are
+     * the three ids `template/agent.mjs` passes to `step()`, in the same order.
+     * That correspondence is the whole contract of this block: `lib/analyze.ts`
+     * grades a run by matching executed steps to this list, so a route that
+     * describes an aspiration rather than the program produces drift findings
+     * on a perfectly correct run.
+     *
+     * No scheduled-trigger step, deliberately. The agent is manual-run-only, and
+     * a route declaring a step that never runs is `missing_step` drift on every
+     * single run.
+     */
+    steps: [
       {
-        path: "agent.manifest.json",
-        contents: `${JSON.stringify(scaffoldManifest(request), null, 2)}\n`,
+        component_id: FEED_FETCH_COMPONENT,
+        intent: "Reads each of the sources you listed.",
+        risk_level: "low",
+        model_tier: "none",
       },
-      { path: "package.json", contents: `${JSON.stringify(projectPackage(request), null, 2)}\n` },
-      { path: "agent.mjs", contents: sources.agent },
-      { path: "dash-agent-sdk.mjs", contents: sources.sdk },
-      { path: "scripts/open-in-dash.mjs", contents: sources.openInDash },
-      { path: SOURCES_FILE_NAME, contents: `${JSON.stringify({ sources: feeds }, null, 2)}\n` },
-      { path: "README.md", contents: readme(request) },
-      { path: ".gitignore", contents: gitignore() },
+      {
+        component_id: BRIEF_COMPOSE_COMPONENT,
+        intent:
+          "Writes a short summary of what came in, citing the items it is talking about.",
+        risk_level: "low",
+        model_tier: "none",
+      },
+      {
+        component_id: DIGEST_WRITE_COMPONENT,
+        intent: "Saves the whole roundup, with every item’s own address kept.",
+        risk_level: "low",
+        model_tier: "none",
+      },
     ],
+    sources: [...feeds],
+    // One connection, `optional: true` (MAR-878): the agent can still be added
+    // to DASH and watched working with zero keys held, because nothing it does
+    // needs a model — ADR 0032 decision 1's point holds exactly as it did when
+    // this was `[]`. What changed is that a person who wants to ask it a
+    // question now has a connection to press Connect on, instead of a refusal
+    // with nothing behind it.
+    connections: [modelProviderConnection(provider)],
+    // The next-action half of the same connection (MAR-569) — what puts a line
+    // with a Connect button on the Connections page for somebody who has not
+    // connected one yet.
+    connection_requirements: modelProviderRequirement(),
+    contract: {
+      consumes: [SOURCES_FILE_NAME],
+      emits,
+    },
+    permissions: {
+      read: [
+        {
+          id: "network",
+          label: "Read the sources you choose",
+          detail:
+            "Fetches the addresses listed in this agent's own sources file. It sends nothing and changes nothing.",
+        },
+      ],
+      write: [
+        {
+          id: "report_file",
+          label: "Save a report inside its own folder",
+          detail:
+            "Writes one file into the reports folder inside this agent's own folder, and nowhere else.",
+        },
+      ],
+      approval_required_for: [],
+    },
+    /*
+     * The panel this agent asks DASH to draw for it (ADR 0008).
+     *
+     * Four sections, and the first two are the pair MAR-862 was about. A
+     * digest and a brief are two different questions — "what did it find?"
+     * and "what does it say about what it found?" — and `lib/views/panel.ts`
+     * resolves `artifact_role` against an artifact's own `kind`, so naming
+     * both roles is what puts the evidence and the account on one screen
+     * beside each other.
+     *
+     * `metrics` is DASH's question about the agent rather than the agent's
+     * about the news: every item is a `dash_fact`, so every value renders
+     * attributed to DASH.
+     */
+    panel: {
+      panel_version: 1,
+      title: "What it found, and what it makes of it",
+      sections: [
+        {
+          id: "latest_brief",
+          type: "report",
+          label: "What it makes of this run",
+          artifact_role: "brief",
+        },
+        {
+          id: "latest_digest",
+          type: "report",
+          label: "Everything it collected",
+          artifact_role: "digest",
+        },
+        {
+          id: "headlines",
+          type: "table",
+          label: "Every item in the latest digest",
+          source_role: "digest",
+          columns: [
+            { key: "headline", label: "Headline", kind: "text" },
+            { key: "source_name", label: "Source", kind: "text" },
+            { key: "published_at", label: "Published", kind: "timestamp" },
+          ],
+        },
+        {
+          id: "activity",
+          type: "metrics",
+          label: "How this agent has been doing",
+          items: [
+            {
+              id: "run_count",
+              label: "Times it has run",
+              source: { kind: "dash_fact", fact: "run_count" },
+            },
+            {
+              id: "last_run_at",
+              label: "Last checked",
+              source: { kind: "dash_fact", fact: "last_run_at" },
+            },
+            {
+              id: "last_run_verdict",
+              label: "How the last run ended",
+              source: { kind: "dash_fact", fact: "last_run_verdict" },
+            },
+          ],
+        },
+      ],
+    },
+    acceptance: defaultAcceptance(emits),
   };
 }
 
@@ -303,230 +505,12 @@ export function planScaffold(request: ScaffoldRequest, sources: TemplateSources)
  * written.
  */
 export function scaffoldManifest(request: ScaffoldRequest): Record<string, unknown> {
-  return {
-    manifest_version: 2,
-    agent: {
-      name: request.agent_id,
-      display_name: request.display_name,
-      goal: request.summary,
-      plan_source: "composed",
-      playbook_id: "",
-      route_id: "",
-      build_target: "code",
-    },
-    /*
-     * What this agent actually does, in the order it does it — and these are
-     * the three ids `template/agent.mjs` passes to `step()`, in the same order.
-     * That correspondence is the whole contract of this block: `lib/analyze.ts`
-     * grades a run by matching executed steps to this list, so a route that
-     * describes an aspiration rather than the program produces drift findings
-     * on a perfectly correct run.
-     *
-     * No scheduled-trigger step, deliberately. The agent is manual-run-only, and
-     * a route declaring a step that never runs is `missing_step` drift on every
-     * single run.
-     */
-    planned_route: [
-      { step: 1, component_id: FEED_FETCH_COMPONENT, risk_level: "low", model_tier: "none" },
-      { step: 2, component_id: BRIEF_COMPOSE_COMPONENT, risk_level: "low", model_tier: "none" },
-      { step: 3, component_id: DIGEST_WRITE_COMPONENT, risk_level: "low", model_tier: "none" },
-    ],
-    safety_contract: {
-      // L1: it acts on its own folder and nothing else, and there is no
-      // irreversible component to gate. Claiming a higher clearance for a
-      // template would teach every agent built from it to overstate itself.
-      automation_clearance: "L1",
-      enforced_approval_gates: [],
-      irreversible_components: [],
-    },
-    monitoring: {
-      events: [
-        "run_started",
-        "step_started",
-        "step_completed",
-        "gate_requested",
-        "gate_resolved",
-        "run_completed",
-        "run_failed",
-      ],
-      endpoint_env: "DASH_INGEST_URL",
-      token_env: "DASH_INGEST_TOKEN",
-      output_location: "runs/events.jsonl inside the agent's own folder",
-    },
-    provenance: {
-      generated_by: "dash-mcp dash_agent_scaffold",
-      // Not a registry build. Saying so is better than borrowing a fingerprint
-      // from a registry this agent was never composed against.
-      registry_fingerprint: "dash-mcp-template",
-      generated_at: request.now.toISOString(),
-    },
-    agent_dom: {
-      dom_version: 1,
-      runtime: {
-        class: "local_process",
-        label: "DASH Agent Runner on this computer",
-        availability: "on_demand",
-        continues_when_dash_closed: true,
-      },
-      trigger: {
-        type: "manual",
-        label: "Only when you ask it to run",
-        technical: {
-          what_wakes_it_up: "The runner starts this process when a person asks DASH to.",
-          offline_behavior: "No run starts while the computer or the runner is off.",
-          limitation: "No schedule and no inbound event is configured.",
-        },
-      },
-      locations: {
-        runtime: {
-          id: `${request.agent_id}-runtime`,
-          label: "DASH Agent Runner on this computer",
-          kind: "local",
-          offline_behavior:
-            "Continues after the DASH window closes while this computer and runner remain on.",
-        },
-        control: [
-          {
-            id: "dash_agent_runner_control",
-            label: "DASH Agent Runner control adapter",
-            kind: "dash",
-            offline_behavior: "Unavailable while the computer or the runner is off.",
-          },
-        ],
-        interaction: [
-          {
-            id: "dash_workspace",
-            label: "DASH agent workspace",
-            kind: "dash",
-            offline_behavior: "Last safe state is read-only while the runner is unavailable.",
-          },
-        ],
-      },
-      // One connection, `optional: true` (MAR-878): the agent can still be
-      // added to DASH and watched working with zero keys held, because nothing
-      // it does needs a model — ADR 0032 decision 1's point holds exactly as it
-      // did when this was `[]`. What changed is that a person who wants to ask
-      // it a question now has a connection to press Connect on, instead of a
-      // refusal with nothing behind it.
-      connections: [modelProviderConnection(request.model_provider ?? DEFAULT_MODEL_PROVIDER)],
-      // The next-action half of the same connection (MAR-569) — what puts a
-      // line with a Connect button on the Connections page for somebody who
-      // has not connected one yet.
-      connection_requirements: modelProviderRequirement(),
-      permissions: {
-        read: [
-          {
-            id: "network",
-            label: "Read the sources you choose",
-            detail:
-              "Fetches the addresses listed in this agent's own sources file. It sends nothing and changes nothing.",
-          },
-        ],
-        write: [
-          {
-            id: "report_file",
-            label: "Save a report inside its own folder",
-            detail:
-              "Writes one file into the reports folder inside this agent's own folder, and nowhere else.",
-          },
-        ],
-        approval_required_for: [],
-      },
-      control: {
-        supported: true,
-        command_version: 1,
-        location_id: "dash_agent_runner_control",
-        commands: ["retry", "pause", "resume", "cancel"],
-      },
-      memory: [],
-      /*
-       * The panel this agent asks DASH to draw for it (ADR 0008).
-       *
-       * Four sections, and the first two are the pair this packet is about. A
-       * digest and a brief are two different questions — "what did it find?"
-       * and "what does it say about what it found?" — and `lib/views/panel.ts`
-       * resolves `artifact_role` against an artifact's own `kind`, so naming
-       * both roles is what puts the evidence and the account on one screen
-       * beside each other.
-       *
-       * `metrics` is DASH's question about the agent rather than the agent's
-       * about the news: every item is a `dash_fact`, so every value renders
-       * attributed to DASH.
-       */
-      panel: {
-        panel_version: 1,
-        title: "What it found, and what it makes of it",
-        sections: [
-          {
-            id: "latest_brief",
-            type: "report",
-            label: "What it makes of this run",
-            artifact_role: "brief",
-          },
-          {
-            id: "latest_digest",
-            type: "report",
-            label: "Everything it collected",
-            artifact_role: "digest",
-          },
-          {
-            id: "headlines",
-            type: "table",
-            label: "Every item in the latest digest",
-            source_role: "digest",
-            columns: [
-              { key: "headline", label: "Headline", kind: "text" },
-              { key: "source_name", label: "Source", kind: "text" },
-              { key: "published_at", label: "Published", kind: "timestamp" },
-            ],
-          },
-          {
-            id: "activity",
-            type: "metrics",
-            label: "How this agent has been doing",
-            items: [
-              {
-                id: "run_count",
-                label: "Times it has run",
-                source: { kind: "dash_fact", fact: "run_count" },
-              },
-              {
-                id: "last_run_at",
-                label: "Last checked",
-                source: { kind: "dash_fact", fact: "last_run_at" },
-              },
-              {
-                id: "last_run_verdict",
-                label: "How the last run ended",
-                source: { kind: "dash_fact", fact: "last_run_verdict" },
-              },
-            ],
-          },
-        ],
-      },
-    },
-  };
+  return manifestFromRecipe(recipeFor(request), request.now);
 }
 
 /* ---------------------------------------------------------------------- *
  * The rest of the project
  * ---------------------------------------------------------------------- */
-
-function projectPackage(request: ScaffoldRequest): Record<string, unknown> {
-  return {
-    name: request.agent_id,
-    version: "0.1.0",
-    private: true,
-    description: request.summary,
-    type: "module",
-    scripts: {
-      "open-in-dash": "node scripts/open-in-dash.mjs",
-      start: "node agent.mjs",
-    },
-    engines: { node: ">=20.0.0" },
-    dependencies: {},
-  };
-}
 
 function gitignore(): string {
   return [
@@ -582,8 +566,21 @@ function readme(request: ScaffoldRequest): string {
     "| -- | -- |",
     "| `agent.mjs` | The agent. `runOnce` is yours; the rest is plumbing. |",
     "| `sources.json` | What it reads. Edit freely. |",
-    "| `agent.manifest.json` | What it promises DASH. |",
+    "| `agent.recipe.json` | What this agent is. The manifest is generated from it. |",
+    "| `agent.manifest.json` | What it promises DASH. Generated \u2014 edit the recipe instead. |",
+    "| `evals/` | Four checks that say whether it still works. |",
+    "| `AGENT_BUILDER.md` | The longer version of this table, for whoever changes it next. |",
     "| `dash-agent-sdk.mjs` | **Do not edit.** DASH's runtime, and DASH upgrades it. |",
+    "",
+    "## Checking it",
+    "",
+    "```",
+    "npm run evals",
+    "```",
+    "",
+    "Four cases with no network and no key: a normal run, a run with nothing to",
+    "read, a run where a source fails, and a run where every brokered request is",
+    "refused. They spawn this agent the way DASH's runner does.",
     "",
     "## Running it outside DASH",
     "",

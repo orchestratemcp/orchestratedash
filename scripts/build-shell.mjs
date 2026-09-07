@@ -562,10 +562,19 @@ await Promise.all([
  * produces a sample that is written, imported and registered and then dies on
  * its first line — which is why `assertSampleTemplatesPresent` checks for both
  * at startup rather than trusting this loop (ADR 0034).
+ *
+ * Three since MAR-888. `run-evals.mjs` is the sample's own acceptance checks,
+ * written into `evals/` inside the created project. It is flattened here rather
+ * than copied into a subdirectory, because the packaged layout is one folder of
+ * named files and `templateCandidates` looks each one up by name.
  */
 for (const file of ["agent.mjs", "dash-agent-sdk.mjs"]) {
   copyFileSync(path.join(repoRoot, "agent-kit", "template", file), path.join(kitDir, file));
 }
+copyFileSync(
+  path.join(repoRoot, "agent-kit", "template", "evals", "run-evals.mjs"),
+  path.join(kitDir, "run-evals.mjs"),
+);
 
 /**
  * The packaged renderer (MAR-432).
