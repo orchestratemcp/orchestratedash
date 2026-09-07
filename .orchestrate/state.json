@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 17:45: MAR-887 merged (#356, master CI green at 1d7c4e7). Stage 8 dossier merged (#355) for review. Lanes F2 (MAR-888 recipe) and F3 (MAR-889 traces) dispatched in parallel from 821c239.",
+  "lifecycle_note": "2026-09-07 19:10: MAR-889 merged (#357, master green 3e0f63f). MAR-888 (#358) finishing its addendum. Stage 5 lane dispatching from 3e0f63f (migration 39); stage 4 waits for #358.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2164,10 +2164,10 @@
     },
     {
       "id": "MAR-889",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "Foundation 3: hierarchical traces (run/span/parent, status, structured error) in the existing run inspector; telemetry v1 compatible; secrets filtered; incompleteness shown."
+      "commit": "3e0f63f",
+      "note": "PR #357: trace side channel (trace_version 1, run-span schema, /traces/drain, run_spans + run_span_drops via migration 38 -> user_version 39), SDK instrumentation, Steps and operations tree in the run inspector, incompleteness shown; smoke 86/86 with new proof 6q. Proof owed: installed error+retry walk (stage 4)."
     }
   ]
 }
