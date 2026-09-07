@@ -43,13 +43,46 @@
 
 export const REPAIR_AGENT_COPY = {
   /**
-   * The heading of the Settings-stage block.
+   * The heading of the Settings-stage block, **when DASH really cannot start
+   * this agent**.
    *
-   * It names the situation rather than the mechanism, because a person arrives
-   * at it already knowing the situation — their agent will not run — and does
-   * not arrive knowing the mechanism.
+   * It names the situation rather than the mechanism, because a person who
+   * arrives at it in that state already knows the situation — their agent will
+   * not run — and does not arrive knowing the mechanism.
+   *
+   * ## MAR-874: it used to be the heading either way, and that was the lie
+   *
+   * `RepairAgent` drew this over every agent with a folder in a window that
+   * could act, because the component could not tell a broken agent from a
+   * working one and said so in its own docblock. The consequence was on screen
+   * for anybody who scrolled: the header read **READY**, the residency chip
+   * read the name of a server the agent was happily living on, and four
+   * sections down this heading said the agent would not run. Two claims about
+   * one agent, one of them made by a section that had checked nothing.
+   *
+   * The header was the true one. DASH does hold a predicate for this —
+   * `WorkspaceView.startable`, the registration naming a program it could
+   * spawn — and it is the same fact `AGENT_CONTROL_COPY.idle.not_reported`
+   * already speaks from on the Run stage. So this heading is now what that
+   * predicate says, and `heading_calm` below is what the door is called the
+   * rest of the time.
    */
   heading: "This agent will not run",
+  /**
+   * The same block's heading for an agent DASH *can* start (MAR-874).
+   *
+   * The control does not move and is not taken away — `RepairAgent`'s own
+   * docblock gives the reason it is always offered, and it still holds: a
+   * missing registration and a stale one look the same from the renderer, and
+   * a door that appeared only once DASH had diagnosed a fault would be missing
+   * in every case nobody predicted. What changes is only what it is *called*,
+   * because a heading is a claim and this one had no evidence behind it.
+   *
+   * Names the mechanism here, which is the opposite choice from `heading`
+   * above and the right one for the opposite arrival: nobody comes to this
+   * heading knowing a situation, so it has to say what the button does.
+   */
+  heading_calm: "Set this agent up again",
   /**
    * The button.
    *

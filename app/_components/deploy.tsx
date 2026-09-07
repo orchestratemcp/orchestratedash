@@ -25,7 +25,9 @@ import type {
   AgentDeployView,
   SavedServerView,
 } from "../../lib/views/types";
+import { AGENT_SETTINGS_COPY } from "../../lib/copy/agent-page";
 import { submitHostCommand } from "../_data/source";
+import { WhyDisclosure } from "./agent-settings";
 import { useView } from "../_data/use-view";
 
 /**
@@ -459,10 +461,40 @@ export function DeployToServerPanel({
     return null;
   }
   const receipt = describeDeployReceipt(title, chosen.label);
+  /*
+   * MAR-874. The other end of the switch, when there is exactly one.
+   *
+   * Null for an agent that lives here, and null above one server — see the
+   * button block below for why the ambiguous case keeps the deploy button
+   * rather than growing a *Bring home* that could not name its machine.
+   */
+  const home = targets.length === 1 ? (targets[0] ?? null) : null;
 
   return (
     <section className="section deploy-section" aria-labelledby="deploy-to-server">
-      <h2 id="deploy-to-server">Run this agent on your server</h2>
+      <h2 id="deploy-to-server">{AGENT_SETTINGS_COPY.where.heading}</h2>
+
+      {/*
+        MAR-874. The one state sentence: this computer, or the machine it has
+        been sent to.
+
+        DASH's own words rather than a component's, and a count rather than a
+        list past one — a state line that grew with the number of servers would
+        stop being a line, and the list itself is one press below.
+
+        It is a fact about residency and deliberately not a claim about health:
+        `describeSentServer` still owns whether the copy over there is current,
+        and it still says so on its own row inside the disclosure. This sentence
+        answers only *where*, which is the question Henrik said the page could
+        not answer in one look.
+      */}
+      <p className="settings-state wrap">
+        {targets.length === 0
+          ? AGENT_SETTINGS_COPY.where.here
+          : targets.length === 1
+            ? AGENT_SETTINGS_COPY.where.on_server(targets[0]?.label ?? "")
+            : AGENT_SETTINGS_COPY.where.on_servers(targets.length)}
+      </p>
 
       {/*
         More than one saved server means a choice; one means a fact. A select
@@ -492,20 +524,6 @@ export function DeployToServerPanel({
         </label>
       )}
 
-      {/*
-        Above the receipt, because it is about pushes that already happened and
-        the receipt is about the one that has not. A person arriving after
-        accepting a folder update is here for this block, and reading a
-        disclosure first would bury it.
-      */}
-      <SentServers
-        targets={targets}
-        travel={deploy.travel}
-        busy={busy}
-        canAct={canAct}
-        onSendAgain={onSendAgain}
-        onBringHome={onBringHomeRequest}
-      />
 
       {/*
         MAR-611, ADR 0017. The disclosure before the press, and the outcome
@@ -534,43 +552,127 @@ export function DeployToServerPanel({
         </section>
       ) : null}
 
-      <p className="card-meta wrap">{describeSignIn(chosen)}.</p>
-
-      {/*
-        ADR 0007's receipt, before the deploy and not with it, from the same
-        function the Servers page and the connect flow call. This is the named
-        version — the agent is known here, so the first line can say which agent
-        is about to be copied where, which is the one thing the other two
-        surfaces cannot say at the moment they have to say the rest.
-      */}
-      <section className="deploy-receipt">
-        <h3 className="label-caps">Before you put {title} on {chosen.label}</h3>
-        <p className="wrap">{receipt.what}</p>
-        <ul className="permission-list">
-          {receipt.limits.map((limit) => (
-            <li key={limit} className="wrap">
-              {limit}
-            </li>
-          ))}
-        </ul>
-        <p className="disclosure wrap" role="note">
-          {receipt.revocation}
-        </p>
-      </section>
-
-      {/*
-        MAR-591. After the receipt and before the button, because it is the same
-        kind of sentence the receipt is — what this arrangement is actually like
-        — and because the receipt is the general case while this is about *this*
-        agent's own connections.
-      */}
-      <ConnectionTravelNotice travel={deploy.travel} agent={title} server={chosen.label} />
-
       {standing === null ? null : (
         <DeployOutcome standing={standing} report={report} checkedAt={checkedAt} />
       )}
 
-      {canAct ? (
+      {/*
+        MAR-874. Everything that explains, behind one press — and nothing is
+        gone.
+
+        ADR 0007's receipt keeps every limit it listed and its revocation
+        sentence; MAR-591's amber notice about what does not travel keeps its
+        reasons and its permission list; `describeSentServer` keeps its bound on
+        what DASH may claim about a copy sitting on a machine it cannot see.
+        They are one press under a question a person standing at a deploy button
+        is already asking, instead of four blocks between them and the button.
+
+        ## Above the button, and that position is not cosmetic
+
+        ADR 0002 amendment 2: a disclosure that arrives after the grant
+        describes a window the person was already inside. Collapsing these was
+        allowed; moving them *below* the press was not, and
+        `tests/deploy-render.test.tsx` is the gate that said so — it asserts the
+        stranded-connection sentence appears earlier in the markup than the
+        button, which is the machine-readable form of *before the press*. So the
+        disclosure sits here: closed, one press, and every word of it ahead of
+        the control it is about.
+      */}
+      <WhyDisclosure>
+        <p className="card-meta wrap">{describeSignIn(chosen)}.</p>
+
+        {/*
+          ADR 0007's receipt, before the deploy and not with it, from the same
+          function the Servers page and the connect flow call. This is the named
+          version — the agent is known here, so the first line can say which
+          agent is about to be copied where, which is the one thing the other
+          two surfaces cannot say at the moment they have to say the rest.
+        */}
+        <section className="deploy-receipt">
+          <h3 className="label-caps">Before you put {title} on {chosen.label}</h3>
+          <p className="wrap">{receipt.what}</p>
+          <ul className="permission-list">
+            {receipt.limits.map((limit) => (
+              <li key={limit} className="wrap">
+                {limit}
+              </li>
+            ))}
+          </ul>
+          <p className="disclosure wrap" role="note">
+            {receipt.revocation}
+          </p>
+        </section>
+
+        {/*
+          MAR-591's warning arm. After the receipt, because it is the same kind
+          of sentence the receipt is — what this arrangement is actually like —
+          and because the receipt is the general case while this is about *this*
+          agent's own connections.
+
+          The **refusal** arm is not here. See below the button row: a sentence
+          that explains why a control is dead is not an explanation a person may
+          have to go looking for, it is the state of the control.
+        */}
+        {deploy.travel.verdict === "refuse" ? null : (
+          <ConnectionTravelNotice travel={deploy.travel} agent={title} server={chosen.label} />
+        )}
+
+        {/*
+          MAR-874. The card that was a section, now a row under the state line
+          it used to restate. Every sentence is unchanged and so is every
+          control: *send it again*, and a per-server *bring it home* which is
+          the only place that press lives once there is more than one server.
+        */}
+        <SentServers
+          targets={targets}
+          travel={deploy.travel}
+          busy={busy}
+          canAct={canAct}
+          onSendAgain={onSendAgain}
+          onBringHome={onBringHomeRequest}
+        />
+      </WhyDisclosure>
+
+      {/*
+        MAR-591's refusal, in the open (MAR-874).
+
+        `lib/workspace.ts`'s rule about dead controls: the button below is
+        disabled on a refusal rather than hidden, and a disabled control whose
+        reason is folded away is a control that reads as broken. Everything else
+        this section says is an answer to *why*; this one is an answer to *why
+        can I not press that*, and the two are not the same question.
+      */}
+      {deploy.travel.verdict === "refuse" ? (
+        <ConnectionTravelNotice travel={deploy.travel} agent={title} server={chosen.label} />
+      ) : null}
+
+      {/*
+        MAR-874. One action, and which one it is depends on where the agent is.
+
+        An agent that lives here gets *Put it on <server>*. An agent that lives
+        on exactly one server gets *Bring it home*, because that is the other
+        end of the same switch and it is what somebody reading a one-line state
+        of *my server* would reach for. The *send it again* half is still
+        offered, on its own row one press above, where `describeSentServer`
+        already worded it per server.
+
+        Above one server the switch has no single other end, so the deploy
+        button stays primary and every per-server control lives on its own row.
+        That case is rare, and the alternative — a *Bring home* that could not
+        say which machine it meant — is exactly the ambiguous action UX-4 was
+        filed on.
+      */}
+      {!canAct ? (
+        /*
+         * Said rather than drawn disabled. A greyed-out deploy button on an
+         * agent's page reads as "this agent cannot be deployed", which is a
+         * claim about the agent; the true statement is about which window this
+         * is. Same call `ManifestGapNotice` makes one section up.
+         */
+        <p className="muted wrap">
+          Open the installed DASH app to put this agent on a server.
+        </p>
+      ) : home === null ? (
         <div className="button-row">
           {/*
             Disabled on a refusal rather than hidden, unlike the undeployable
@@ -594,16 +696,20 @@ export function DeployToServerPanel({
           </button>
         </div>
       ) : (
-        /*
-         * Said rather than drawn disabled. A greyed-out deploy button on an
-         * agent's page reads as "this agent cannot be deployed", which is a
-         * claim about the agent; the true statement is about which window this
-         * is. Same call `ManifestGapNotice` makes one section up.
-         */
-        <p className="muted wrap">
-          Open the installed DASH app to put this agent on a server.
-        </p>
+        <div className="button-row">
+          <button
+            type="button"
+            className="button-primary"
+            disabled={busy}
+            onClick={() => {
+              onBringHomeRequest(home.host_id);
+            }}
+          >
+            {`Bring ${title} home from ${home.label}`}
+          </button>
+        </div>
       )}
+
     </section>
   );
 }

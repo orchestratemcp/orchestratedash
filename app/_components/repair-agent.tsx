@@ -52,6 +52,7 @@ export function RepairAgent({
   hasFolder,
   onRepaired,
   setFeedback,
+  startable = false,
 }: {
   agent: string;
   canAct: boolean;
@@ -66,6 +67,22 @@ export function RepairAgent({
   /** Re-read the workspace, so the page redraws as the agent it just repaired. */
   onRepaired: () => void;
   setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
+  /**
+   * Whether DASH holds a registration naming a program it could spawn
+   * (MAR-874).
+   *
+   * `WorkspaceView.startable`, and the only fact this component has ever had
+   * about whether the agent in front of it is actually broken. It decides the
+   * **heading** and nothing else: false gets `REPAIR_AGENT_COPY.heading`, which
+   * is the alarm, and true gets `heading_calm`, which is a door.
+   *
+   * Defaulted to `false` rather than `true`, which is the safe direction for a
+   * caller that forgets: an over-loud heading over a working agent is the
+   * defect this packet fixed, but a *silent* one over an agent that genuinely
+   * cannot start would be the older and worse failure — DASH doing less than it
+   * could and saying nothing, which is what `ManifestGapNotice` exists against.
+   */
+  startable?: boolean;
 }): ReactNode {
   const [busy, setBusy] = useState(false);
 
@@ -112,7 +129,25 @@ export function RepairAgent({
       {/* An `h3` for `FolderUpdate`'s reason: this renders inside the agent
           page's Settings drawer, and an `h2` would outrank the drawer's own
           heading. */}
-      <h3 id="repair-agent">{REPAIR_AGENT_COPY.heading}</h3>
+      {/*
+        MAR-874. The heading is the predicate now, and it was unconditional.
+
+        `RepairAgent` drew *This agent will not run* over every agent with a
+        folder in a window that could act — see this component's own note above
+        on why it is always offered — so the Settings stage told a person their
+        agent was broken while the header three bands up read READY and named
+        the server it was living on. Two claims about one agent, and the one
+        that had checked nothing was this one.
+
+        `startable` is what DASH actually holds: a registration naming a program
+        it could spawn. It is the same fact `AGENT_CONTROL_COPY.idle.not_reported`
+        already speaks from on the Run stage, so the two surfaces now agree by
+        construction rather than by coincidence. The control itself did not
+        move and was not taken away.
+      */}
+      <h3 id="repair-agent">
+        {startable ? REPAIR_AGENT_COPY.heading_calm : REPAIR_AGENT_COPY.heading}
+      </h3>
       <div className="folder-update-do">
         <button
           className="button-secondary"

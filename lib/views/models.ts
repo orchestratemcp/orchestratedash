@@ -41,6 +41,11 @@ import {
   type PlannedRouteStep,
 } from "../ai/model-levels";
 import { aiKeyConnections, pickAiKeyCard } from "../ai/connection-view";
+/* MAR-874. Two record reads and no credential read — see the call site. Safe
+   here on this module's own standing: it already reads the store, and both of
+   these are the same pair `adoptFleetCredential` opens with. */
+import { fleetConnectorFor } from "../fleet/catalogue";
+import { readFleetConnection } from "../fleet/store";
 import {
   readAgentModelChoice,
   readFleetLevelModels,
@@ -57,6 +62,20 @@ import type { AgentModelSettingsView, ModelStepView, RunModelView } from "./type
  */
 export type ModelSourceManifest = ConnectionSourceManifest & {
   planned_route?: readonly PlannedRouteStep[];
+};
+
+/**
+ * The address of the agent-row Connect that would adopt a fleet key (MAR-874).
+ *
+ * Named here rather than written inline so `noChoice`'s options object and the
+ * view's own field are the one shape. It is the `adopt` member of
+ * `AgentModelSettingsView`'s no-choice arm; see that field for what it may and
+ * may not carry.
+ */
+type AdoptableModelKey = {
+  connection_id: string;
+  field_id: string;
+  provider_label: string;
 };
 
 /**
@@ -89,7 +108,35 @@ export function buildAgentModelSettings(
     return noChoice("no_provider_key", null, resolved);
   }
   if (!card.held) {
-    return noChoice("no_key_held", card.provider_label, resolved);
+    /*
+     * MAR-874, ADR 0013 moment 2. The one no-key state that has a press.
+     *
+     * Two reads and both are about DASH's own records: is there a connector for
+     * this provider at all, and is there a fleet connection row for it. **The
+     * credential itself is never opened here** — that would be the fleet-key
+     * bypass UX-3's acceptance forbids, and it is not needed: what the row
+     * answers is whether pressing Connect on this agent's own row would find
+     * something to adopt, which is a question about `fleet_connections` rather
+     * than about a secret.
+     *
+     * The same pair `adoptFleetCredential` opens with, deliberately, so this
+     * field cannot promise a press that function would then decline. It can
+     * still decline for the reason this cannot see — `materialize` producing no
+     * record for this agent — and that is why the button reports its own
+     * outcome rather than the view predicting one.
+     */
+    const adoptable =
+      fleetConnectorFor(card.provider_id) !== null &&
+      readFleetConnection(card.provider_id) !== null;
+    return noChoice("no_key_held", card.provider_label, resolved, {
+      adopt: adoptable
+        ? {
+            connection_id: card.connection_id,
+            field_id: card.field_id,
+            provider_label: card.provider_label,
+          }
+        : null,
+    });
   }
 
   /*
@@ -176,6 +223,15 @@ function noChoice(
   reason: NoModelChoiceReason,
   providerLabel: string | null,
   steps: readonly ResolvedModelStep[],
+  /**
+   * MAR-874. The adoptable press, on the one arm that can have one.
+   *
+   * An options object with a default rather than a fourth positional, so that
+   * the three call sites which have nothing to offer say nothing rather than
+   * passing `null` three times — and so a fifth arm added later cannot acquire
+   * a press by being written in the wrong argument position.
+   */
+  extra: { adopt: AdoptableModelKey | null } = { adopt: null },
 ): AgentModelSettingsView {
   const sentence = describeNoChoice(reason, providerLabel);
   return {
@@ -185,6 +241,7 @@ function noChoice(
     detail: sentence.detail,
     next_action: sentence.next_action,
     steps: steps.map((step) => toStepView(step, null)),
+    adopt: extra.adopt,
   };
 }
 
