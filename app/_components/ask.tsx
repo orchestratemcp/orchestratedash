@@ -194,8 +194,12 @@ export function AskThread({
           {ask.connect === null || !canAct ? (
             <p className="ask-next wrap">{ask.blocked.next_action}</p>
           ) : (
+            /* Still the whole next action and not `capability.action.label`.
+               This button *performs* the act, so the sentence and the control
+               are one thing; the short label is for the footer, where the
+               control is a pointer into the stage this card is on. */
             <button type="button" className="primary" disabled={busy} onClick={() => void connect()}>
-              {ask.capability.action.label}
+              {ask.blocked.next_action}
             </button>
           )}
           {/* MAR-878. Direct chat is unavailable on every arm of this card, so
