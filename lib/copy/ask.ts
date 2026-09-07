@@ -711,3 +711,207 @@ export const ASK_ACTIVITY_LABEL = "Question in progress";
 export const ASK_CUSTODY =
   "Your questions and the answers stay on this computer. What goes to the provider is your question " +
   "and the saved reports listed under each answer, and nothing else about you or your other agents.";
+
+/* ---------------------------------------------------------------------- *
+ * What this agent can be asked, as against whether it is running
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The three facts MAR-878 separates, and the one this names.
+ *
+ * Proof Scout shipped a header reading READY beside a footer reading
+ * "Proof Scout has no way to answer questions." Both were true. They are
+ * answers to different questions, and the page had a word for only one of them:
+ *
+ * 1. **Runtime state** — READY, RUNNING, STOPPED, NEEDS ATTENTION. Whether DASH
+ *    can make this agent run its own plan. `lib/views/agent-control.ts` owns it
+ *    and this module does not touch it.
+ * 2. **Capability** — whether this agent can be *asked a question*, which is a
+ *    different feature reached by a different door and gated on a model, a key,
+ *    a model name and something saved. That is what is below.
+ * 3. **The unmet requirement** — when it cannot, the one thing that would change
+ *    that, in a sentence with the one action that meets it.
+ *
+ * A chip that said only READY made a promise about (2) that (1) had no way to
+ * keep. So capability is now a named fact with its own short label, drawn beside
+ * the runtime chip, said again in the footer, and sent to the chief — one value,
+ * four surfaces, and none of them free to word it differently.
+ *
+ * `available` is a member rather than the absence of one. A union with a "can"
+ * arm is what makes the header chip renderable in every state without the
+ * header deciding what silence means, which is the mistake this whole issue is.
+ */
+export type AskCapabilityReason = "available" | AskUnavailableReason;
+
+/**
+ * Where the one action that meets an unmet requirement lives.
+ *
+ * A kind rather than an href, because the four homes are four different kinds
+ * of act — a connect command, a stage, a run and the chief — and a renderer
+ * that received a URL for all four would be free to send a person to the
+ * settings page for a key the connect flow owns. `app/_components/ask.tsx`
+ * turns each kind into exactly one control.
+ *
+ * `chief` is not a repair. It is the honest answer for the one state nobody
+ * using DASH can fix — an agent whose author declared no model provider — and
+ * it points at the surface that *can* still answer questions about that agent,
+ * which is the fleet's chief.
+ */
+export type AskCapabilityAction =
+  | { kind: "ask"; label: string }
+  | { kind: "connect"; label: string }
+  | { kind: "settings"; label: string }
+  | { kind: "run"; label: string }
+  | { kind: "chief"; label: string };
+
+export interface AskCapability {
+  /**
+   * The exact reason id, carried rather than re-derived.
+   *
+   * The chief is told this alongside the sentence, so an answer about why an
+   * agent cannot be asked something is built from the same enumerated fact the
+   * page branched on rather than from a model's reading of English prose.
+   */
+  reason: AskCapabilityReason;
+  /** Two to four words, beside the runtime chip. Never a sentence. */
+  label: string;
+  /**
+   * One sentence: what can be asked, or what is missing.
+   *
+   * `describeUnavailable`'s own headline for every blocked reason, verbatim —
+   * so the header chip's description, the footer line, the thread's fix-it card
+   * and the chief's briefing are one string and cannot drift apart.
+   */
+  sentence: string;
+  /**
+   * The single next action as a sentence, for prose positions and for the chief.
+   *
+   * `describeUnavailable`'s `next_action`. The chief is given this one so its
+   * answer sends a person to the same place the page does; the short label on
+   * `action` is for the control itself, which renders uppercase.
+   */
+  recovery: string;
+  action: AskCapabilityAction;
+  /**
+   * A key DASH holds that the provider refused when it last looked, or null.
+   *
+   * **Not a refusal.** `buildAgentAsk`'s gate order and its four refusals are
+   * unchanged by MAR-878, and a lapsed liveness record is DASH's memory of one
+   * past check rather than a verdict about the next question — turning it into
+   * a fifth gate would refuse on the page what `electron/ask-host.ts` would
+   * still answer, which is the inverse of the rule that gate order exists for.
+   * So it is said beside the capability and not instead of it.
+   */
+  caution: string | null;
+}
+
+/** The chief entry, where this agent cannot be asked directly (MAR-878). */
+export const ASK_CHIEF_ENTRY = "Ask the chief about this agent";
+
+/** What the chief entry does, for the line beside it. */
+export const ASK_CHIEF_ENTRY_DETAIL =
+  "The chief answers from what DASH records about every agent, including this one.";
+
+/** The caution beside a held key the provider turned down when DASH last checked. */
+export function describeAskKeyLapse(service: string): string {
+  return `${service} turned this key down the last time DASH checked, so a question may not get through.`;
+}
+
+/**
+ * What this agent can be asked, and the one thing that would change it.
+ *
+ * Every blocked arm quotes `describeUnavailable` rather than restating it. The
+ * short label is the only string invented here, and it is invented because a
+ * chip beside a status pill cannot be a sentence — a pill and a paragraph do
+ * not sit on one line.
+ */
+export function describeAskCapability(
+  reason: AskCapabilityReason,
+  context: { agent: string; service: string | null; lapsed?: boolean },
+): AskCapability {
+  const service = context.service;
+  const caution =
+    context.lapsed === true && service !== null ? describeAskKeyLapse(service) : null;
+  if (reason === "available") {
+    return {
+      reason,
+      label: "Ask it a question",
+      sentence: `${context.agent} can answer questions about what it has saved.`,
+      recovery: "Type a question in the box at the bottom of this page.",
+      action: { kind: "ask", label: ASK_SUBMIT },
+      caution,
+    };
+  }
+  const recovery = describeUnavailable(reason, { agent: context.agent, service });
+  return {
+    reason,
+    label: capabilityLabel(reason),
+    sentence: recovery.headline,
+    recovery: recovery.next_action,
+    action: capabilityAction(reason, service),
+    caution,
+  };
+}
+
+/**
+ * Every capability sentence this module can produce, for the copy sweep.
+ *
+ * The enumerator `tests/ask.test.ts` walks. Written out per reason rather than
+ * derived from a list, so a reason added to `AskCapabilityReason` without a
+ * label is a compile error in `capabilityLabel` rather than a sentence nobody
+ * ever reads.
+ */
+export function everyAskCapabilitySentence(): string[] {
+  const reasons: AskCapabilityReason[] = [
+    "available",
+    "no_provider",
+    "no_key",
+    "no_model_chosen",
+    "nothing_saved",
+  ];
+  const sentences: string[] = [ASK_CHIEF_ENTRY, ASK_CHIEF_ENTRY_DETAIL];
+  for (const reason of reasons) {
+    const one = describeAskCapability(reason, {
+      agent: "Proof Scout",
+      service: "OpenRouter",
+      lapsed: true,
+    });
+    sentences.push(one.label, one.sentence, one.recovery, one.action.label);
+    if (one.caution !== null) {
+      sentences.push(one.caution);
+    }
+  }
+  return sentences;
+}
+
+function capabilityLabel(reason: AskUnavailableReason): string {
+  switch (reason) {
+    case "no_provider":
+      return "Built without a model";
+    case "no_key":
+      return "Waiting for your key";
+    case "no_model_chosen":
+      return "Needs a model picked";
+    case "nothing_saved":
+      return "Nothing to ask about yet";
+  }
+}
+
+function capabilityAction(
+  reason: AskUnavailableReason,
+  service: string | null,
+): AskCapabilityAction {
+  switch (reason) {
+    case "no_provider":
+      // Nobody using DASH can give an agent a model provider its author left
+      // out, so there is no repair to offer and a greyed-out one would be a
+      // claim about the agent. The chief can still answer about it.
+      return { kind: "chief", label: ASK_CHIEF_ENTRY };
+    case "no_key":
+      return { kind: "connect", label: `Connect ${service ?? "the provider"}` };
+    case "no_model_chosen":
+      return { kind: "settings", label: "Choose a model" };
+    case "nothing_saved":
+      return { kind: "run", label: "Run it once" };
+  }
+}

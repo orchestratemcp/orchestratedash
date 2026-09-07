@@ -30,6 +30,7 @@ import {
   describeAskModel,
   describeChatSubject,
   describeUnavailable,
+  describeAskCapability,
 } from "../lib/copy/ask";
 import { buildArtifactCards } from "../lib/views/artifacts";
 import { AGENT_STAGES, type AgentStage } from "../lib/views/agent-stage";
@@ -455,6 +456,7 @@ function chatBar(ask: AgentAskView): string {
 const ASKABLE: AgentAskView = {
   can_ask: true,
   heading: ASK_HEADING,
+  capability: describeAskCapability("available", { agent: AGENT, service: "OpenRouter" }),
   purpose: { headline: "Ask this agent about what it has saved.", detail: "It reads its own reports." },
   custody: "Your questions and the answers stay on this computer.",
   placeholder: ASK_PLACEHOLDER,
@@ -517,6 +519,7 @@ describe("the chat bar", () => {
     const html = chatBar({
       can_ask: false,
       heading: ASK_HEADING,
+      capability: describeAskCapability("no_key", { agent: AGENT, service: "OpenRouter" }),
       blocked: describeUnavailable("no_key", { agent: AGENT, service: "OpenRouter" }),
       connect: null,
       history: [],

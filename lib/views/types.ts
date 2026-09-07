@@ -41,6 +41,7 @@ import type { ManifestGapView } from "../sample-refresh";
 import type { AgentHealthView } from "./agent-health";
 import type { AgentScheduleView } from "./agent-schedule";
 import type { AgentPlanStep } from "../agent-plan";
+import type { AskCapability } from "../copy/ask";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ChiefRunnerHolds } from "../chief/discord";
@@ -2316,6 +2317,22 @@ export type AgentAskView =
   | {
       can_ask: true;
       heading: string;
+      /**
+       * What this agent can be asked, separately from whether it is running
+       * (MAR-878).
+       *
+       * On **both** arms, and that is the point of it. The header draws a chip
+       * from this beside the runtime status pill, and a field that existed only
+       * on the blocked arm would leave the header deciding what an absent
+       * capability means — which is the defect: a READY chip beside a footer
+       * saying the agent had no way to answer questions, because nothing on the
+       * page carried the second fact.
+       *
+       * `lib/views/ask.ts`' `askCapabilityFor` produces the same value for a
+       * caller that wants only this, so the chief's briefing and this page
+       * cannot come to word one agent's ability differently.
+       */
+      capability: AskCapability;
       purpose: { headline: string; detail: string };
       custody: string;
       placeholder: string;
@@ -2364,6 +2381,22 @@ export type AgentAskView =
   | {
       can_ask: false;
       heading: string;
+      /**
+       * What this agent can be asked, separately from whether it is running
+       * (MAR-878).
+       *
+       * On **both** arms, and that is the point of it. The header draws a chip
+       * from this beside the runtime status pill, and a field that existed only
+       * on the blocked arm would leave the header deciding what an absent
+       * capability means — which is the defect: a READY chip beside a footer
+       * saying the agent had no way to answer questions, because nothing on the
+       * page carried the second fact.
+       *
+       * `lib/views/ask.ts`' `askCapabilityFor` produces the same value for a
+       * caller that wants only this, so the chief's briefing and this page
+       * cannot come to word one agent's ability differently.
+       */
+      capability: AskCapability;
       blocked: Recovery;
       /**
        * The connection to open, when the reason is a missing key. Null for every

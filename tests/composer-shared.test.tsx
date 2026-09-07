@@ -36,7 +36,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { AskComposer } from "../app/_components/ask";
 import { ChiefChat } from "../app/_components/chief-chat";
-import { ASK_HEADING, ASK_MODEL_CHANGE, describeAskModel } from "../lib/copy/ask";
+import { ASK_HEADING, ASK_MODEL_CHANGE, describeAskCapability, describeAskModel } from "../lib/copy/ask";
 import { CHIEF_CHAT_COPY } from "../lib/copy/chief-chat";
 import type { AgentAskView } from "../lib/views/types";
 import type { AgentRow, ChiefRoomView } from "../lib/views/types";
@@ -250,6 +250,7 @@ function askable(): AgentAskView {
   return {
     can_ask: true,
     heading: ASK_HEADING,
+    capability: describeAskCapability("available", { agent: "ai-agent-news", service: "OpenRouter" }),
     purpose: { headline: "Ask this agent about what it has saved.", detail: "It reads its own reports." },
     custody: "Your questions and the answers stay on this computer.",
     placeholder: "What have you found about…?",

@@ -66,7 +66,10 @@ import {
   describeEstimate,
   describeReportedRunSpend,
   describeSelection,
+  describeAskCapability,
   describeUnavailable,
+  type AskCapability,
+  type AskCapabilityReason,
   type AskFailureReason,
 } from "../copy/ask";
 import { plainMoment } from "../copy/when";
@@ -113,56 +116,40 @@ export function buildAgentAsk(
    */
   title: string = agent,
 ): AgentAskView {
-  const items = savedThingsForAgent(agent);
   const history = readExchanges(agent).map(toExchangeView);
   const reported = describeReportedRunSpend(...reportedRunSpend(events), title);
 
-  const card = pickAiKeyCard(aiKeyConnections(agent, manifest));
-  if (card === null) {
+  const gate = resolveAskGate(agent, manifest);
+  const capability = describeAskCapability(gate.reason, {
+    agent: title,
+    service: gate.card?.service ?? null,
+    lapsed: gate.lapsed,
+  });
+  const { card } = gate;
+  if (gate.reason !== "available") {
     return blocked(
-      describeUnavailable("no_provider", { agent: title, service: null }),
-      null,
+      describeUnavailable(gate.reason, { agent: title, service: card?.service ?? null }),
+      /* The connect flow only where a press on this page clears the reason,
+         which is `no_key` and no other — see `AgentAskView.connect`. Decided
+         off the reason rather than off the card, because a card exists on
+         three of the four blocked arms and only one of them has a button. */
+      gate.reason === "no_key" ? (card?.connect ?? null) : null,
+      capability,
       history,
       reported,
     );
   }
-  if (!card.held) {
-    return blocked(
-      describeUnavailable("no_key", { agent: title, service: card.service }),
-      card.connect,
-      history,
-      reported,
-    );
-  }
-
   /*
-   * MAR-642. DASH's default counts as a model chosen, for this gate's purpose.
-   *
-   * The refusal below is the one a freshly imported agent used to hit: nothing
-   * could be asked of it until somebody opened its Settings stage and picked a
-   * model. A default is exactly the answer to that, so this reads the effective
-   * choice — and `electron/ask-host.ts` reads the same one, through the same
-   * function, so the page cannot offer a question main would then refuse.
+   * Narrowed by `resolveAskGate`: `available` is returned only with a card, a
+   * resolved choice and something saved. TypeScript cannot carry that across a
+   * function boundary without a second union, and a second union describing the
+   * same four gates is the thing this refactor exists to avoid — so the
+   * impossible state is stated once, here, rather than defended four times.
    */
-  const effective = readEffectiveModelChoice(agent, card.provider_id);
-  const choice = effective.choice;
-  if (choice.kind !== "one_model") {
-    return blocked(
-      describeUnavailable("no_model_chosen", { agent: title, service: card.service }),
-      null,
-      history,
-      reported,
-    );
+  if (card === null || gate.effective === null || gate.choice === null) {
+    throw new Error("ask gate reported available with nothing to ask under");
   }
-  if (items.length === 0) {
-    return blocked(
-      describeUnavailable("nothing_saved", { agent: title, service: card.service }),
-      null,
-      history,
-      reported,
-    );
-  }
-
+  const { choice, effective, items } = gate;
   const profile = aiProviderById(card.provider_id);
   const spend = readSpendSummary(agent);
   const statesCost = profile?.completion.prices_its_own_answer ?? false;
@@ -170,6 +157,7 @@ export function buildAgentAsk(
   return {
     can_ask: true,
     heading: ASK_HEADING,
+    capability,
     purpose: describeAskPurpose(title),
     custody: ASK_CUSTODY,
     placeholder: ASK_PLACEHOLDER,
@@ -222,18 +210,125 @@ export function buildAgentAsk(
 function blocked(
   recovery: ReturnType<typeof describeUnavailable>,
   connect: AiKeyConnectionView["connect"] | null,
+  capability: AskCapability,
   history: AskExchangeView[],
   reported: string | null,
 ): AgentAskView {
   return {
     can_ask: false,
     heading: ASK_HEADING,
+    capability,
     blocked: recovery,
     connect,
     history,
     sources_heading: ASK_SOURCES_HEADING,
     reported,
   };
+}
+
+/* ---------------------------------------------------------------------- *
+ * The gate, read once
+ * ---------------------------------------------------------------------- */
+
+/**
+ * What the four refusals decided, and the facts they decided it from
+ * (MAR-878).
+ *
+ * ## Why the gate moved out of `buildAgentAsk`
+ *
+ * MAR-878's finding is that three surfaces described one agent's ability to
+ * answer a question and disagreed: the header said READY, the footer said the
+ * agent had no way to answer, and the chief — asked about the same agent —
+ * knew neither. The reason they disagreed is that only one of them could see
+ * the gate: it was four early returns inside a function that builds a chat
+ * view, and a header cannot build a chat view to find out whether to draw a
+ * chip.
+ *
+ * So the decision is a value now. Everything that needs to say what this agent
+ * can be asked reads this one function, and the order of the four gates is
+ * exactly the order `buildAgentAsk` applied them in — an agent with no provider
+ * at all is nobody's to fix, a missing key is one click, a missing model choice
+ * is one click on the same page, and an agent that has saved nothing needs a
+ * run.
+ *
+ * ## What did not change
+ *
+ * Nothing is refused that was not refused before, and nothing that was refused
+ * is now allowed. `lapsed` is reported beside the answer and never folded into
+ * it — see `AskCapability.caution` for why a stale liveness record must not
+ * become a fifth gate.
+ */
+interface AskGate {
+  reason: AskCapabilityReason;
+  /** The AI key card this agent's manifest resolves to, or null for `no_provider`. */
+  card: AiKeyConnectionView | null;
+  /** The effective model choice, once a key is held. Null before that gate. */
+  effective: ReturnType<typeof readEffectiveModelChoice> | null;
+  /** The resolved single model, or null when none is named. */
+  choice: { kind: "one_model"; model_id: string } | null;
+  /** Everything this agent has saved, read once for the gate and the estimate. */
+  items: SavedItem[];
+  /** A held key the provider refused when DASH last checked. Never a refusal. */
+  lapsed: boolean;
+}
+
+function resolveAskGate(agent: string, manifest: ConnectionSourceManifest): AskGate {
+  const card = pickAiKeyCard(aiKeyConnections(agent, manifest));
+  if (card === null) {
+    return { reason: "no_provider", card: null, effective: null, choice: null, items: [], lapsed: false };
+  }
+  /* `key_refused` is the one liveness state that is a statement about the key
+     rather than about the network or the provider's own health, which is why
+     it is the only one that earns a caution. `unreachable` on a train is the
+     state `lib/ai/liveness.ts` refuses to report as a key problem. */
+  const lapsed = card.held && card.liveness.state === "key_refused";
+  if (!card.held) {
+    return { reason: "no_key", card, effective: null, choice: null, items: [], lapsed };
+  }
+
+  /*
+   * MAR-642. DASH's default counts as a model chosen, for this gate's purpose.
+   *
+   * The refusal below is the one a freshly imported agent used to hit: nothing
+   * could be asked of it until somebody opened its Settings stage and picked a
+   * model. A default is exactly the answer to that, so this reads the effective
+   * choice — and `electron/ask-host.ts` reads the same one, through the same
+   * function, so the page cannot offer a question main would then refuse.
+   */
+  const effective = readEffectiveModelChoice(agent, card.provider_id);
+  const choice = effective.choice;
+  if (choice.kind !== "one_model") {
+    return { reason: "no_model_chosen", card, effective, choice: null, items: [], lapsed };
+  }
+  const items = savedThingsForAgent(agent);
+  if (items.length === 0) {
+    return { reason: "nothing_saved", card, effective, choice, items, lapsed };
+  }
+  return { reason: "available", card, effective, choice, items, lapsed };
+}
+
+/**
+ * What this agent can be asked, for a surface that is not the chat (MAR-878).
+ *
+ * The header's chip and the chief's briefing both need the capability and
+ * neither needs the conversation, the estimate or the scrollback. They call
+ * this; `buildAgentAsk` calls the same gate one line lower. There is one gate
+ * and one set of words, which is the whole of what MAR-878 asked for.
+ *
+ * **Reads the store**, like everything else in this module, so a page imports
+ * the type and never this function.
+ */
+export function askCapabilityFor(
+  agent: string,
+  manifest: ConnectionSourceManifest,
+  title: string = agent,
+): AskCapability {
+  const gate = resolveAskGate(agent, manifest);
+  return describeAskCapability(gate.reason, {
+    agent: title,
+    service: gate.card?.service ?? null,
+    lapsed: gate.lapsed,
+  });
 }
 
 /**
