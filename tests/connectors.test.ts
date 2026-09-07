@@ -75,6 +75,15 @@ function agent(name: string, rows: ConnectionRowWithCredential[]): AgentConnecti
   return { name, title: name, avatar: "ninja", rows, lapses: [] };
 }
 
+/** For MAR-883: a fixture where the id and the display name actually differ. */
+function namedAgent(
+  name: string,
+  title: string,
+  rows: ConnectionRowWithCredential[],
+): AgentConnections {
+  return { name, title, avatar: "ninja", rows, lapses: [] };
+}
+
 /* ---------------------------------------------------------------------- *
  * The grouping
  * ---------------------------------------------------------------------- */
@@ -246,6 +255,38 @@ describe("the disclosure that one sign-in serves two agents", () => {
       agent("B", [row({ dash_can_hold: false, field_id: null, broker: null })]),
     ]);
     expect(describeSharedGrant(theirs[0] as never)).toBeNull();
+  });
+
+  it("names agents by their display title, not their folder id (MAR-883)", () => {
+    /*
+     * The defect: `describeSharedGrant` mapped `dependents[].agent` — the
+     * folder id, a value slot by MAR-589's ruling — straight into a sentence a
+     * person reads before signing in. An author's folder name is never
+     * guaranteed to read as words, and this is the sentence Henrik's own
+     * Gmail row showed it in: "Connecting Gmail connects it for
+     * meeting-assistant".
+     */
+    const titled = buildConnectorTiles([
+      namedAgent("meeting-assistant", "Meeting Assistant", [row()]),
+      namedAgent("news-scout", "News Scout", [row()]),
+    ]);
+    const sentence = describeSharedGrant(titled[0] as never) ?? "";
+    expect(sentence).toContain("Meeting Assistant");
+    expect(sentence).toContain("News Scout");
+    expect(sentence).not.toContain("meeting-assistant");
+    expect(sentence).not.toContain("news-scout");
+  });
+
+  it("tells two same-named sharers apart by folder, not id", () => {
+    // MAR-877's disambiguation rule, applied here too: two sharers with one
+    // name still each need a record a person can act on individually.
+    const collision = buildConnectorTiles([
+      namedAgent("meeting-assistant-2", "Meeting Assistant", [row()]),
+      namedAgent("standup-notes", "Meeting Assistant", [row()]),
+    ]);
+    const sentence = describeSharedGrant(collision[0] as never) ?? "";
+    expect(sentence).toContain("Meeting Assistant — Meeting assistant 2");
+    expect(sentence).toContain("Meeting Assistant — Standup notes");
   });
 });
 

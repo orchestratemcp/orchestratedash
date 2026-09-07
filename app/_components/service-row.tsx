@@ -9,7 +9,7 @@ import { splitProof, type ProofKind } from "../../lib/copy/info-note";
 import { describeProof } from "../../lib/connection-card";
 import { describeAccounts, describeExpansion, type ServiceRow as Row } from "../../lib/connections-list";
 import { describeSharedGrant } from "../../lib/connectors";
-import { describeSkip, type FleetSkip } from "../../lib/fleet/grants";
+import { describeSkip, shareLabel, type FleetSkip } from "../../lib/fleet/grants";
 import { authorizationHeading } from "../../lib/copy/settings-connections";
 import { disambiguateAgentTitles } from "../../lib/views/agent-labels";
 import type { Recovery } from "../../lib/copy/recovery";
@@ -114,6 +114,21 @@ export function ServiceRow({
   );
   const suffixFor = (agent: string): string | null =>
     dependentLabels.find((one) => one.name === agent)?.suffix ?? null;
+
+  /*
+   * MAR-883. `fleet.waiting` is ids — `share`'s own vocabulary — and
+   * `fleet.agents` is where this row already keeps the title for each one
+   * (MAR-877). `shareLabel` turns the first into words the same way
+   * `dependentLabels` above turns `tile.dependents` into words: same
+   * collision rule, same suffix, one function for both.
+   */
+  const give =
+    fleet === null
+      ? null
+      : shareLabel(
+          fleet.waiting,
+          fleet.agents.map((one) => ({ name: one.agent, title: one.title })),
+        );
 
   async function runFleet(
     action: "connect" | "test" | "disconnect" | "share" | "default" | "assign",
@@ -439,20 +454,16 @@ export function ServiceRow({
                   Drawn only when somebody is actually waiting — which happens
                   exactly when an agent was imported after this was connected —
                   so it is never a control that would do nothing. */}
-              {fleet.waiting.length > 0 ? (
+              {give === null ? null : (
                 <button
                   type="button"
                   className="button-primary"
                   disabled={busy !== null}
                   onClick={() => void runFleet("share")}
                 >
-                  {busy === "share"
-                    ? "Giving…"
-                    : fleet.waiting.length === 1
-                      ? `Give it to ${fleet.waiting[0] as string}`
-                      : `Give it to ${String(fleet.waiting.length)} waiting agents`}
+                  {busy === "share" ? "Giving…" : give}
                 </button>
-              ) : null}
+              )}
 
               {connected && (fleet.accounts?.length ?? 0) === 0 ? (
                 <button

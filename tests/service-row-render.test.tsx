@@ -395,6 +395,7 @@ describe("one service, once", () => {
             secret_readable: true,
             unreadable: null,
           },
+          agents: [{ agent: "news-scout", title: "News scout", connected: false }],
           waiting: ["news-scout"],
         }),
       ],
@@ -403,7 +404,9 @@ describe("one service, once", () => {
     expect(html).toContain("he••••@example.com");
     expect(html).toContain("since 10 August 2026");
     expect(html).toContain("Check it still works");
-    expect(html).toContain("Give it to news-scout");
+    // MAR-883: the button names the agent, never its folder id.
+    expect(html).toContain("Give it to News scout");
+    expect(html).not.toContain("Give it to news-scout");
     expect(html).toContain("Disconnect");
   });
 

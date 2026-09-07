@@ -29,6 +29,7 @@
 
 import { resolveCredentialTarget, type CredentialTarget } from "../connection-credentials";
 import type { ConnectionSourceManifest } from "../connections";
+import { disambiguateAgentTitles, type AgentIdentity } from "../views/agent-labels";
 import type { FleetConnector } from "./catalogue";
 
 /** One agent DASH holds a manifest for, as this module needs it. */
@@ -283,3 +284,65 @@ export const FLEET_SKIPS = [
   "does_not_qualify",
   "not_dash_held",
 ] as const satisfies readonly FleetSkip[];
+
+/* ---------------------------------------------------------------------- *
+ * The share button
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The "Give it to …" button's own words (MAR-883).
+ *
+ * `waiting` is the id list `FleetConnectorView.waiting` and `ServiceRow.fleet`
+ * both carry — a value slot, by MAR-589's ruling, because it travels straight
+ * into the `share` command, which addresses an agent by id. Printing one of
+ * those ids as the button's whole label was the defect: `known` is every
+ * agent the same card already has a title for (`agents`, on both views), so a
+ * single waiting agent is looked up rather than shown as the id it arrived as.
+ *
+ * `disambiguateAgentTitles` is the same call the per-agent list beside this
+ * button already makes, so a waiting agent whose name collides with another
+ * agent on the card gets the identical folder suffix — never a second
+ * decision about how to tell two "Meeting Assistant"s apart.
+ *
+ * Null when nobody is waiting, matching both callers' own "draw no button"
+ * rule. The two-or-more case still counts rather than lists — the sentence
+ * this replaces never named anyone once there was more than one, and that
+ * half was never the id leak.
+ */
+export function shareLabel(
+  waiting: readonly string[],
+  known: readonly AgentIdentity[],
+): string | null {
+  if (waiting.length === 0) {
+    return null;
+  }
+  if (waiting.length > 1) {
+    return `Give it to ${String(waiting.length)} waiting agents`;
+  }
+  const id = waiting[0] as string;
+  const label = disambiguateAgentTitles(known).find((one) => one.name === id);
+  const title = label?.title ?? id;
+  return label?.suffix == null ? `Give it to ${title}` : `Give it to ${title} — ${label.suffix}`;
+}
+
+/**
+ * Every sentence `shareLabel` can produce, for the copy sweep.
+ *
+ * One of each shape: nobody waiting (excluded — null is not a sentence),
+ * one waiting agent with a name nobody shares, one waiting agent whose name
+ * collides with another agent on the same card, and more than one waiting.
+ */
+export function everyShareLabelSentence(): string[] {
+  return [
+    shareLabel(["meeting-assistant"], [{ name: "meeting-assistant", title: "Meeting Assistant" }]) ??
+      "",
+    shareLabel(
+      ["meeting-assistant-2"],
+      [
+        { name: "meeting-assistant-2", title: "Meeting Assistant" },
+        { name: "standup-notes", title: "Meeting Assistant" },
+      ],
+    ) ?? "",
+    shareLabel(["news-scout", "invoice-reviewer"], []) ?? "",
+  ];
+}

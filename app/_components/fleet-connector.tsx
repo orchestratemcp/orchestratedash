@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
-import { describeSkip, type FleetSkip } from "../../lib/fleet/grants";
+import { describeSkip, shareLabel, type FleetSkip } from "../../lib/fleet/grants";
 import { fleetStanding, fleetStandingChip } from "../../lib/copy/fleet-standing";
 import type { Recovery } from "../../lib/copy/recovery";
 import type { FleetConnectorView } from "../../lib/views/types";
@@ -127,6 +127,17 @@ export function FleetConnectorCard({
   const chip = fleetStandingChip(standing);
   const connected = connector.held !== null;
   const signIn = connector.connector_kind === "google_oauth_broker";
+  /*
+   * MAR-883. `connector.waiting` is ids — `share`'s own vocabulary — and
+   * `connector.agents` is where this card already keeps the title for each
+   * one (MAR-877). `shareLabel` is the one place that turns the first into
+   * words, so a name collision on this card is told apart exactly as the list
+   * below already tells it apart.
+   */
+  const give = shareLabel(
+    connector.waiting,
+    connector.agents.map((one) => ({ name: one.agent, title: one.title })),
+  );
 
   async function run(action: "connect" | "test" | "disconnect" | "share"): Promise<void> {
     setBusy(action);
@@ -339,20 +350,16 @@ export function FleetConnectorCard({
             an agent was imported after this was connected — so it is never a
             control that would do nothing.
           */}
-          {connector.waiting.length > 0 ? (
+          {give === null ? null : (
             <button
               type="button"
               className="button-primary"
               disabled={busy !== null}
               onClick={() => void run("share")}
             >
-              {busy === "share"
-                ? "Giving…"
-                : connector.waiting.length === 1
-                  ? `Give it to ${connector.waiting[0] as string}`
-                  : `Give it to ${String(connector.waiting.length)} waiting agents`}
+              {busy === "share" ? "Giving…" : give}
             </button>
-          ) : null}
+          )}
 
           {connected ? (
             <button
