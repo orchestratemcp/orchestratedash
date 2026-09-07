@@ -262,9 +262,9 @@ function mostPressing(agent: AgentRow): string {
  */
 export const EMPTY_BRIEFING =
   "This person's fleet has no agents in it yet — nothing has been added, run, or connected. " +
-  "There is nothing to report about runs, approvals or connections. To add one: choose " +
-  '"Try a sample agent" from the menu button at the top left of the window, or add one they ' +
-  "built themselves from Settings.";
+  "There is nothing to report about runs, approvals or connections. To add one: press Add " +
+  "agent on the Agents page and choose Try a sample agent, or import a folder they built " +
+  "themselves.";
 
 /**
  * The briefing as one string.

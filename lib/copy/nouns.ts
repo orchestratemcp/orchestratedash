@@ -18,18 +18,15 @@
  * repository has the scar (`every*Sentence` helpers that no test ever called).
  * So this is not advice. `SECTION_NOUNS` is the canon, `RETIRED_NOUNS` names
  * every phrase that lost, and `tests/copy-nouns.test.ts` reads the source of
- * every copy module and every page and holds the count of retired phrases to a
- * recorded baseline. A new one fails. A removed one also fails, saying so, so
- * that the baseline can only ever get smaller.
+ * every copy module and every page and refuses a retired phrase in any of them.
  *
- * ## Why this module renames nothing by itself
+ * ## The renames are done
  *
- * MAR-879's lane owns the Add agent flow and the Agents page. `agent-page.ts`,
- * `panel.ts` and the Servers page — where the two surviving retired phrases
- * live — belong to other packets that were merging in parallel, and a rename
- * landing in three lanes at once is how a wave produces conflicts instead of
- * agents. So the canon is written down, the drift is pinned at today's count,
- * and `BASELINE` in the test is the exact worklist for whoever renames them.
+ * All four sites were changed with this module: `AGENT_OUTPUTS_COPY.heading`
+ * and `PANEL_ALREADY_SHOWN` say **Results**, and the Servers page's `<h1>` says
+ * **Servers**. The test's `BASELINE` — which briefly held them as recorded debt
+ * while the packet's ownership was narrower — is empty, which is the state the
+ * ratchet existed to reach.
  *
  * Pure and import-free, for `lib/copy/add-agent.ts`'s reason: a `"use client"`
  * tree renders these, and a Node builtin dragged into the browser bundle is how
@@ -114,15 +111,22 @@ export type SectionNounKey = keyof typeof SECTION_NOUNS;
  */
 export const RETIRED_NOUNS = {
   /**
-   * `lib/copy/agent-page.ts` still heads the run outputs with it, and
-   * `lib/copy/panel.ts` points at that heading by name. Both belong to the
-   * agent detail page, which MAR-875 and MAR-878 were both editing while this
-   * was written.
+   * Headed the agent detail page's run outputs, with `PANEL_ALREADY_SHOWN`
+   * pointing at that heading by name — so the rename had to move both together
+   * or the sentence would have named a section that no longer existed.
+   *
+   * It lost to **Results** on the ground the heading's own last rename was
+   * decided on: a name says what the thing is for, not how it was made. Nobody
+   * arrives on that page looking for assets.
    */
   "Generated assets": "results",
   /**
-   * The Servers page's own `<h1>`. The tab that reaches it says "Servers", so
-   * a person arrives at a page whose title is a word they did not press.
+   * The Servers page's own `<h1>`, until MAR-879.
+   *
+   * It was a deliberate choice (MAR-599: an `<h1>` repeating the tab above it
+   * says nothing new), and the page comment records why that was overturned
+   * rather than forgotten. A person presses **Servers** and should not have to
+   * check that a page called something else is the one they asked for.
    */
   "Remote machines": "servers",
 } as const satisfies Record<string, SectionNounKey>;

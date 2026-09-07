@@ -10,15 +10,21 @@
  * lives. So the scan is over the files, as text, the same way
  * `scripts/brand-check.mjs` walks `app/`.
  *
- * ## Why a baseline and not a ban
+ * ## It was a baseline for about an hour, and now it is a ban
  *
- * A ban would be red on the first run, in files this packet does not own — see
- * `lib/copy/nouns.ts`' header. A baseline is green today and goes red the
- * moment a *seventh* surface picks up the old word, which is the failure worth
- * catching. It also goes red when a count drops, so the list can only shrink:
- * whoever finally renames `AGENT_OUTPUTS_COPY.heading` has to come here and
- * delete the line, which is how the worklist stays honest instead of becoming
- * a permanent exemption nobody reads.
+ * The first version of this file recorded the four surviving uses as a
+ * `BASELINE` and refused any *new* one, because the four lived in files
+ * MAR-879's lane did not own. The ownership was extended and they were renamed,
+ * so the baseline is empty — and an empty baseline is not a weaker version of
+ * the mechanism, it is the whole point of it. What the ratchet was for was
+ * getting here.
+ *
+ * The shape is kept rather than replaced by a flat `not.toContain`, for one
+ * reason: if a future packet has to reintroduce one of these words somewhere it
+ * genuinely belongs, the honest way to do it is a line in `BASELINE` naming the
+ * file and saying why — visible in a diff, countable, and impossible to leave
+ * lying around unnoticed. A bare ban would be argued with by deleting the
+ * assertion.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -50,23 +56,21 @@ const SCANNED_DIRECTORIES = ["lib/copy", "app"];
 const EXEMPT = new Set(["lib/copy/nouns.ts"]);
 
 /**
- * The drift as it stands, counted at MAR-879.
+ * Where a retired phrase is still allowed to appear, and how often.
  *
- * Every line is a rename somebody still owes. Keys are repository-relative
- * paths with forward slashes; the value is how many times that file writes the
- * retired phrase.
+ * **Empty, and that is the finished state.** MAR-879 renamed all four sites:
+ * `AGENT_OUTPUTS_COPY.heading` and `PANEL_ALREADY_SHOWN` say "Results", and the
+ * Servers page's `<h1>` says "Servers". Keys would be repository-relative paths
+ * with forward slashes and the value the number of uses.
+ *
+ * Adding a line here is not forbidden — a phrase can have a legitimate home
+ * again, and a comment beside it saying which and why is the honest way to
+ * record that. What is forbidden is drift, which is the same thing arriving
+ * without anybody writing it down.
  */
 const BASELINE: Record<RetiredNoun, Record<string, number>> = {
-  "Generated assets": {
-    // `AGENT_OUTPUTS_COPY.heading` — the agent detail page's outputs section.
-    "lib/copy/agent-page.ts": 1,
-    // `ARTIFACT_SHOWN_ABOVE`, which points at that heading by name.
-    "lib/copy/panel.ts": 1,
-  },
-  "Remote machines": {
-    // The `<h1>`, and one comment above it explaining the word.
-    "app/settings/servers/page.tsx": 2,
-  },
+  "Generated assets": {},
+  "Remote machines": {},
 };
 
 function sourceFiles(): string[] {
@@ -144,9 +148,10 @@ describe("the retired phrases", () => {
 
   it("appear in no file the baseline does not already name", () => {
     /*
-     * The assertion the module exists for. A surface that picks up "Generated
-     * assets" tomorrow lands here as a new key, and the message names the file
-     * and the word it should have used instead.
+     * The assertion the module exists for, and with an empty baseline it is now
+     * the plain claim: no surface in `lib/copy` or `app` says a retired word.
+     * One that picks "Generated assets" up tomorrow lands here as a new key,
+     * and the message names the file and the word it should have used instead.
      */
     for (const phrase of Object.keys(RETIRED_NOUNS) as RetiredNoun[]) {
       const seen = Object.keys(counted[phrase]).sort();
@@ -158,7 +163,7 @@ describe("the retired phrases", () => {
     }
   });
 
-  it("appear no more often in those files than they did at MAR-879", () => {
+  it("appear no more often anywhere than the baseline allows", () => {
     for (const phrase of Object.keys(RETIRED_NOUNS) as RetiredNoun[]) {
       for (const [path, allowed] of Object.entries(BASELINE[phrase])) {
         const seen = counted[phrase][path] ?? 0;
