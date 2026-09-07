@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 13:35: MAR-882 merged via #353 (redo); master green at 5c3bb35. Every UX-wave packet and follow-up is on master. Proven: MAR-868, 875, 878, 884, 885. DASH rebuilding on 5c3bb35 for the last installed looks (881/882/883, 874 one-screen).",
+  "lifecycle_note": "2026-09-07 17:45: MAR-887 merged (#356, master CI green at 1d7c4e7). Stage 8 dossier merged (#355) for review. Lanes F2 (MAR-888 recipe) and F3 (MAR-889 traces) dispatched in parallel from 821c239.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2150,10 +2150,10 @@
     },
     {
       "id": "MAR-887",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "Foundation 1: extract the agent runtime into a shared SDK used by agent-kit, tools/dash-mcp and the packaged sample; old fixture agents keep working; installed journey needs no npm/network/extra Node."
+      "commit": "1d7c4e7",
+      "note": "PR #356: dash-agent-sdk.mjs ships inside the agent folder (ADR 0034); both templates and the packaged sample share it; legacy template pinned under a real Supervisor; scratch-store smoke 85/85 (6a-6p). Proof owed: Henrik installed sample journey (stage 4)."
     },
     {
       "id": "MAR-888",
