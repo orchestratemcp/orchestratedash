@@ -503,6 +503,51 @@ describe("open-in-dash", () => {
   });
 
   /*
+   * MAR-888. The recipe is the document the manifest was generated from, so an
+   * agent that reaches DASH without it arrives carrying a claim and nothing to
+   * check the claim against. It travels with the rest of the declared file set
+   * — and it travels *optionally*, which the second test is about.
+   */
+  describe("the recipe travels with the agent", () => {
+    it("carries agent.recipe.json into the handoff, beside the manifest", () => {
+      const directory = scaffold();
+
+      const written = writeHandoff(directory, "0.1.1");
+
+      expect(written.ok).toBe(true);
+      const files = written.ok ? written.value.handoff.files ?? [] : [];
+      expect(files.map((file) => file.path)).toContain("agent.recipe.json");
+
+      // Not merely present: the same bytes the scaffold wrote, and a document
+      // that still describes this agent. A handoff carrying a stale or empty
+      // recipe would be worse than one carrying none, because DASH's drift
+      // check would then be comparing the manifest against a fiction.
+      const carried = files.find((file) => file.path === "agent.recipe.json");
+      expect(carried?.contents).toBe(
+        readFileSync(path.join(directory, "agent.recipe.json"), "utf8"),
+      );
+      const recipe = JSON.parse(carried?.contents ?? "{}") as { agent?: { id?: string } };
+      expect(recipe.agent?.id).toBe("folder-digest");
+    });
+
+    it("still produces a handoff for an agent built before recipes existed", () => {
+      // The reason it is `required: false`. Every agent scaffolded before
+      // MAR-888 has no recipe, and refusing one would tell a person their build
+      // was incomplete over a file that is missing because of when it was made.
+      const directory = scaffold();
+      rmSync(path.join(directory, "agent.recipe.json"));
+
+      const written = writeHandoff(directory, "0.1.1");
+
+      expect(written.ok).toBe(true);
+      const paths = written.ok ? written.value.handoff.files?.map((file) => file.path) ?? [] : [];
+      expect(paths).not.toContain("agent.recipe.json");
+      expect(paths).toContain("agent.manifest.json");
+      expect(paths).toContain("agent.mjs");
+    });
+  });
+
+  /*
    * MAR-595 finding 9. The scaffold's own README invites rewriting `agent.mjs`
    * to stop reading `sources.json` ("Make it yours"), and a person who then
    * deleted the file they no longer used got "This agent's build is
