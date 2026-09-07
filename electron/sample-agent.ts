@@ -38,7 +38,7 @@ import { createSampleAgent, SAMPLE_PARENT_FOLDER } from "../lib/sample-agent";
 import { openHandoffLink } from "./handoff-host";
 
 /**
- * Where the sample's three template files live, in both layouts.
+ * Where the sample's four template files live, in both layouts.
  *
  * Packaged, `scripts/build-shell.mjs` puts them beside `main.mjs`, exactly as it
  * does the renderer, and they are resolved relative to `import.meta.url` for the
@@ -50,7 +50,12 @@ import { openHandoffLink } from "./handoff-host";
  * works from a clean checkout without a separate build step for the template
  * and with the same code path as the package.
  */
-function templateCandidates(): Array<{ agent: string; sdk: string; openInDash: string }> {
+function templateCandidates(): Array<{
+  agent: string;
+  sdk: string;
+  openInDash: string;
+  evals: string;
+}> {
   const beside = fileURLToPath(new URL("./agent-kit/", import.meta.url));
   const repo = fileURLToPath(new URL("../../agent-kit/", import.meta.url));
   return [
@@ -58,11 +63,17 @@ function templateCandidates(): Array<{ agent: string; sdk: string; openInDash: s
       agent: path.join(beside, "agent.mjs"),
       sdk: path.join(beside, "dash-agent-sdk.mjs"),
       openInDash: path.join(beside, "open-in-dash.mjs"),
+      // Flattened into the same directory rather than kept under `evals/`,
+      // because the packaged layout is one folder of named files and the name
+      // is what the copy step and this lookup both use. It is written into the
+      // scaffolded project at `evals/run-evals.mjs` either way.
+      evals: path.join(beside, "run-evals.mjs"),
     },
     {
       agent: path.join(repo, "template", "agent.mjs"),
       sdk: path.join(repo, "template", "dash-agent-sdk.mjs"),
       openInDash: path.join(repo, "dist", "open-in-dash.mjs"),
+      evals: path.join(repo, "template", "evals", "run-evals.mjs"),
     },
   ];
 }
@@ -76,7 +87,8 @@ export function readTemplateSources(): TemplateLookup {
     if (
       existsSync(candidate.agent) &&
       existsSync(candidate.sdk) &&
-      existsSync(candidate.openInDash)
+      existsSync(candidate.openInDash) &&
+      existsSync(candidate.evals)
     ) {
       return {
         ok: true,
@@ -84,6 +96,7 @@ export function readTemplateSources(): TemplateLookup {
           agent: readFileSync(candidate.agent, "utf8"),
           sdk: readFileSync(candidate.sdk, "utf8"),
           openInDash: readFileSync(candidate.openInDash, "utf8"),
+          evals: readFileSync(candidate.evals, "utf8"),
         },
       };
     }
@@ -105,11 +118,11 @@ export function readTemplateSources(): TemplateLookup {
  * mistake is a menu item that fails only in the built product, discovered by a
  * user rather than by a build. Called at startup so it is a crash on line one.
  *
- * `scripts/build-shell.mjs` writes all three files into
+ * `scripts/build-shell.mjs` writes all four files into
  * `dist/electron/agent-kit/` on every shell build, so the dev path satisfies
  * this too and cannot drift away from what the package does.
  *
- * `dash-agent-sdk.mjs` is one of the three and is the one whose absence is
+ * `dash-agent-sdk.mjs` is one of the four and is the one whose absence is
  * least visible: the sample would be written, imported and registered, and the
  * agent would die on its first line with an unresolved import (ADR 0034).
  */
@@ -118,8 +131,8 @@ export function assertSampleTemplatesPresent(): void {
   if (!found.ok) {
     throw new Error(
       "The sample agent's template files are missing. " +
-        "scripts/build-shell.mjs writes agent.mjs, dash-agent-sdk.mjs and open-in-dash.mjs " +
-        "into dist/electron/agent-kit/.",
+        "scripts/build-shell.mjs writes agent.mjs, dash-agent-sdk.mjs, open-in-dash.mjs and " +
+        "run-evals.mjs into dist/electron/agent-kit/.",
     );
   }
 }

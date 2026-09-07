@@ -7,6 +7,20 @@
  * `agent.manifest.v2.schema.json` the runner will hold it to, which is the whole
  * point of the template existing.
  *
+ * ## This module is now an adapter (MAR-888)
+ *
+ * The manifest is no longer assembled here. `agent-kit/recipe.ts` holds one
+ * `AgentRecipe` shape and one `planFromRecipe`, and the three programs that
+ * write a DASH agent folder — this one, `lib/sample-agent.ts` and
+ * `tools/dash-mcp/src/scaffold.ts` — all go through it. What is left here is
+ * this scaffolder's *recipe*: two steps, no connections, the panel a digest
+ * needs, and the README that describes this particular program. Everything the
+ * three agents share is assembled once, in one file, so a correction to it
+ * cannot land in one copy.
+ *
+ * `ScaffoldRequest` and `planScaffold` keep their shape so every existing
+ * caller and every existing test still works.
+ *
  * ## The first supported template, and only the first
  *
  * MAR-428's non-goals are explicit: no multi-language Agent Kit matrix. So there
@@ -29,15 +43,25 @@
  * involves no registry at all after the scaffold itself.
  */
 
-import path from "node:path";
-
+import {
+  RECIPE_FILE_NAME,
+  SDK_VERSION,
+  dashAgentsRootForThisMachine,
+  defaultAcceptance,
+  manifestFromRecipe,
+  planFromRecipe,
+  type AgentRecipe,
+  type RecipePlan,
+  type TargetState,
+} from "./recipe";
 import {
   DEFAULT_SOURCES,
   DIGEST_WRITE_COMPONENT,
   FEED_FETCH_COMPONENT,
   SOURCES_FILE_NAME,
 } from "../lib/agent-sources";
-import { isSafeAgentId } from "../lib/handoff";
+
+export { RECIPE_FILE_NAME, SDK_VERSION } from "./recipe";
 
 export interface ScaffoldRequest {
   /** Absolute path of the directory to create. */
@@ -51,6 +75,16 @@ export interface ScaffoldRequest {
   /** Recorded in the manifest's provenance. */
   kit_version: string;
   now: Date;
+  /**
+   * What is already at `directory`, when the caller has looked.
+   *
+   * Optional so this module stays pure for the callers that plan without a
+   * disk — `lib/sample-agent.ts` chooses a folder name nothing has taken, and
+   * `tests/agent-kit.test.ts` plans against a path that does not exist yet. A
+   * caller that is about to write should pass `readTargetState(directory)`, and
+   * `agent-kit/cli.ts` does.
+   */
+  target?: TargetState;
 }
 
 /** The raw files the CLI carries and the scaffold copies verbatim. */
@@ -68,6 +102,16 @@ export interface TemplateSources {
   sdk: string;
   /** The bundled `open-in-dash.mjs`, copied into the project's `scripts/`. */
   openInDash: string;
+  /**
+   * `agent-kit/template/evals/run-evals.mjs` — the four acceptance checks
+   * (MAR-888).
+   *
+   * Carried the same way the runtime is, and for the same reason: the project
+   * has no dependencies, so a check that needed one could not run. It is
+   * generic — everything about *this* agent reaches it through the generated
+   * `evals/cases.json`.
+   */
+  evals: string;
 }
 
 export interface ScaffoldedFile {
@@ -97,41 +141,210 @@ export function deriveAgentId(name: string): string {
     .slice(0, 64);
 }
 
-export function planScaffold(request: ScaffoldRequest, sources: TemplateSources): ScaffoldResult {
-  if (!isSafeAgentId(request.agent_id)) {
-    return {
-      ok: false,
-      problem:
-        `“${request.agent_id}” cannot be used as an agent name. ` +
-        "Use lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit.",
-    };
-  }
-  if (!path.isAbsolute(request.directory)) {
-    return { ok: false, problem: "The project directory must be a full path." };
-  }
-  if (request.display_name.trim().length === 0 || request.summary.trim().length === 0) {
-    return { ok: false, problem: "An agent needs a name and a one-sentence description." };
-  }
-
+/**
+ * The Agent Kit's own recipe for one request.
+ *
+ * Exported because `lib/sample-agent.ts` amends it: DASH's own sample is this
+ * agent plus two declarations DASH is entitled to make on its own behalf and a
+ * blank scaffold is not (MAR-603, MAR-619). Amending the *recipe* rather than
+ * the finished manifest is what keeps `agent.recipe.json` and
+ * `agent.manifest.json` in agreement on disk — a sample whose recipe said
+ * "no connections" while its manifest declared one would be reported as drift
+ * by the check this packet added.
+ */
+export function recipeFor(request: ScaffoldRequest): AgentRecipe {
+  const emits = [{ kind: "digest" as const, artifact_version: 1 as const }];
   return {
-    ok: true,
-    files: [
+    recipe_version: 1,
+    runtime: {
+      sdk_version: SDK_VERSION,
+      kit_version: request.kit_version,
+      generated_by: `create-dash-agent ${request.kit_version}`,
+      // Not a registry build. Saying so is better than borrowing a fingerprint
+      // from a registry this agent was never composed against.
+      registry_fingerprint: "agent-kit-template",
+      dependencies: {},
+    },
+    agent: {
+      id: request.agent_id,
+      display_name: request.display_name.trim(),
+      summary: request.summary.trim(),
+    },
+    // What this agent actually does, in the order it does it. See
+    // `lib/agent-sources.ts` on why these are constants rather than literals,
+    // and on why a scheduled-trigger step is deliberately absent while the
+    // agent is manual-run-only.
+    steps: [
       {
-        path: "agent.manifest.json",
-        contents: `${JSON.stringify(scaffoldManifest(request), null, 2)}\n`,
+        component_id: FEED_FETCH_COMPONENT,
+        intent: "Reads each of the sources you listed.",
+        risk_level: "low",
+        model_tier: "none",
       },
-      { path: "package.json", contents: `${JSON.stringify(projectPackage(request), null, 2)}\n` },
-      { path: "agent.mjs", contents: sources.agent },
-      { path: "dash-agent-sdk.mjs", contents: sources.sdk },
-      { path: "scripts/open-in-dash.mjs", contents: sources.openInDash },
       {
-        path: SOURCES_FILE_NAME,
-        contents: `${JSON.stringify({ sources: DEFAULT_SOURCES }, null, 2)}\n`,
+        component_id: DIGEST_WRITE_COMPONENT,
+        intent: "Saves the whole roundup, with every item's own address kept.",
+        risk_level: "low",
+        model_tier: "none",
       },
-      { path: "README.md", contents: readme(request) },
-      { path: ".gitignore", contents: gitignore() },
     ],
+    sources: [...DEFAULT_SOURCES],
+    // Empty, and that is the template's most useful property: it can be added
+    // to DASH and watched working without anybody having a credential to hand.
+    connections: [],
+    contract: {
+      consumes: [SOURCES_FILE_NAME],
+      emits,
+    },
+    // What it may do that needs no credential — the case `connections` cannot
+    // express, since every connection requirement carries an owner, fields and
+    // a validation action.
+    //
+    // A declaration, not a boundary. The runner strips the environment but
+    // spawns an ordinary process with ordinary network access, so this says
+    // what the agent claims and who to ask about it. No surface built on it
+    // may imply DASH enforces it — the same honesty ADR 0002 requires of the
+    // draft-only Gmail boundary.
+    permissions: {
+      read: [
+        {
+          id: "network",
+          label: "Read the news sources you choose",
+          detail:
+            "Fetches the addresses listed in this agent's own sources file. It sends nothing and changes nothing.",
+        },
+      ],
+      write: [],
+      approval_required_for: [],
+    },
+    /*
+     * The panel this agent asks DASH to draw for it (MAR-548, ADR 0008).
+     *
+     * Three sections, and the reason there are three is that a digest is
+     * three different questions. `report` is "what did it find?", rendered
+     * through the same digest machinery the run detail page uses. `metrics`
+     * is "is it still working?", which is DASH's question about the agent
+     * rather than the agent's about the news — every item here is a
+     * `dash_fact`, so every value on it renders attributed to DASH. `table`
+     * is "show me everything at once", which the prose digest deliberately
+     * does not do.
+     *
+     * The bindings name roles and nothing else. `digest` is the artifact
+     * kind this agent's own `artifact()` call emits, and the three column
+     * keys are members of the digest item shape
+     * `contracts/run-artifact.schema.json` defines — `headline`,
+     * `source_name` and `published_at`. A key that names nothing renders as
+     * an absent cell rather than as an error, which is what makes this safe
+     * to declare before the first run has produced anything.
+     *
+     * `published_at` is declared `timestamp` rather than `text`, and that is
+     * the load-bearing word: it is the author telling DASH the value is a
+     * moment, which is the licence DASH needs to render it in its own words
+     * instead of shipping `2026-08-05T09:00:00.000Z` onto a guided surface.
+     */
+    panel: {
+      panel_version: 1,
+      title: "What the scout found",
+      sections: [
+        {
+          id: "latest_digest",
+          type: "report",
+          label: "The latest digest",
+          artifact_role: "digest",
+        },
+        {
+          id: "activity",
+          type: "metrics",
+          label: "How this agent has been doing",
+          items: [
+            {
+              id: "run_count",
+              label: "Times it has run",
+              source: { kind: "dash_fact", fact: "run_count" },
+            },
+            {
+              id: "last_run_at",
+              label: "Last checked",
+              source: { kind: "dash_fact", fact: "last_run_at" },
+            },
+            {
+              id: "last_run_verdict",
+              label: "How the last run ended",
+              source: { kind: "dash_fact", fact: "last_run_verdict" },
+            },
+          ],
+        },
+        {
+          id: "headlines",
+          type: "table",
+          label: "Every headline in the latest digest",
+          source_role: "digest",
+          columns: [
+            { key: "headline", label: "Headline", kind: "text" },
+            { key: "source_name", label: "Source", kind: "text" },
+            { key: "published_at", label: "Published", kind: "timestamp" },
+          ],
+        },
+      ],
+    },
+    acceptance: defaultAcceptance(emits),
   };
+}
+
+/**
+ * Plan the project, optionally amending the recipe first.
+ *
+ * `amend` is `lib/sample-agent.ts`'s hook and exists for one reason: DASH's own
+ * sample is this agent plus declarations DASH is entitled to make and a blank
+ * scaffold is not. Before MAR-888 the sample rewrote the finished
+ * `agent.manifest.json` after `planScaffold` returned, which was fine while the
+ * manifest was the only document — and would now write a folder whose recipe
+ * and manifest disagree the moment it was created. Amending the recipe means
+ * one document is edited and the other is derived from it, which is the whole
+ * property this packet is for.
+ */
+export function planScaffold(
+  request: ScaffoldRequest,
+  sources: TemplateSources,
+  amend?: (recipe: AgentRecipe) => AgentRecipe,
+): ScaffoldResult {
+  const recipe = recipeFor(request);
+  return asScaffoldResult(
+    planFromRecipe(
+      amend === undefined ? recipe : amend(recipe),
+      {
+        agent: sources.agent,
+        sdk: sources.sdk,
+        openInDash: sources.openInDash,
+        evals: sources.evals,
+        readme: readme(request),
+        gitignore: gitignore(),
+      },
+      {
+        directory: request.directory,
+        now: request.now,
+        target: request.target,
+        dashAgentsRoot: dashAgentsRootForThisMachine(),
+      },
+    ),
+  );
+}
+
+/**
+ * A recipe plan in this module's older shape.
+ *
+ * `problems` is deliberately flattened into `problem`: every caller of
+ * `planScaffold` — the CLI, the sample, the tests — renders one sentence, and a
+ * scaffolder that has to teach every caller a second error shape to gain a
+ * detail none of them shows is a scaffolder nobody upgrades. The MCP, which
+ * does show structured problems, calls `planFromRecipe` directly.
+ */
+function asScaffoldResult(plan: RecipePlan): ScaffoldResult {
+  if (plan.ok) {
+    return { ok: true, files: plan.files };
+  }
+  const detail = plan.problems?.map((entry) => `${entry.where}: ${entry.problem}`).join(" ");
+  return { ok: false, problem: detail === undefined ? plan.problem : `${plan.problem} ${detail}` };
 }
 
 /* ---------------------------------------------------------------------- *
@@ -141,246 +354,28 @@ export function planScaffold(request: ScaffoldRequest, sources: TemplateSources)
 /**
  * A manifest v2 for a runner-hosted agent with no connections.
  *
- * The Agent DOM block deliberately mirrors the shape MAR-426's
- * `export_build_brief` emits for a runner-hosted agent — the same runtime class,
- * the same control location id, the same four commands. That is what the issue's
- * "a build brief can be consumed without schema translation" means in practice:
- * a scaffold and a build brief produce documents DASH reads through one path,
- * and if they diverged, one of the two would quietly become the supported one.
- *
- * `retry`, `pause`, `resume` and `cancel` — and not `approve`, `reject` or
- * `choose`. A template with no approval gates that declared `approve` would be
- * offering DASH a button with nothing behind it, which
- * `docs/agent-dom-contract-v2.md` calls out as the failure to avoid: missing
- * controls mean read-only, not inferred controls.
+ * Assembled by `manifestFromRecipe` since MAR-888; this is the Agent Kit's
+ * recipe put through it. The Agent DOM block deliberately mirrors the shape
+ * MAR-426's `export_build_brief` emits for a runner-hosted agent — the same
+ * runtime class, the same control location id, the same four commands. That is
+ * what the issue's "a build brief can be consumed without schema translation"
+ * means in practice: a scaffold and a build brief produce documents DASH reads
+ * through one path, and if they diverged, one of the two would quietly become
+ * the supported one.
  *
  * **Exported for MAR-576**, which needs the document without the project around
  * it. Re-importing an agent DASH scaffolded means producing the manifest this
  * template writes *today* for an agent that already exists — no directory, no
- * `agent.mjs`, no handoff. Calling `planScaffold` and fishing the manifest back
- * out of its `files` array would have worked and would have required inventing a
- * directory path that nothing writes to, which is the kind of unused argument
- * that later reads as a real one. `directory` is genuinely unread here; the
- * shared `ScaffoldRequest` keeps it because the scaffold proper needs it.
+ * `agent.mjs`, no handoff. `directory` is genuinely unread here; the shared
+ * `ScaffoldRequest` keeps it because the scaffold proper needs it.
  */
 export function scaffoldManifest(request: ScaffoldRequest): Record<string, unknown> {
-  return {
-    manifest_version: 2,
-    agent: {
-      name: request.agent_id,
-      display_name: request.display_name,
-      goal: request.summary,
-      plan_source: "composed",
-      playbook_id: "",
-      route_id: "",
-      build_target: "code",
-    },
-    // What this agent actually does, in the order it does it. See
-    // `lib/agent-sources.ts` on why these are constants rather than literals,
-    // and on why a scheduled-trigger step is deliberately absent while the
-    // agent is manual-run-only.
-    planned_route: [
-      { step: 1, component_id: FEED_FETCH_COMPONENT, risk_level: "low", model_tier: "none" },
-      { step: 2, component_id: DIGEST_WRITE_COMPONENT, risk_level: "low", model_tier: "none" },
-    ],
-    safety_contract: {
-      // L1: it acts on its own folder and nothing else, and there is no
-      // irreversible component to gate. Claiming a higher clearance for a
-      // template would teach every agent built from it to overstate itself.
-      automation_clearance: "L1",
-      enforced_approval_gates: [],
-      irreversible_components: [],
-    },
-    monitoring: {
-      events: [
-        "run_started",
-        "step_started",
-        "step_completed",
-        "gate_requested",
-        "gate_resolved",
-        "run_completed",
-        "run_failed",
-      ],
-      endpoint_env: "DASH_INGEST_URL",
-      token_env: "DASH_INGEST_TOKEN",
-      output_location: "runs/events.jsonl inside the agent's own folder",
-    },
-    provenance: {
-      generated_by: `create-dash-agent ${request.kit_version}`,
-      // Not a registry build. Saying so is better than borrowing a fingerprint
-      // from a registry this agent was never composed against.
-      registry_fingerprint: "agent-kit-template",
-      generated_at: request.now.toISOString(),
-    },
-    agent_dom: {
-      dom_version: 1,
-      runtime: {
-        class: "local_process",
-        label: "DASH Agent Runner on this computer",
-        availability: "on_demand",
-        continues_when_dash_closed: true,
-      },
-      trigger: {
-        type: "manual",
-        label: "Only when you ask it to run",
-        technical: {
-          what_wakes_it_up: "The runner starts this process when a person asks DASH to.",
-          offline_behavior: "No run starts while the computer or the runner is off.",
-          limitation: "No schedule and no inbound event is configured.",
-        },
-      },
-      locations: {
-        runtime: {
-          id: `${request.agent_id}-runtime`,
-          label: "DASH Agent Runner on this computer",
-          kind: "local",
-          offline_behavior:
-            "Continues after the DASH window closes while this computer and runner remain on.",
-        },
-        control: [
-          {
-            id: "dash_agent_runner_control",
-            label: "DASH Agent Runner control adapter",
-            kind: "dash",
-            offline_behavior: "Unavailable while the computer or the runner is off.",
-          },
-        ],
-        interaction: [
-          {
-            id: "dash_workspace",
-            label: "DASH agent workspace",
-            kind: "dash",
-            offline_behavior: "Last safe state is read-only while the runner is unavailable.",
-          },
-        ],
-      },
-      // Empty, and that is the template's most useful property: it can be added
-      // to DASH and watched working without anybody having a credential to hand.
-      connections: [],
-      // What it may do that needs no credential — the case `connections` cannot
-      // express, since every connection requirement carries an owner, fields and
-      // a validation action.
-      //
-      // A declaration, not a boundary. The runner strips the environment but
-      // spawns an ordinary process with ordinary network access, so this says
-      // what the agent claims and who to ask about it. No surface built on it
-      // may imply DASH enforces it — the same honesty ADR 0002 requires of the
-      // draft-only Gmail boundary.
-      permissions: {
-        read: [
-          {
-            id: "network",
-            label: "Read the news sources you choose",
-            detail:
-              "Fetches the addresses listed in this agent's own sources file. It sends nothing and changes nothing.",
-          },
-        ],
-        write: [],
-        approval_required_for: [],
-      },
-      control: {
-        supported: true,
-        command_version: 1,
-        location_id: "dash_agent_runner_control",
-        commands: ["retry", "pause", "resume", "cancel"],
-      },
-      memory: [],
-      /*
-       * The panel this agent asks DASH to draw for it (MAR-548, ADR 0008).
-       *
-       * Three sections, and the reason there are three is that a digest is
-       * three different questions. `report` is "what did it find?", rendered
-       * through the same digest machinery the run detail page uses. `metrics`
-       * is "is it still working?", which is DASH's question about the agent
-       * rather than the agent's about the news — every item here is a
-       * `dash_fact`, so every value on it renders attributed to DASH. `table`
-       * is "show me everything at once", which the prose digest deliberately
-       * does not do.
-       *
-       * The bindings name roles and nothing else. `digest` is the artifact
-       * kind this agent's own `artifact()` call emits, and the three column
-       * keys are members of the digest item shape
-       * `contracts/run-artifact.schema.json` defines — `headline`,
-       * `source_name` and `published_at`. A key that names nothing renders as
-       * an absent cell rather than as an error, which is what makes this safe
-       * to declare before the first run has produced anything.
-       *
-       * `published_at` is declared `timestamp` rather than `text`, and that is
-       * the load-bearing word: it is the author telling DASH the value is a
-       * moment, which is the licence DASH needs to render it in its own words
-       * instead of shipping `2026-08-05T09:00:00.000Z` onto a guided surface.
-       */
-      panel: {
-        panel_version: 1,
-        title: "What the scout found",
-        sections: [
-          {
-            id: "latest_digest",
-            type: "report",
-            label: "The latest digest",
-            artifact_role: "digest",
-          },
-          {
-            id: "activity",
-            type: "metrics",
-            label: "How this agent has been doing",
-            items: [
-              {
-                id: "run_count",
-                label: "Times it has run",
-                source: { kind: "dash_fact", fact: "run_count" },
-              },
-              {
-                id: "last_run_at",
-                label: "Last checked",
-                source: { kind: "dash_fact", fact: "last_run_at" },
-              },
-              {
-                id: "last_run_verdict",
-                label: "How the last run ended",
-                source: { kind: "dash_fact", fact: "last_run_verdict" },
-              },
-            ],
-          },
-          {
-            id: "headlines",
-            type: "table",
-            label: "Every headline in the latest digest",
-            source_role: "digest",
-            columns: [
-              { key: "headline", label: "Headline", kind: "text" },
-              { key: "source_name", label: "Source", kind: "text" },
-              { key: "published_at", label: "Published", kind: "timestamp" },
-            ],
-          },
-        ],
-      },
-    },
-  };
+  return manifestFromRecipe(recipeFor(request), request.now);
 }
 
 /* ---------------------------------------------------------------------- *
  * The rest of the project
  * ---------------------------------------------------------------------- */
-
-function projectPackage(request: ScaffoldRequest): Record<string, unknown> {
-  return {
-    name: request.agent_id,
-    version: "0.1.0",
-    private: true,
-    description: request.summary,
-    type: "module",
-    scripts: {
-      // The name a person will type. Not `postinstall` and not `prepare`: adding
-      // something to DASH is a decision, and a decision does not belong on a
-      // hook that fires during `npm install`.
-      "open-in-dash": "node scripts/open-in-dash.mjs",
-      start: "node agent.mjs",
-    },
-    engines: { node: ">=20.0.0" },
-    dependencies: {},
-  };
-}
 
 function gitignore(): string {
   return `node_modules/
@@ -403,6 +398,12 @@ runs/
  * any of them. There is no mention of a manifest path, a registration file or a
  * runner: those are all real and all DASH's business, and a person adding their
  * first agent needs to know none of them.
+ *
+ * `AGENT_BUILDER.md` beside it is the other half and is written for somebody
+ * else entirely — the coding assistant that will change this agent. Two files
+ * because they are two audiences: a person adding their first agent should not
+ * have to read past instructions about a recipe to find the one command they
+ * need.
  */
 function readme(request: ScaffoldRequest): string {
   return `# ${request.display_name}
@@ -437,14 +438,26 @@ item's source attached.
 
 \`agent.mjs\` is the part that does the work, and \`runOnce\` is one run of it.
 Change what it reads, what it collects and what it says about it.
+\`AGENT_BUILDER.md\` is the longer version of that, written for a coding
+assistant: which files are yours, which are not, and how to check your changes.
 
 \`dash-agent-sdk.mjs\` beside it is DASH's, and you should not edit it: it is how
 DASH watches and controls the agent, and DASH replaces that file when it has a
 newer one. An edit there is an edit you lose. There are no dependencies in
 either file.
 
+## Check it still works
+
+\`\`\`sh
+npm run evals
+\`\`\`
+
+Four checks against this agent, with no network and no key: a normal run, a run
+with nothing to read, a run where a source fails, and a run where DASH refuses
+what it asks for.
+
 If you change what the agent *does* in a way that changes what it is allowed to
-do, edit \`agent.manifest.json\` and run \`npm run open-in-dash\` again. DASH
+do, edit \`${RECIPE_FILE_NAME}\` and run \`npm run open-in-dash\` again. DASH
 asks you to confirm the change rather than applying it quietly — but only if
 the agent is stopped first. DASH cannot replace files a running copy still has
 open, and will say so rather than applying the change.

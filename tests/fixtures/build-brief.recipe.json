@@ -1,0 +1,217 @@
+{
+  "recipe_version": 1,
+  "runtime": {
+    "sdk_version": "1.1.0",
+    "kit_version": "dash-mcp",
+    "generated_by": "dash-mcp dash_agent_scaffold",
+    "registry_fingerprint": "dash-mcp-template",
+    "dependencies": {}
+  },
+  "agent": {
+    "id": "competitor-scout",
+    "display_name": "Competitor scout",
+    "summary": "Reads Example Labs blog and Example Corp news and writes a roundup of what it found with a short summary of it."
+  },
+  "steps": [
+    {
+      "component_id": "public_feed_fetch",
+      "intent": "Reads each of the sources you listed.",
+      "risk_level": "low",
+      "model_tier": "none"
+    },
+    {
+      "component_id": "brief_compose",
+      "intent": "Writes a short summary of what came in, citing the items it is talking about.",
+      "risk_level": "low",
+      "model_tier": "none"
+    },
+    {
+      "component_id": "local_file_write",
+      "intent": "Saves the whole roundup, with every item’s own address kept.",
+      "risk_level": "low",
+      "model_tier": "none"
+    }
+  ],
+  "sources": [
+    {
+      "name": "Example Labs blog",
+      "url": "https://example.invalid/labs/feed.xml",
+      "format": "rss"
+    },
+    {
+      "name": "Example Corp news",
+      "url": "https://example.invalid/corp/atom.xml",
+      "format": "atom"
+    }
+  ],
+  "connections": [
+    {
+      "id": "model_provider",
+      "provider": "openrouter",
+      "label": "Your model provider",
+      "purpose": "Lets you ask this agent questions about what it found. Any step you add later that needs a model can use this same connection too.",
+      "ownership": "dash_managed",
+      "capabilities": [
+        {
+          "id": "openrouter.chat.completion",
+          "label": "Answer a question about what this agent found",
+          "access": "spend"
+        }
+      ],
+      "fields": [
+        {
+          "id": "api_key",
+          "label": "API key",
+          "purpose": "So DASH can reach this agent's model provider on its behalf.",
+          "kind": "secret",
+          "required": true,
+          "help": "Your OpenRouter account has a keys page; a key made there is what DASH needs."
+        }
+      ],
+      "validation_action": {
+        "id": "test_model_key",
+        "label": "Check the key",
+        "behavior": "test"
+      }
+    }
+  ],
+  "connection_requirements": {
+    "requirements_version": 1,
+    "requirements": [
+      {
+        "id": "model_provider",
+        "name": "Your model provider",
+        "connector_kind": "api_key",
+        "connection_id": "model_provider",
+        "optional": true,
+        "why": "Without it this agent still collects what it finds and writes its digest; it just cannot answer questions about what it found."
+      }
+    ]
+  },
+  "contract": {
+    "consumes": [
+      "sources.json"
+    ],
+    "emits": [
+      {
+        "kind": "digest",
+        "artifact_version": 1
+      },
+      {
+        "kind": "brief",
+        "artifact_version": 2
+      }
+    ]
+  },
+  "permissions": {
+    "read": [
+      {
+        "id": "network",
+        "label": "Read the sources you choose",
+        "detail": "Fetches the addresses listed in this agent's own sources file. It sends nothing and changes nothing."
+      }
+    ],
+    "write": [
+      {
+        "id": "report_file",
+        "label": "Save a report inside its own folder",
+        "detail": "Writes one file into the reports folder inside this agent's own folder, and nowhere else."
+      }
+    ],
+    "approval_required_for": []
+  },
+  "panel": {
+    "panel_version": 1,
+    "title": "What it found, and what it makes of it",
+    "sections": [
+      {
+        "id": "latest_brief",
+        "type": "report",
+        "label": "What it makes of this run",
+        "artifact_role": "brief"
+      },
+      {
+        "id": "latest_digest",
+        "type": "report",
+        "label": "Everything it collected",
+        "artifact_role": "digest"
+      },
+      {
+        "id": "headlines",
+        "type": "table",
+        "label": "Every item in the latest digest",
+        "source_role": "digest",
+        "columns": [
+          {
+            "key": "headline",
+            "label": "Headline",
+            "kind": "text"
+          },
+          {
+            "key": "source_name",
+            "label": "Source",
+            "kind": "text"
+          },
+          {
+            "key": "published_at",
+            "label": "Published",
+            "kind": "timestamp"
+          }
+        ]
+      },
+      {
+        "id": "activity",
+        "type": "metrics",
+        "label": "How this agent has been doing",
+        "items": [
+          {
+            "id": "run_count",
+            "label": "Times it has run",
+            "source": {
+              "kind": "dash_fact",
+              "fact": "run_count"
+            }
+          },
+          {
+            "id": "last_run_at",
+            "label": "Last checked",
+            "source": {
+              "kind": "dash_fact",
+              "fact": "last_run_at"
+            }
+          },
+          {
+            "id": "last_run_verdict",
+            "label": "How the last run ended",
+            "source": {
+              "kind": "dash_fact",
+              "fact": "last_run_verdict"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "acceptance": [
+    {
+      "kind": "normal_input",
+      "fixture": "Two sources that answer with a well-formed feed.",
+      "expect": "The run completes and sends a digest and a brief, with every item carrying the address it came from."
+    },
+    {
+      "kind": "missing_input",
+      "fixture": "No sources configured at all.",
+      "expect": "The run completes and says there was nothing to read. It does not fail, and it does not send a document claiming to have found something."
+    },
+    {
+      "kind": "tool_failure",
+      "fixture": "One source answers with an error and the other answers normally.",
+      "expect": "The run completes, the digest names the source that failed, and the items from the source that worked are all there. A partial result is reported as partial."
+    },
+    {
+      "kind": "denied_permission",
+      "fixture": "Every brokered request is refused, the way DASH refuses one it has no key for.",
+      "expect": "The run completes with a complete digest and says it was not summarised. No operation outside the ones this agent's own manifest declares is ever asked for."
+    }
+  ]
+}

@@ -62,8 +62,8 @@
  * We need an model provider for this i guess?"* — and a level names nothing to
  * reach one with.
  *
- * `declareModelProvider` adds the two blocks that do, on exactly the terms
- * above and with one thing at stake that a level did not have: a run of this
+ * `modelProviderConnection` and `modelProviderRequirement` add the two blocks
+ * that do, on exactly the terms above and with one thing at stake that a level did not have: a run of this
  * agent now spends the owner's money. That is why the declaration is DASH's own
  * and not the template's, and why it is `optional` — see the function.
  */
@@ -72,6 +72,7 @@ import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { planScaffold, type ScaffoldedFile, type TemplateSources } from "../agent-kit/scaffold";
+import type { AgentRecipe, RecipeStep } from "../agent-kit/recipe";
 import { DIGEST_WRITE_COMPONENT } from "./agent-sources";
 import { curateOperationId } from "./broker/operations";
 import {
@@ -170,30 +171,33 @@ export type SampleResult = { ok: true; value: SamplePlan } | { ok: false; proble
  * — leaving `model_tier` at `none` beside a declared level would be two
  * disagreeing claims in the same document.
  *
- * Reads and rewrites only `agent.manifest.json`; every other scaffolded file
- * passes through untouched.
+ * ## It amends the recipe, not the manifest (MAR-888)
+ *
+ * It used to reach into the finished `agent.manifest.json` and rewrite it,
+ * which was correct while the manifest was the only document a scaffold
+ * produced. A project now also carries `agent.recipe.json`, the definition the
+ * manifest is generated from, and `create-dash-agent --check` reports where the
+ * two disagree — so a sample that rewrote only the manifest would create, on
+ * its very first run, a folder DASH's own check calls drifted. Amending the
+ * recipe and letting `manifestFromRecipe` do the rest means there is one
+ * statement of what this agent is and the manifest follows from it.
  */
-function amendSampleManifest(files: readonly ScaffoldedFile[]): ScaffoldedFile[] {
-  return files.map((file) => {
-    if (file.path !== "agent.manifest.json") {
-      return file;
-    }
-    const manifest = JSON.parse(file.contents) as Record<string, unknown>;
-    declareConversationModelLevel(manifest);
-    declareModelProvider(manifest);
-    return { path: file.path, contents: `${JSON.stringify(manifest, null, 2)}\n` };
-  });
+function amendSampleRecipe(recipe: AgentRecipe): AgentRecipe {
+  return {
+    ...recipe,
+    steps: declareConversationModelLevel(recipe.steps),
+    connections: [modelProviderConnection()],
+    connection_requirements: modelProviderRequirement(),
+  };
 }
 
 /** MAR-603's amendment. See the block above for the whole argument. */
-function declareConversationModelLevel(manifest: Record<string, unknown>): void {
-  const route = manifest["planned_route"];
-  for (const step of Array.isArray(route) ? (route as Array<Record<string, unknown>>) : []) {
-    if (step["component_id"] === DIGEST_WRITE_COMPONENT) {
-      step["model_tier"] = "small";
-      step["default_model_level"] = "cheap";
-    }
-  }
+function declareConversationModelLevel(steps: readonly RecipeStep[]): RecipeStep[] {
+  return steps.map((step) =>
+    step.component_id === DIGEST_WRITE_COMPONENT
+      ? { ...step, model_tier: "small", default_model_level: "cheap" }
+      : step,
+  );
 }
 
 /**
@@ -240,15 +244,8 @@ function declareConversationModelLevel(manifest: Record<string, unknown>): void 
  * comment names this case: *"an agent that can run degraded is the one that
  * says so."*
  */
-function declareModelProvider(manifest: Record<string, unknown>): void {
-  const dom = manifest["agent_dom"];
-  if (typeof dom !== "object" || dom === null) {
-    return;
-  }
-  const agentDom = dom as Record<string, unknown>;
-
-  agentDom["connections"] = [
-    {
+function modelProviderConnection(): Record<string, unknown> {
+  return {
       id: MODEL_CONNECTION_ID,
       // The registry's own word for the provider, which is what selects the
       // profile in `lib/ai/providers.ts` and what `fleetReach` matches on.
@@ -289,10 +286,12 @@ function declareModelProvider(manifest: Record<string, unknown>): void {
         label: "Check the key",
         behavior: "test",
       },
-    },
-  ];
+  };
+}
 
-  agentDom["connection_requirements"] = {
+/** The next-action half of the same connection. See the block above. */
+function modelProviderRequirement(): Record<string, unknown> {
+  return {
     requirements_version: 1,
     requirements: [
       {
@@ -344,17 +343,19 @@ export function planSampleAgent(request: SampleRequest): SampleResult {
       now: request.now,
     },
     request.sources,
+    // MAR-603 and MAR-619: the one place this template's definition is amended
+    // — see `amendSampleRecipe`. Applied to the recipe the manifest is
+    // generated from, so the consent document, the bytes written to disk and
+    // the recipe left in the folder all agree. That matters more now than it
+    // did for a level: the connection declared here is what the person is
+    // consenting to when they say yes.
+    amendSampleRecipe,
   );
   if (!planned.ok) {
     return { ok: false, problem: planned.problem };
   }
 
-  // MAR-603 and MAR-619: the one place this template's manifest is amended
-  // after the fact — see `amendSampleManifest`. Applied before the handoff is
-  // built so the consent document and the bytes written to disk agree, which
-  // matters more now than it did for a level: the connection declared here is
-  // what the person is consenting to when they say yes.
-  const files = amendSampleManifest(planned.files);
+  const files = planned.files;
 
   const built = buildHandoff(
     {

@@ -65,9 +65,22 @@ export interface HandoffWriteResult {
  * exactly that reason. `dash-agent-sdk.mjs` is required for the most literal
  * version of it: `agent.mjs` imports it by relative path, so an agent shipped
  * without it fails on its first line.
+ *
+ * `agent.recipe.json` is optional for a third reason, different from both
+ * (MAR-888). It is not scaffolding an agent can outgrow and not part of the
+ * program: it is the definition `agent.manifest.json` was generated from, and
+ * it travels so that a stored agent carries the document its manifest can be
+ * checked against rather than only the manifest. It cannot be required,
+ * because every agent scaffolded before MAR-888 has none and would otherwise
+ * be told its build is incomplete by a check that is really about its age.
+ * Optional here also makes the two import paths agree: the MCP's handoff walks
+ * the project directory and has always carried whatever is in it, so without
+ * this line a kit-built agent reached DASH without its recipe while an
+ * MCP-built one reached it with one, for no reason a reader could find.
  */
 const AGENT_KIT_PROJECT_FILES = [
   { path: "agent.manifest.json", required: true },
+  { path: "agent.recipe.json", required: false },
   { path: "package.json", required: true },
   { path: "agent.mjs", required: true },
   { path: "dash-agent-sdk.mjs", required: true },

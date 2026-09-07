@@ -143,6 +143,7 @@ describe("what a scaffold writes", () => {
       agent: "// the agent\n",
       sdk: SDK_SOURCE,
       openInDash: "// bundled by scripts/build-agent-kit.mjs\n",
+      evals: "// the acceptance checks\n",
     };
     const planned = planScaffold(
       {
@@ -178,7 +179,7 @@ describe("what a scaffold writes", () => {
         kit_version: "0.1.1",
         now: new Date("2026-09-07T12:00:00.000Z"),
       },
-      { agent: "// a\n", sdk: "// b\n", openInDash: "// c\n" },
+      { agent: "// a\n", sdk: "// b\n", openInDash: "// c\n", evals: "// d\n" },
     );
     expect(planned.ok).toBe(true);
     if (!planned.ok) {

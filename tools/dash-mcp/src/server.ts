@@ -144,11 +144,15 @@ const TOOLS: ToolDefinition[] = [
     name: "dash_agent_scaffold",
     title: "Build a DASH agent folder",
     description:
-      "Write a complete, importable DASH agent into a directory: manifest, program, sources and " +
-      "README. The manifest is checked against DASH's own validator BEFORE anything is written, so " +
-      "either the folder is importable or nothing exists. The agent starts idle, runs only when " +
-      "asked, and emits both a digest and a brief bound to it — so its output can be judged, not " +
-      "just read. Refuses to write inside DASH's own agents folder.",
+      "Write a complete, importable DASH agent into a directory: manifest, program, sources, " +
+      "README, four runnable checks under evals/, and AGENT_BUILDER.md saying which files may be " +
+      "edited. It also writes agent.recipe.json, the definition the manifest is generated from — " +
+      "change the agent there, never in the manifest. The recipe and the manifest it would write " +
+      "are checked against DASH's own validator BEFORE anything is written, so either the folder " +
+      "is importable or nothing exists. The agent starts idle, runs only when asked, and emits " +
+      "both a digest and a brief bound to it — so its output can be judged, not just read. " +
+      "Refuses to write inside DASH's own agents folder, and refuses a folder that already has " +
+      "somebody's files in it.",
     inputSchema: {
       type: "object",
       required: ["directory", "name", "summary"],
@@ -208,7 +212,10 @@ const TOOLS: ToolDefinition[] = [
       "Run DASH's real import validator over a manifest — the same functions DASH runs when a " +
       "person imports — and return every problem with the fix for it: the JSON pointer, what the " +
       "schema requires there, and the allowed values. Use it on a manifest you are about to write, " +
-      "before writing it. A pass here means the import will not fail on validation.",
+      "before writing it. A pass here means the import will not fail on validation. Given a " +
+      "directory holding agent.recipe.json, it also says whether the recipe and the manifest still " +
+      "describe the same agent — a manifest edited by hand is usually still valid and still wrong, " +
+      "and DASH grades every later run against the route it declares.",
     inputSchema: {
       type: "object",
       properties: {
