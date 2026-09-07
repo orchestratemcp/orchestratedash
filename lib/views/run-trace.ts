@@ -41,9 +41,16 @@
  *
  * ## Pure
  *
- * No value import from anything that reaches a Node builtin: this is imported by
- * a `"use client"` component and `tests/client-bundle.test.ts` is the gate. The
- * type import from `../contracts` is erased.
+ * Nothing here reaches a Node builtin, directly or through anything it pulls in.
+ * A `"use client"` component draws its output and `tests/client-bundle.test.ts`
+ * is the gate; the one dependency below is a type, which erases.
+ *
+ * Note for whoever edits this header: that gate's parser is a small regex over
+ * the shape of an ES module dependency statement, and it cannot tell a docblock
+ * from code. Writing the word that starts such a statement anywhere above the
+ * first real one makes the gate read the type-only line below as a value and
+ * mark this module Node-only — a false positive with a real failure message,
+ * and it costs an afternoon. Describe the dependency; do not spell it.
  */
 
 import type { RunSpan } from "../contracts";

@@ -763,6 +763,21 @@ describe("what a run records about its model", () => {
         // the cost meter is the one that carries `AGENT_TELEMETRY_COPY.cost_note`
         // — so a frame of that stage is also a frame of the attribution.
         "electron/capture-cockpit.ts",
+        // MAR-889. A run span may carry what one operation cost, and these two
+        // are the halves of handling it: the store keeps the number and stamps
+        // `source: "reported"` itself rather than copying whatever the agent
+        // claimed, and the copy module composes the sentence around it.
+        //
+        // They are on this list under the same rule as everything above it, and
+        // the rule is the point: `describeSpanUsage` attributes the figure to
+        // the agent *in the sentence*, every time it is drawn, rather than in a
+        // note somewhere on the page. `tests/run-trace-view.test.ts` asserts
+        // that wording and `tests/run-trace-render.test.tsx` asserts it reaches
+        // the markup. DASH still computes no price: this is the agent's own
+        // number, carried, and `lib/ai/ask.ts` above remains the only place a
+        // provider-stated charge exists.
+        "lib/store.ts",
+        "lib/copy/run-trace.ts",
       ].sort(),
     );
 
@@ -771,6 +786,12 @@ describe("what a run records about its model", () => {
     expect(readFileSync(path.join(repoRoot, "lib", "copy", "ask.ts"), "utf8")).toContain(
       "not something DASH watched",
     );
+    // The same guard for MAR-889's addition to the list: the number cannot be
+    // drawn without the words that say whose it is, because they are the same
+    // string.
+    expect(
+      readFileSync(path.join(repoRoot, "lib", "copy", "run-trace.ts"), "utf8"),
+    ).toContain("The agent's own figure");
   });
 });
 
