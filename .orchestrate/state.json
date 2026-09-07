@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 12:05: every lane of the UX wave is on master (last: MAR-885 #342). Proven this wave: MAR-868, MAR-875, MAR-884. Next: rebuild DASH when Henrik is free; installed look for MAR-885/874; adoption + real question (needs go); MAR-881/882/883 lanes; owner rulings.",
+  "lifecycle_note": "2026-09-07 12:35: MAR-885 proven. Proven this wave: MAR-868, MAR-875, MAR-878, MAR-884, MAR-885. Lanes MAR-882/883 running. MAR-874 merged (one-screen check pending).",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2075,10 +2075,14 @@
     },
     {
       "id": "MAR-878",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
       "commit": "b38b28a",
-      "note": "Two PRs: #320 (dash-mcp scaffold declares the ADR-0013 model_provider connection; template half) and #329 (readiness/chat capability/recovery agree across header, footer and chief; chief hosts wired with askCapabilitiesFor; eight-state tuple pinned). Fixture tests + 34 scratch frames. Proof owed: fresh scaffold imported idle, adopted via Use my key / Connect, real question answered on the installed build."
+      "note": "Two PRs: #320 (dash-mcp scaffold declares the ADR-0013 model_provider connection; template half) and #329 (readiness/chat capability/recovery agree across header, footer and chief; chief hosts wired with askCapabilitiesFor; eight-state tuple pinned). Fixture tests + 34 scratch frames. Proof owed: fresh scaffold imported idle, adopted via Use my key / Connect, real question answered on the installed build. PROVEN 2026-09-07.",
+      "proof": {
+        "command": "dash_agent_scaffold over tools/dash-mcp stdio (proof-ask-0907) -> Settings > Add agent > Import a folder on Henrik's DASH (master b0631be, real store, 2026-09-07 12:16-12:24) -> Connect your model provider (adoption, no dialog) -> Start and run -> two questions in the composer. Linear MAR-878 proof comment.",
+        "run": "Header/footer/chat agreed at every state (Waiting for your key -> Nothing to ask about yet -> Ask it a question). Adoption message: OpenRouter is connected for this agent, from the API key you already gave DASH. Two answers with receipts: /usr/bin/bash.0037 (787 in / 215 out) and /usr/bin/bash.0035 (787 / 194); /usr/bin/bash.0072 for the 2 questions asked here."
+      }
     },
     {
       "id": "MAR-879",
@@ -2096,10 +2100,10 @@
     },
     {
       "id": "MAR-881",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "agent page scrolls to top on a live poll tick during a judgement (found proving MAR-868); serialized behind MAR-875"
+      "commit": "e2ca311",
+      "note": "PR #345: useLiveView folded its tick into the useView key, so every 5s poll remounted the whole page (fleet-strip, browser-panel, runs page too); now an in-place background update via isBackgroundPoll. Unit tests only; installed proof owed."
     },
     {
       "id": "MAR-882",
@@ -2128,10 +2132,14 @@
     },
     {
       "id": "MAR-885",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
       "commit": "64c3386",
-      "note": "PR #342: ModelChoice renders the no_model_needed arm (honest sentence + Build one that can link); every-day radio detail follows residency; Scheduled runs show a plain moment on the host clock. Fixture tests only. Proof owed: installed Settings for proof-scout-mar861."
+      "note": "PR #342: ModelChoice renders the no_model_needed arm (honest sentence + Build one that can link); every-day radio detail follows residency; Scheduled runs show a plain moment on the host clock. Fixture tests only. Proof owed: installed Settings for proof-scout-mar861. PROVEN 2026-09-07.",
+      "proof": {
+        "command": "Proof Scout > Settings on Henrik's DASH, master b0631be (includes #342), 2026-09-07 12:25, via the computer-use grant. Linear MAR-885 proof comment.",
+        "run": "Which model it talks with row present (This agent does not use a language model / Build one that can); every-day radio detail says on Vultr box; Scheduled runs reads 6 September 2026 at 20:20, by Vultr box's clock; no ISO instant; Advanced and Remove collapsed."
+      }
     }
   ]
 }
