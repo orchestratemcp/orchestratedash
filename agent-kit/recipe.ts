@@ -525,17 +525,20 @@ export interface RecipeSources {
  */
 function unsafeRelativePath(candidate: string): string | null {
   if (candidate.length === 0) {
-    return "an empty file name";
+    return "A build cannot name an empty file.";
   }
   if (path.isAbsolute(candidate) || /^[A-Za-z]:/.test(candidate)) {
-    return `“${candidate}” is a full path, and a file in this project is named relative to it`;
+    return (
+      `“${candidate}” is a full path. A file this build may replace is named relative to ` +
+      "the project directory."
+    );
   }
   if (candidate.includes("\\")) {
-    return `“${candidate}” uses backslashes; project files are named with forward slashes`;
+    return `“${candidate}” uses backslashes; project files are named with forward slashes.`;
   }
   for (const segment of candidate.split("/")) {
     if (segment === ".." || segment === "." || segment.length === 0) {
-      return `“${candidate}” walks out of the project directory`;
+      return `“${candidate}” walks out of the project directory.`;
     }
   }
   return null;
@@ -587,7 +590,7 @@ export function planFromRecipe(
   for (const candidate of overwrite) {
     const unsafe = unsafeRelativePath(candidate);
     if (unsafe !== null) {
-      return { ok: false, problem: `That build may not overwrite ${unsafe}.` };
+      return { ok: false, problem: unsafe };
     }
     if (NEVER_OVERWRITTEN.includes(candidate)) {
       return {
