@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 07:10: the approved UX wave is on master except MAR-879 (lane dispatched): MAR-875 #328, MAR-876 #324, MAR-877 #327, MAR-878 #320+#329, MAR-871 #325, MAR-874 #332, MAR-880 #322. MAR-868 proven. Follow-ups filed: MAR-881, MAR-882, MAR-883. Next: rebuild DASH on b38b28a and run the installed proof pass.",
+  "lifecycle_note": "2026-09-07 09:05: the approved UX wave is on master: MAR-875 #328, MAR-876 #324, MAR-877 #327, MAR-878 #320+#329, MAR-871 #325, MAR-874 #332, MAR-879 #336, MAR-880 #322. MAR-868 proven. Follow-ups: MAR-881, MAR-882, MAR-883, MAR-884 (lane running). Installed proofs: Output stage and Connections looked at on the rebuilt DASH (b38b28a); MAR-884 found there.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2078,9 +2078,10 @@
     },
     {
       "id": "MAR-879",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "327b11d",
+      "note": "PR #336: Add agent offers Try a sample (one press via sample.create), Build with an assistant (real one-line setup + handoff), Import a folder; lib/copy/nouns.ts bans retired nouns (Generated assets -> Results, Remote machines -> Servers); prose 15px/1.7/70ch, UI scale untouched. Fixture tests + 32 frames at 80%/100%. Proof owed: three-path walk on the installed build."
     },
     {
       "id": "MAR-880",
@@ -2109,6 +2110,13 @@
       "linear_status": "Backlog",
       "commit": null,
       "note": "Connections Gmail row renders agent ids as labels (GIVE IT TO MEETING-ASSISTANT); pre-existing, found by MAR-877 frames. lib/connectors.ts / lib/fleet/**."
+    },
+    {
+      "id": "MAR-884",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "Numbered citation row does not wrap; 30-source briefing scrolls the Output stage sideways (found on the installed build after MAR-875). Lane J dispatched."
     }
   ]
 }
