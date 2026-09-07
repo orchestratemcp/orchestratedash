@@ -14,7 +14,7 @@
  * implies there is nothing to show.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Recovery } from "../../lib/copy/recovery";
 import { onWindowFocus } from "../../lib/shell/focus-refresh";
@@ -88,6 +88,45 @@ export function useView<T>(
  */
 export const LIVE_REFRESH_MS = 5_000;
 
+/**
+ * Whether a re-read is `useLiveView`'s own heartbeat rather than a new
+ * resource, and so should update the page's data in place instead of
+ * dropping it back to `"loading"` first (MAR-881).
+ *
+ * A key change — a different agent, a press that bumped an explicit
+ * `refreshKey` — is a new question and gets the loading state `useView`
+ * always shows for one; a person who just pressed something expects to see
+ * that register. A poll tick alone, on the *same* key, is neither: it is
+ * this hook's five-second heartbeat while something is happening, reading a
+ * resource the page already has a good, on-screen answer for.
+ *
+ * That was MAR-881. Proof Scout's Output stage, scrolled to a receipt, kept
+ * losing its place *every* poll tick for the two minutes a judgement ran —
+ * not once, but on a five-second cycle for as long as `active` stayed true —
+ * because the old key (`` `${key}:${tick}` ``) changed on every tick, and
+ * `useView`'s effect resets to `{ status: "loading" }` synchronously for
+ * *any* key change before the read resolves. `app/agents/detail/page.tsx`
+ * returns `<ViewLoading />` whenever `status === "loading"`, which unmounts
+ * the whole workspace — scroll container included — and remounts it fresh at
+ * the top once the read lands. Every tick, not once: the frames alone could
+ * not tell the two apart, but a two-minute judgement polling every five
+ * seconds and a page that stays scrolled to the top from partway through
+ * makes more sense as a repeating remount than a single jump that happens to
+ * land near the start.
+ *
+ * A failed previous read is deliberately excluded from "already has an
+ * answer": `useView`'s own contract is that a failure means `Recovery`, and a
+ * poll that revalidates a failed resource should still say it is checking
+ * rather than sit on a stale recovery notice silently.
+ */
+export function isBackgroundPoll(
+  previousKey: string | number | null,
+  key: string | number,
+  previousStatus: ViewState<unknown>["status"],
+): boolean {
+  return previousKey !== null && previousKey === key && previousStatus === "ready";
+}
+
 export function useLiveView<T>(
   read: (source: DashDataSource) => Promise<ViewResult<T>>,
   key: string | number,
@@ -95,13 +134,36 @@ export function useLiveView<T>(
 ): ViewState<T> & { last_read_at: Date | null } {
   const [tick, setTick] = useState(0);
   const [lastReadAt, setLastReadAt] = useState<Date | null>(null);
-  const state = useView(read, `${String(key)}:${String(tick)}`);
+  const [state, setState] = useState<ViewState<T>>({ status: "loading" });
+  // Read inside the effect below without making every render's `state` a
+  // dependency of it — that would defeat the point, re-running the effect (and
+  // re-reading) on the transition the effect itself causes.
+  const previousKeyRef = useRef<string | number | null>(null);
+  const statusRef = useRef<ViewState<T>["status"]>(state.status);
+  statusRef.current = state.status;
 
   useEffect(() => {
-    if (state.status !== "loading") {
-      setLastReadAt(new Date());
+    let current = true;
+    if (!isBackgroundPoll(previousKeyRef.current, key, statusRef.current)) {
+      setState({ status: "loading" });
     }
-  }, [state.status, tick]);
+    previousKeyRef.current = key;
+
+    void read(dataSource()).then((result) => {
+      if (!current) {
+        return;
+      }
+      setState(result.ok ? { status: "ready", data: result.data } : { status: "failed", recovery: result.recovery });
+      setLastReadAt(new Date());
+    });
+
+    return () => {
+      current = false;
+    };
+    // `read` is a fresh closure on every render at every call site, same as
+    // `useView` above; deliberately not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, tick]);
 
   useEffect(() => {
     if (!active) {
