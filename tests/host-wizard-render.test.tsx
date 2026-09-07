@@ -27,9 +27,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { CheckStep, KeyStep, StepRail } from "../app/settings/servers/page";
+import { AddressStep, CheckStep, KeyStep, StepRail } from "../app/settings/servers/page";
 import { HOST_REACH_PROBLEMS, type HostConnectState } from "../lib/host-connect";
-import { WIZARD_STEPS, describeStep } from "../lib/host-wizard";
+import { WIZARD_STEPS, describeStep, type HostDraft } from "../lib/host-wizard";
+import type { HostRecord } from "../lib/hosts";
 
 const LABEL = "My server";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -288,5 +289,78 @@ describe("the deploy receipt, surfaced at last", () => {
   it("offers the revocation that actually works", () => {
     expect(reachable).toContain("stop it on My server");
     expect(reachable).toContain("the server is what decides");
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-871: the duplicate warning gates the button it warns about
+ * ---------------------------------------------------------------------- */
+
+describe("typing a server DASH already has", () => {
+  const SAVED: HostRecord = {
+    host_id: "host-1",
+    label: "Vultr box",
+    address: "example.com",
+    port: 22,
+    username: "root",
+    key_name: "host-1",
+    host_fingerprint: null,
+    added_at: "2026-09-05T17:25:14.195Z",
+  };
+  const DRAFT: HostDraft = {
+    provider: null,
+    label: "Vultr box again",
+    address: "example.com",
+    username: "root",
+    port: "22",
+  };
+
+  it("names the record, the cost, and what to do instead", () => {
+    /*
+     * The attended run of 2026-09-05 got the first two and not the third: the
+     * warning said a second row would make a second key for one machine, and
+     * **Make key** stayed enabled beside it with no way to take the advice. A
+     * refusal that names a consequence and then offers only the button that
+     * causes it is a warning the product does not believe.
+     */
+    const html = renderToStaticMarkup(
+      <AddressStep draft={DRAFT} onChange={() => undefined} duplicate={SAVED} />,
+    );
+    expect(html).toContain("You already have this server");
+    expect(html).toContain("second key");
+    expect(html).toContain(`Use ${SAVED.label} instead`);
+  });
+
+  it("says nothing about duplicates when there is none", () => {
+    const html = renderToStaticMarkup(
+      <AddressStep draft={DRAFT} onChange={() => undefined} duplicate={null} />,
+    );
+    expect(html).not.toContain("You already have this server");
+  });
+
+  it("does not scold an untouched form", () => {
+    // An empty form telling you the label is wrong is a form scolding you for
+    // arriving. Unchanged by MAR-871, asserted here because the empty-field
+    // sentences are new and this is the state they must not appear in.
+    const html = renderToStaticMarkup(
+      <AddressStep
+        draft={{ provider: null, label: "", address: "", username: "", port: "22" }}
+        onChange={() => undefined}
+        duplicate={null}
+      />,
+    );
+    expect(html).not.toContain("notice-err");
+  });
+
+  it("reads as an example rather than a value already filled in", () => {
+    /*
+     * The placeholder was `root`, which this field would accept — so it looked
+     * like an answer, the run left it alone, and the refusal it got back was
+     * two quote marks.
+     */
+    const html = renderToStaticMarkup(
+      <AddressStep draft={DRAFT} onChange={() => undefined} duplicate={null} />,
+    );
+    expect(html).toContain('placeholder="for example, root"');
   });
 });

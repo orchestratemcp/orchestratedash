@@ -111,7 +111,13 @@ describe("what is on this server, drawn", () => {
       <WhatIsOnThisServer rows={rows(null, null)} {...noBringHome} />,
     );
     expect(html).toContain(AGENT);
-    expect(html).toContain("Check this server");
+    /*
+     * MAR-871 renamed the control. The assertion is unchanged in what it
+     * protects — this line has to name the way to find out what is actually on
+     * the machine — and a sentence naming a button that no longer exists is a
+     * direction that fails while looking authoritative.
+     */
+    expect(html).toContain("Press Check now");
     expect(html).toContain("has not asked");
   });
 

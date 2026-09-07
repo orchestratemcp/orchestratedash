@@ -11,6 +11,7 @@ import {
   checkDraft,
   describeHostingRecommendation,
   describeKeyStep,
+  USE_THE_SAVED_SERVER,
   describeProviderChoice,
   describeSetupStep,
   describeStep,
@@ -24,10 +25,11 @@ import {
   readProbeStanding,
   type HostConnectState,
 } from "../../../lib/host-connect";
-import { describeDuplicateHost, findDuplicateHost } from "../../../lib/hosts";
+import { describeDuplicateHost, findDuplicateHost, type HostRecord } from "../../../lib/hosts";
 import {
   describeDuplicateRecords,
   describeSentStanding,
+  reachedTheServer,
   summariseDeployedCopies,
   summariseServers,
 } from "../../../lib/server-card";
@@ -136,38 +138,22 @@ export function StepRail({ current }: { current: WizardStep }): ReactNode {
 export function AddressStep({
   draft,
   onChange,
-  servers,
+  duplicate,
 }: {
   draft: HostDraft;
   onChange: (next: HostDraft) => void;
-  /** What DASH already has, so a duplicate is named before it is attempted. */
-  servers: readonly SavedServerView[];
+  /**
+   * The record this draft would duplicate, or null (MAR-574, MAR-871).
+   *
+   * Decided by `ConnectServer` rather than here, because the same answer now
+   * gates the primary control and offers the way out. Two places computing it
+   * would be two places that could disagree about whether the warning applies —
+   * and the shipped page's whole defect was a warning the button ignored.
+   */
+  duplicate: HostRecord | null;
 }): ReactNode {
   const check = checkDraft(draft);
   const touched = draft.label !== "" || draft.address !== "" || draft.username !== "";
-  /*
-   * MAR-574. The refusal main will give, given here while the fields are still
-   * on screen. Main is the authority — this cannot be the only check, because a
-   * page can be wrong about what the store holds — but a person who learns their
-   * server is already saved *after* pressing "make key" has been made to wait
-   * for an answer the page could see.
-   */
-  const duplicate =
-    draft.address.trim() === "" || draft.username.trim() === ""
-      ? null
-      : findDuplicateHost(
-          servers.map((server) => ({
-            host_id: server.host_id,
-            label: server.label,
-            address: server.address,
-            username: server.username,
-            port: server.port,
-            key_name: "not-read-here",
-            host_fingerprint: server.fingerprint,
-            added_at: server.added_at,
-          })),
-          { address: draft.address, username: draft.username },
-        );
 
   return (
     <>
@@ -202,7 +188,14 @@ export function AddressStep({
             id="host-username"
             className="field"
             value={draft.username}
-            placeholder="root"
+            /*
+             * MAR-871. It read `root`, which is a value this field would
+             * accept — so the placeholder looked like a field already filled
+             * in, the attended run left it alone, and the refusal it got back
+             * was two quote marks. A placeholder that reads as an example
+             * cannot be mistaken for an answer.
+             */
+            placeholder="for example, root"
             onChange={(event) => {
               onChange({ ...draft, username: event.target.value });
             }}
@@ -288,7 +281,15 @@ export function AddressStep({
       {duplicate === null ? null : (
         <p className="notice notice-err wrap" role="alert">
           {describeDuplicateHost(duplicate.label).headline}.{" "}
-          {describeDuplicateHost(duplicate.label).detail}
+          {describeDuplicateHost(duplicate.label).detail}{" "}
+          {/*
+            MAR-871. The instruction the warning always carried, now beside a
+            control that performs it — see `ConnectServer`, where **Make key**
+            is refused while this notice is on screen. The shipped page named
+            the consequence and left the button that causes it enabled, which is
+            a warning the product does not believe.
+          */}
+          <strong>{describeDuplicateHost(duplicate.label).next_action}.</strong>
         </p>
       )}
     </>
@@ -499,6 +500,36 @@ function ConnectServer({
   const at = WIZARD_STEPS.indexOf(step);
   const label = draft.label.trim() === "" ? "this server" : draft.label.trim();
 
+  /*
+   * MAR-574, gated by MAR-871. The refusal main will give, given here while the
+   * fields are still on screen. Main is the authority — this cannot be the only
+   * check, because a page can be wrong about what the store holds — but a person
+   * who learns their server is already saved *after* pressing "make key" has
+   * been made to wait for an answer the page could see.
+   *
+   * Held here rather than in `AddressStep` since MAR-871, because the same
+   * answer now decides three things: whether the notice is drawn, whether the
+   * primary control is available, and whether the way out is offered. Computing
+   * it twice would be two chances for the warning and the button to disagree,
+   * which is precisely the defect being fixed.
+   */
+  const duplicate =
+    draft.address.trim() === "" || draft.username.trim() === ""
+      ? null
+      : findDuplicateHost(
+          servers.map((server) => ({
+            host_id: server.host_id,
+            label: server.label,
+            address: server.address,
+            username: server.username,
+            port: server.port,
+            key_name: "not-read-here",
+            host_fingerprint: server.fingerprint,
+            added_at: server.added_at,
+          })),
+          { address: draft.address, username: draft.username },
+        );
+
   async function makeKey(): Promise<void> {
     setBusy(true);
     setNotice(null);
@@ -656,7 +687,7 @@ function ConnectServer({
         <p className="connection-purpose wrap">{describeStep(step).purpose}</p>
 
         {step === "address" ? (
-          <AddressStep draft={draft} onChange={setDraft} servers={servers} />
+          <AddressStep draft={draft} onChange={setDraft} duplicate={duplicate} />
         ) : step === "key" ? (
           <KeyStep label={label} setupScript={setupScript} authorizedKeysLine={authorizedKeysLine} />
         ) : (
@@ -702,11 +733,29 @@ function ConnectServer({
             </button>
           ) : null}
 
+          {/*
+            MAR-871. The way out of a duplicate, beside the control that is
+            refused while one is on screen. The warning has always named this
+            act — *"Use My server instead"* — and until now the only button on
+            the step was the one that made the second key it warns about.
+          */}
+          {step === "address" && duplicate !== null && onLeave !== null ? (
+            <button type="button" className="button-secondary" disabled={busy} onClick={onLeave}>
+              {USE_THE_SAVED_SERVER}
+            </button>
+          ) : null}
+
           {step === "address" ? (
             <button
               type="button"
               className="button-primary"
-              disabled={busy || !canLeave(step, draft) || !canAct}
+              /*
+               * Refused while the duplicate notice is on screen (MAR-871). Not
+               * hidden: a control that vanished would leave somebody wondering
+               * what they had done wrong, where a refused one sits under the
+               * sentence explaining it.
+               */
+              disabled={busy || !canLeave(step, draft) || !canAct || duplicate !== null}
               onClick={() => void makeKey()}
             >
               {busy ? "Making key..." : "Make key"}
@@ -915,9 +964,47 @@ export default function HostsPage(): ReactNode {
    * Settings stage holds that state now, where the deploy happens.
    */
   const [checkedAt, setCheckedAt] = useState<Record<string, string>>({});
+  /*
+   * When DASH was last *on* each machine, which is not the same fact (MAR-871).
+   *
+   * `checkedAt` above belongs to a standing: it is when the server gave the
+   * answer the card is drawing. This is when DASH last got onto the server by
+   * any route at all — a check that signed in, a restart switch, a bring-home,
+   * a key placement. They diverge, and the attended run photographed exactly
+   * that: the banner still read *"DASH has not checked since you opened it"*
+   * after turning residency on, which had signed in over SSH and pushed a
+   * schedule set two seconds earlier.
+   *
+   * Two maps rather than one, because merging them is the tempting fix and it
+   * is wrong in the other direction: stamping `checkedAt` on a residency press
+   * would put a fresh moment beside a standing the server gave ten minutes ago.
+   */
+  const [contactedAt, setContactedAt] = useState<Record<string, string>>({});
+  /*
+   * What each server last said about restarting, from the one check (MAR-871).
+   *
+   * Held here for the reason the standings are: DASH stores nothing about it,
+   * so a value that outlived the visit would be a claim with nothing left to
+   * check it. The card used to own this and fetch it from a button of its own.
+   */
+  const [residencyReports, setResidencyReports] = useState<
+    Record<string, HostServiceReport | null>
+  >({});
 
   function setStanding(hostId: string, standing: HostConnectState): void {
     setStandings((current) => ({ ...current, [hostId]: standing }));
+  }
+
+  /**
+   * Record that DASH reached this machine, whatever took it there.
+   *
+   * Returns the instant, so a caller that also stamps a standing can use one
+   * clock reading for both — `stampChecked`'s own argument about two moments a
+   * few milliseconds apart landing either side of a minute boundary.
+   */
+  function stampContact(hostId: string, at = new Date().toISOString()): string {
+    setContactedAt((current) => ({ ...current, [hostId]: at }));
+    return at;
   }
 
   /**
@@ -972,6 +1059,30 @@ export default function HostsPage(): ReactNode {
     }
     setStanding(server.host_id, standing);
     const at = stampChecked(server.host_id);
+
+    /*
+     * MAR-871. Whether DASH actually got onto the machine, read off the
+     * *described* state rather than off its `step` — `reachedTheServer` carries
+     * the argument, and the banner that disagreed with the card beneath it is
+     * what the argument is about.
+     */
+    if (reachedTheServer(standing)) {
+      stampContact(server.host_id, at);
+    }
+
+    /*
+     * The second half of one refresh (MAR-871).
+     *
+     * The card used to carry its own **Ask the server** button for this, beside
+     * **Check this server**, and both meant "sign in and find out". Asked here
+     * so there is one control — and only where the runner itself answered,
+     * because the `service` verb refuses on a machine with no agent installed
+     * and a refusal drawn on a healthy new server is a warning about nothing.
+     */
+    if (standing.step === "reachable" && standing.agents_there.length > 0) {
+      const report = await residency(server, "read", "quietly");
+      setResidencyReports((current) => ({ ...current, [server.host_id]: report }));
+    }
 
     /*
      * MAR-606, ADR 0015. What the server named, kept for the rest of this
@@ -1071,6 +1182,8 @@ export default function HostsPage(): ReactNode {
     // way, the same as every other host command on this page.
     setNotice(server.host_id, result.detail ?? null);
     if (result.ok) {
+      // MAR-871. A bring-home signs in, copies and removes. That is contact.
+      stampContact(server.host_id);
       setRevision((current) => current + 1);
     }
   }
@@ -1111,6 +1224,8 @@ export default function HostsPage(): ReactNode {
     setBusyHost(null);
     setNotice(server.host_id, result.detail ?? null);
     if (result.ok) {
+      // MAR-871. A placement that succeeded proved itself on the machine.
+      stampContact(server.host_id);
       setRevision((current) => current + 1);
     }
   }
@@ -1136,18 +1251,37 @@ export default function HostsPage(): ReactNode {
   async function residency(
     server: SavedServerView,
     change: "read" | "on" | "off",
+    /**
+     * `quietly` for the read that rides along with a check (MAR-871).
+     *
+     * A person pressing **Check now** asked one question, and a second refusal
+     * banner for the half of the answer they did not know was being fetched
+     * would be DASH explaining its own internals. The section draws its own
+     * sentence for a null, which is what the card is for.
+     */
+    say: "quietly" | "out loud" = "out loud",
   ): Promise<HostServiceReport | null> {
     setBusyHost(server.host_id);
-    setNotice(server.host_id, null);
+    if (say === "out loud") {
+      setNotice(server.host_id, null);
+    }
     const result =
       change === "read"
         ? await submitHostCommand("residencyState", { host_id: server.host_id })
         : await submitHostCommand("residency", { host_id: server.host_id, state: change });
     setBusyHost(null);
     if (!result.ok) {
-      setNotice(server.host_id, result.detail ?? null);
+      if (say === "out loud") {
+        setNotice(server.host_id, result.detail ?? null);
+      }
       return null;
     }
+    /*
+     * MAR-871. A residency call that came back is DASH signing in to somebody's
+     * machine, so it is contact — and the summary above the list has to know,
+     * or it goes on saying nothing has checked two seconds after this.
+     */
+    stampContact(server.host_id);
     if (change !== "read") {
       setRevision((current) => current + 1);
     }
@@ -1248,12 +1382,38 @@ export default function HostsPage(): ReactNode {
               servers,
               servers.map((server) => {
                 const standing = standings[server.host_id];
+                const report = residencyReports[server.host_id] ?? null;
                 return {
-                  // The top rung only. A server that is plainly alive and
-                  // refusing DASH's key has not proved anything this line is
-                  // counting.
-                  answered: standing !== undefined && standing.step === "reachable",
-                  at: checkedAt[server.host_id] ?? null,
+                  /*
+                   * MAR-871. Contact, not a `step`.
+                   *
+                   * It read `standing.step === "reachable"`, and
+                   * `no_runner_there` — a server DASH signed in to, on the
+                   * state every freshly enrolled machine is in — is modelled as
+                   * a problem under `step: "unreachable"`. So the line said
+                   * "None answered" over a card saying the server let DASH in.
+                   * `contactedAt` is written by `reachedTheServer`, which asks
+                   * the same object the card's sentence comes from, and by the
+                   * other acts that sign in as well.
+                   */
+                  answered: contactedAt[server.host_id] !== undefined,
+                  at: contactedAt[server.host_id] ?? checkedAt[server.host_id] ?? null,
+                  /*
+                   * Only a number the host itself produced. `undefined` standing
+                   * and every non-`reachable` one are null, which the summary
+                   * skips rather than reading as nought.
+                   */
+                  running:
+                    standing !== undefined && standing.step === "reachable"
+                      ? standing.agents_running
+                      : null,
+                  /*
+                   * DASH's own record, plus the server's own answer where there
+                   * is one — a machine that says the entry is switched off there
+                   * outranks a switch somebody pressed in August.
+                   */
+                  residency_on:
+                    server.residency.asked_on !== null && report?.state !== "disabled",
                 };
               }),
             )}
@@ -1270,6 +1430,7 @@ export default function HostsPage(): ReactNode {
                   server={server}
                   standing={standings[server.host_id] ?? { step: "not_checked", label: server.label }}
                   checkedAt={checkedAt[server.host_id] ?? null}
+                  residency={residencyReports[server.host_id] ?? null}
                   agents={agentChoices}
                   busy={busyHost === server.host_id}
                   notice={notices[server.host_id] ?? null}
@@ -1281,7 +1442,6 @@ export default function HostsPage(): ReactNode {
                     setup: () => setup(server),
                     bringHome: (agentId) => void bringHome(server, agentId),
                     installKey: (offer) => void installKey(server, offer),
-                    readResidency: () => residency(server, "read"),
                     setResidency: (on) => residency(server, on ? "on" : "off"),
                   }}
                 />
