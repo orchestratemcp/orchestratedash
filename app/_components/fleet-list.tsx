@@ -84,7 +84,6 @@ export function FleetList({
   onAsked,
   onToggleFavourite,
   decisionsTotal = 0,
-  chiefPrefill = null,
 }: {
   /** The whole fleet — the rail's own counts depend on this being unfiltered. */
   agents: readonly AgentRow[];
@@ -110,14 +109,6 @@ export function FleetList({
    * between it and the composer that draws the chip.
    */
   decisionsTotal?: number;
-  /**
-   * "Ask the chief about this agent" (MAR-878b), resolved to a display name
-   * by `app/page.tsx` and handed through unchanged (MAR-882) — `FleetList`
-   * is the same one hop `decisionsTotal` above already crosses. Null is the
-   * ordinary case: no `?ask=` on the address, or an id that named nobody in
-   * this fleet.
-   */
-  chiefPrefill?: string | null;
 }): ReactNode {
   const router = useRouter();
   const [view] = useFleetView();
@@ -415,7 +406,6 @@ export function FleetList({
           setChiefOpen(false);
         }}
         decisionsTotal={decisionsTotal}
-        prefill={chiefPrefill}
       />
     </div>
   );

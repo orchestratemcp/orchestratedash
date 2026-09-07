@@ -28,7 +28,7 @@
  * shape for driving its room open and closed.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AskComposer, AskThread } from "../app/_components/ask";
@@ -51,20 +51,6 @@ import {
 } from "../lib/copy/ask";
 import type { AgentAskView, AskExchangeView } from "../lib/views/types";
 import { expectPlainLanguage } from "./helpers/plain-language";
-
-/*
- * MAR-882. `AskThread` reads its own agent id off the address now (the
- * fix-it card's chief entry needs one and `AgentAskView` carries none on its
- * blocked arm) — `tests/fleet-view-render.test.tsx`'s own precedent for the
- * same reason: a static render has no app-router context to read from, so
- * `useSearchParams` returns `null` unless a test supplies one. The literal
- * here (rather than the `AGENT` constant below) is deliberate: `vi.mock` is
- * hoisted above every `const` in this file, so referencing one here would
- * read it before it exists.
- */
-vi.mock("next/navigation", () => ({
-  useSearchParams: (): URLSearchParams => new URLSearchParams({ agent: "ai-agent-news" }),
-}));
 
 const AGENT = "ai-agent-news";
 
@@ -289,25 +275,6 @@ describe("the thread when there is nothing to ask with", () => {
     const html = thread({ ...blocked("no_key", true), history: [ANSWERED] });
     expect(html).toContain("Two of the saved reports mention tariffs");
     expect(html).toContain(ASK_SOURCES_HEADING);
-  });
-
-  /*
-   * MAR-882. "Ask the chief about this agent" (MAR-878b) used to open a bare
-   * `/` — the fleet page could not have prefilled its composer even if it had
-   * a prop for one. Both places this card can hand somebody to the chief now
-   * carry `agent` on the query string: `no_provider`'s own action link, where
-   * asking the chief *is* the fix, and the separate `ChiefEntry` offered
-   * beside every other reason's own action.
-   */
-  it("sends every road to the chief through the same, agent-carrying link", () => {
-    const chiefIsTheAction = thread(blocked("no_provider", false));
-    expect(chiefIsTheAction).toContain(`href="/?ask=${AGENT}"`);
-
-    const chiefIsOffered = thread(blocked("no_key", true));
-    expect(chiefIsOffered).toContain(`href="/?ask=${AGENT}"`);
-    // And still the real fix beside it — the chief entry augments the
-    // connect button, it does not replace it.
-    expect(chiefIsOffered).toContain("Connect OpenRouter");
   });
 });
 

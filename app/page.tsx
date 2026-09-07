@@ -1,18 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { TrySampleAgent } from "./_components/choose-folder";
 import { FleetList } from "./_components/fleet-list";
 import { FleetRail } from "./_components/fleet-rail";
 import { OAvatar } from "./_components/o-avatar";
 import { HostNotice, ViewFailed, ViewLoading } from "./_components/view-state";
-import { CHIEF_ASK_PARAM } from "./_data/routes";
 import { checkRunnerStatus, retireRunnerStore, setAgentFavourite } from "./_data/source";
 import { useCanAct, useHost, useRefreshOnWindowFocus, useView } from "./_data/use-view";
 import { oFor } from "../lib/brand/o-cast";
-import { describeChiefPrefill } from "../lib/copy/chief-chat";
 import { describeRunnerStoreDamage, type RunnerStoreDamageKind } from "../lib/copy/recovery";
 import type { CommandResult } from "../lib/shell/ipc";
 import type { AgentRow } from "../lib/views/types";
@@ -44,22 +41,8 @@ export const SAMPLE_AGENT_SEED = "ai-news-scout";
  *
  * A client component since MAR-432, like every page here. What it renders is
  * unchanged; where the data comes from is not. See `app/_data/source.ts`.
- *
- * Wrapped in `Suspense` rather than exported directly (MAR-882): `Fleet`
- * below reads `useSearchParams` for the chief's own prefill param, and
- * `app/agents/detail/page.tsx` set the precedent this follows — a static
- * export cannot answer that hook without a boundary above it.
  */
 export default function AgentsPage(): ReactNode {
-  return (
-    <Suspense fallback={<ViewLoading what="your agents" />}>
-      <Fleet />
-    </Suspense>
-  );
-}
-
-function Fleet(): ReactNode {
-  const searchParams = useSearchParams();
   const focusKey = useRefreshOnWindowFocus();
   /*
    * MAR-659. One more reason to re-read, beside the window regaining focus.
@@ -111,18 +94,6 @@ function Fleet(): ReactNode {
     () => (display.status === "ready" ? applyFavouriteOverrides(display.data.agents, favouriteOverrides) : []),
     [display, favouriteOverrides],
   );
-  /*
-   * MAR-882. "Ask the chief about this agent" (MAR-878b) carries an id on the
-   * query string; the chief's own composer never sees it. Resolved against
-   * this page's own fleet — never the raw param — so a stale or mistyped id
-   * (the fleet reloaded, the agent was removed) prefills nothing rather than
-   * putting an identifier in the box. `agents` above already has the
-   * favourite overlay applied, which does not matter here but means this
-   * reads the one list the cards themselves are drawn from.
-   */
-  const askAgentId = searchParams.get(CHIEF_ASK_PARAM);
-  const askAgent = askAgentId === null ? null : (agents.find((agent) => agent.name === askAgentId) ?? null);
-  const chiefPrefill = askAgent === null ? null : describeChiefPrefill(askAgent.title);
 
   return (
     <div className="fleet-shell">
@@ -231,7 +202,6 @@ function Fleet(): ReactNode {
             }}
             onToggleFavourite={toggleFavourite}
             decisionsTotal={display.data.decisions.total}
-            chiefPrefill={chiefPrefill}
           />
         </>
       )}

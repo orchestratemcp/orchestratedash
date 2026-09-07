@@ -319,23 +319,6 @@ export function describeChiefModelLine(own: boolean): string {
 }
 
 /**
- * What lands in the field when "Ask the chief about this agent" (MAR-878b)
- * opens this composer already knowing which agent it means (MAR-882).
- *
- * `agentTitle` is `AgentRow.title` — the display name, never `name` — so
- * this is the one place that link is allowed to write anything at all: the
- * fleet route reads the id back off the query string
- * (`app/_data/routes.ts`'s `chiefAskHref`/`CHIEF_ASK_PARAM`) and resolves it
- * to a title before this function ever sees it. Nothing here composes the
- * rest of a question — a colon and a trailing space are the whole of it, the
- * same shape a person typing "About Scout: " themselves would leave the
- * cursor in.
- */
-export function describeChiefPrefill(agentTitle: string): string {
-  return `About ${agentTitle}: `;
-}
-
-/**
  * The decisions chip's own words (MAR-742 roadmap item 1, §4.5).
  *
  * Absorbed from `app/page.tsx`'s own `<p class="fleet-decisions-note">`,

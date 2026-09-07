@@ -20,7 +20,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { ChiefChat, shouldApplyPrefill, visibleChiefTurns } from "../app/_components/chief-chat";
+import { ChiefChat, visibleChiefTurns } from "../app/_components/chief-chat";
 import { CHIEF_CHAT_COPY } from "../lib/copy/chief-chat";
 import type { AgentRow, ChiefRoomView, ChiefTurnView } from "../lib/views/types";
 
@@ -395,51 +395,5 @@ describe("visibleChiefTurns — what Clear actually filters", () => {
   it("clears to empty when every turn is at or before the boundary", () => {
     const turns = [turn({ id: 1 }), turn({ id: 2 })];
     expect(visibleChiefTurns(turns, 2)).toEqual([]);
-  });
-});
-
-/* ---------------------------------------------------------------------- *
- * `shouldApplyPrefill`: the prefill effect's own decision, pure (MAR-882)
- * ---------------------------------------------------------------------- */
-
-describe("shouldApplyPrefill — whether a new prefill overwrites the field", () => {
-  it("applies a fresh prefill to a field nobody has touched", () => {
-    expect(shouldApplyPrefill("About Scout: ", null, false)).toBe(true);
-  });
-
-  it("applies a later prefill for a different agent, still untouched", () => {
-    expect(shouldApplyPrefill("About Filer: ", "About Scout: ", false)).toBe(true);
-  });
-
-  it("never overwrites a draft the person has edited", () => {
-    // Same case as the row above, except somebody typed in the meantime.
-    expect(shouldApplyPrefill("About Filer: ", "About Scout: ", true)).toBe(false);
-  });
-
-  it("does nothing for the prefill already applied — no `?ask=` at all is also this case", () => {
-    expect(shouldApplyPrefill("About Scout: ", "About Scout: ", false)).toBe(false);
-    expect(shouldApplyPrefill(null, null, false)).toBe(false);
-  });
-
-  it("never applies a null prefill, touched or not", () => {
-    expect(shouldApplyPrefill(null, "About Scout: ", false)).toBe(false);
-    expect(shouldApplyPrefill(null, "About Scout: ", true)).toBe(false);
-  });
-});
-
-describe("the prefill prop, wired but inert under a static render (MAR-882)", () => {
-  /*
-   * `renderToStaticMarkup` fires no effect (this file's own header), so the
-   * prop reaching `ChiefChat` without throwing is the whole of what this
-   * render can prove; `shouldApplyPrefill` above is what proves the rule the
-   * effect enforces.
-   */
-  it("accepts a prefill without throwing, open or closed", () => {
-    expect(() => chat({ prefill: "About AI agent news: " })).not.toThrow();
-    expect(() => chat({ prefill: "About AI agent news: ", open: true })).not.toThrow();
-  });
-
-  it("renders the same as no prefill at all, since nothing has opened the room yet", () => {
-    expect(chat({ prefill: "About AI agent news: " })).toBe(chat({ prefill: null }));
   });
 });

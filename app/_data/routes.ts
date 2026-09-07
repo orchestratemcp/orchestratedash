@@ -252,25 +252,6 @@ export function isSeparateWindowRoute(pathname: string): boolean {
 }
 
 /**
- * The fleet route's own prefill, for a chief entry that already knows which
- * agent it means (MAR-882).
- *
- * "Ask the chief about this agent" (MAR-878b) used to go to a bare `/` — the
- * fleet route reads no search params and the composer has no prefill prop, so
- * the one fact the link already had (which agent) was dropped at the door.
- * This is the other half: a query param the fleet page reads back and
- * resolves to a display name before it ever reaches the composer, so the
- * link can carry `agentId` without the composer — or this module's own
- * callers — ever rendering it.
- */
-export const CHIEF_ASK_PARAM = "ask";
-
-export function chiefAskHref(agentId: string): string {
-  const params = new URLSearchParams({ [CHIEF_ASK_PARAM]: agentId });
-  return `/?${params.toString()}`;
-}
-
-/**
  * Static-export-safe agent workspace route, for the same reason as run detail.
  *
  * `stage` and `output` joined it with MAR-641's cockpit. Both are optional and

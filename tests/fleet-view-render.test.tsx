@@ -244,33 +244,6 @@ describe("a genuinely empty fleet (MAR-742 roadmap item 2)", () => {
   });
 });
 
-describe("the chief's prefill, forwarded rather than drawn (MAR-882)", () => {
-  /*
-   * `app/page.tsx` resolves `?ask=` to a sentence and hands it through this
-   * component to `ChiefChat`, which only ever applies it from an effect —
-   * `tests/chief-chat-render.test.tsx`'s own note that `renderToStaticMarkup`
-   * fires none. So the whole of what a render here can prove is that the prop
-   * reaches `ChiefChat` without this component doing anything with the text
-   * itself — never drawing it as a heading, never crashing on a mismatched
-   * agent's id.
-   */
-  it("accepts a resolved prefill without drawing it anywhere but the (unopened) field", () => {
-    const markup = renderToStaticMarkup(
-      <FleetList agents={[agent()]} chiefPrefill="About AI news scout: " />,
-    );
-    expect(markup).toContain("chief-composer");
-    expect(markup).not.toContain("About AI news scout");
-  });
-
-  it("renders the same with no prefill as with one nobody has opened the room to see", () => {
-    const withPrefill = renderToStaticMarkup(
-      <FleetList agents={[agent()]} chiefPrefill="About AI news scout: " />,
-    );
-    const withoutPrefill = renderToStaticMarkup(<FleetList agents={[agent()]} />);
-    expect(withPrefill).toBe(withoutPrefill);
-  });
-});
-
 describe("a card for an agent that has never run (MAR-634)", () => {
   const markup = renderToStaticMarkup(
     <FleetList agents={[agent({ run_count: 0 })]} />,
