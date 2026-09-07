@@ -34,7 +34,7 @@
  * request and open a window.
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -515,5 +515,58 @@ describe("the words themselves", () => {
   it("every capability sentence is plain language", async () => {
     const { everyAskCapabilitySentence } = await import("../lib/copy/ask");
     expectPlainLanguage(everyAskCapabilitySentence());
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * The way the hosts actually build one
+ * ---------------------------------------------------------------------- */
+
+describe("the briefing the chief hosts send (MAR-878)", () => {
+  /*
+   * The gap this closes, and why a test on `briefingFor` alone did not.
+   *
+   * `briefingFor`’s capability lookup defaults to an empty map, so every
+   * assertion that hands it one passes while the two call sites that actually
+   * reach a model — `electron/chief-host.ts` and `electron/chief-discord.ts`
+   * — send `ask: null`. This drives the composition those two files use,
+   * end to end over a real store: `agentsView().agents`, then
+   * `briefingFor(agents, askCapabilitiesFor(agents))`, then the render. If
+   * either host stops passing the lookup, the argument is gone from one place
+   * and this fails.
+   *
+   * The fixture is the shipped example manifest, which declares no model
+   * provider — the `no_provider` state, which is Proof Scout’s and the
+   * commonest one on a real DASH, since #320 fixed the template only for
+   * agents scaffolded after it.
+   */
+  it("carries the page’s recovery sentence for an agent that cannot be asked anything", async () => {
+    const { importManifest } = await import("../lib/store");
+    const { agentsView } = await import("../lib/views/build");
+    const { askCapabilitiesFor } = await import("../lib/views/chief");
+    const example = JSON.parse(
+      readFileSync(path.join(process.cwd(), "examples", "agent.manifest.example.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(importManifest(example)).toMatchObject({ ok: true });
+
+    const agents = agentsView().agents;
+    const subject = agents.find((one) => one.name === "email-lead-to-crm");
+    expect(subject, "the example manifest did not become a fleet row").toBeDefined();
+
+    // Exactly the two lines both hosts run.
+    const rows = briefingFor(agents, askCapabilitiesFor(agents));
+    const text = renderBriefing(rows);
+
+    const capability = describeAskCapability("no_provider", {
+      agent: subject?.title ?? "",
+      service: null,
+    });
+    const row = rows.find((one) => one.agent === "email-lead-to-crm");
+    expect(row?.ask?.reason).toBe("no_provider");
+    expect(row?.ask?.available).toBe(false);
+    expect(text).toContain(capability.sentence);
+    expect(text).toContain(capability.recovery);
+    // The id stays a value on the row and never reaches the wire.
+    expect(text).not.toContain("no_provider");
   });
 });

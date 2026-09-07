@@ -175,3 +175,43 @@ Wire the two Electron chief hosts (item 2 above) — it is one argument each and
 it is the difference between the chief *being able* to say why an agent cannot
 be asked something and actually being told. Then take the real-question proof
 on the installed build.
+
+
+## Addendum — the two Electron chief hosts are wired (ownership extension)
+
+The orchestrator extended this lane to cover item 2 of "What is NOT done",
+because without it the acceptance line *"chief receives the same
+capability/refusal facts"* is not true on the installed build. Done:
+
+| File | Change |
+| --- | --- |
+| `lib/views/chief.ts` | `askCapabilities` renamed and exported as `askCapabilitiesFor(agents)` |
+| `electron/chief-host.ts` | `briefing: briefingFor(agents, askCapabilitiesFor(agents))` (:146) plus the import |
+| `electron/chief-discord.ts` | the same two lines (:327) |
+| `tests/ask-capability.test.ts` | one case driving the composition the hosts use, end to end over a fixture store |
+
+Nothing else in `electron/**` was touched.
+
+The new test is the guard the previous ones could not be. `briefingFor`’s
+lookup defaults to an empty map, so every assertion that *hands* it one passes
+while the two call sites that actually reach a model send `ask: null` — which
+is exactly the state this branch shipped in for one revision. The test imports
+the shipped example manifest (which declares no model provider, so the agent is
+in Proof Scout’s own `no_provider` state), then runs the two lines both hosts
+run — `agentsView().agents`, then `briefingFor(agents,
+askCapabilitiesFor(agents))` — and asserts the rendered briefing contains the
+page’s own requirement and recovery sentences, that the row’s reason id is
+`no_provider`, and that the id itself never reaches the wire. If either host
+drops the argument, `row.ask` is null and this fails.
+
+Verified: `npx tsc --noEmit` clean;
+`npx vitest run` over the eight chief files plus `ask-capability`, `ask`,
+`ask-render`, `agent-cockpit-render`, `agent-about`, `composer-shared`,
+`panel-render` and `client-bundle` — `16 passed` / `310 passed`.
+`client-bundle` is in that list on purpose: `lib/views/chief.ts` reads the
+store, and the two new importers are main-process files, so the client set is
+unchanged.
+
+Item 1 of the original list — the chief entry opening the fleet composer with
+this agent already in it — remains a follow-up on `app/page.tsx` and
+`app/_components/chief-chat.tsx`. The scratch capture store is left in place.

@@ -58,6 +58,7 @@ import {
 } from "../lib/store";
 import { maskSecret } from "../lib/secret-refs";
 import { agentsView } from "../lib/views/build";
+import { askCapabilitiesFor } from "../lib/views/chief";
 
 /** The vault name the chief's bot token stands under. */
 export const CHIEF_DISCORD_SECRET_NAME = "dash.chief.discord.bot_token";
@@ -317,7 +318,13 @@ export async function buildChiefBridgeConfiguration(
     model: await resolveChiefModel(store),
     snapshot: {
       fleet: chiefFleetFrom(agents),
-      briefing: briefingFor(agents),
+      /* MAR-878. The same lookup `chiefRoomView` resolves, so the chief is
+         told what each agent can be asked, why not, and the recovery sentence
+         the agent's own page shows — the surface a person is sent to when
+         direct chat is unavailable was the one surface that could not say why.
+         Resolved on main because it reads the store; the runner cannot and
+         must not try (ADR 0028 decision 6). */
+      briefing: briefingFor(agents, askCapabilitiesFor(agents)),
       /*
        * What the fleet has produced (MAR-744).
        *

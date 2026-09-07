@@ -46,7 +46,7 @@ import type { AgentRow, ChiefEvidenceView, ChiefRoomView, ChiefTurnView } from "
  * the tab is the only place a fleet default is set.
  */
 export function chiefRoomView(agents: readonly AgentRow[]): ChiefRoomView {
-  const now = briefingFor(agents, askCapabilities(agents));
+  const now = briefingFor(agents, askCapabilitiesFor(agents));
   const fleet = chiefFleetFrom(agents);
   const turns = readChiefTurns().map((turn) => toTurnView(turn, now, fleet));
 
@@ -123,8 +123,19 @@ export function chiefRoomView(agents: readonly AgentRow[]): ChiefRoomView {
  * `ChiefBriefingRow.ask` is null there, and the briefing says nothing about
  * questions for that agent — which is true, and better than a sentence claiming
  * an agent cannot be asked something when nobody looked.
+ *
+ * ## Exported, because three hosts build a briefing and not one
+ *
+ * This function is the whole of MAR-878's chief half in practice. The room
+ * view calls it below, and `electron/chief-host.ts` and
+ * `electron/chief-discord.ts` call it beside their own `briefingFor` — three
+ * call sites, one resolution. It was private for one revision and that was the
+ * defect: `briefingFor`'s lookup defaults to empty, so the two hosts that
+ * actually send a briefing to a model were sending `ask: null` while the room
+ * view compared receipts against the real thing. A default that is silently
+ * wrong in two of three call sites is not a safe default.
  */
-function askCapabilities(agents: readonly AgentRow[]): Map<string, AskCapability> {
+export function askCapabilitiesFor(agents: readonly AgentRow[]): Map<string, AskCapability> {
   const capabilities = new Map<string, AskCapability>();
   for (const agent of agents) {
     const manifest = readAgentManifest(agent.name);
