@@ -1201,6 +1201,89 @@ function AgentWorkspace(): ReactNode {
         setFeedback={setFeedback}
         title={view.title}
         trigger={view.snapshot?.overview.trigger_label ?? null}
+        /* MAR-874. Section 2 — where it runs. The component is unchanged in
+           what it does; what changed is that its state is one line and its
+           receipt, its amber notice and its sent-to card are behind that
+           section's own Why?. See `DeployPanel`. */
+        where={
+          /* MAR-577, moved onto this stage by MAR-641 and **not** changed by
+             it. Where an agent lives is a setting, and the Local/Cloud chip in
+             the header clicks through to here.
+
+             Henrik decided deploy single-home on 2026-08-15: push to cloud and
+             bring home live *only* here. The other half of that decision — the
+             Servers page's card losing its "Put an agent here" panel and
+             linking into this stage instead — is scoped to MAR-642, so
+             `app/settings/servers` is untouched by this packet. Nothing here
+             says out loud that this is the only way to deploy, because until
+             MAR-642 lands it is not: a sentence claiming exclusivity while a
+             second door is still open is the kind of copy MAR-624 was filed
+             on. */
+          <DeployToServer
+            agent={view.agent}
+            title={view.title}
+            deploy={view.deploy}
+            targets={view.deploy_targets}
+            canAct={canAct}
+            onBroughtHome={() => setRefreshKey((value) => value + 1)}
+          />
+        }
+        /* MAR-583, restructured by MAR-874 into four states with one press.
+           The picker's behaviour is unchanged; what is new is the adoption row,
+           which offers the connect that already existed on this agent's own
+           connection row from the place the question is asked. Renders nothing
+           for an agent whose plan uses no model. */
+        model={
+          <ModelChoice
+            agent={view.agent}
+            settings={view.models}
+            canAct={canAct}
+            onChanged={() => setRefreshKey((value) => value + 1)}
+            setFeedback={setFeedback}
+          />
+        }
+        /* MAR-874. Section 5 — the three blocks nobody arrives for, behind one
+           closed disclosure. Each renders exactly what it rendered before. */
+        advanced={
+          <>
+            {/* MAR-584. A person opens this page to read what their agent
+                found, not to audit its folder. Renders nothing at all for an
+                agent DASH holds no folder of its own for. */}
+            <FolderUpdate
+              agent={view.agent}
+              canAct={canAct}
+              checkable={view.folder_checkable}
+              onAdopted={() => setRefreshKey((value) => value + 1)}
+              setFeedback={setFeedback}
+            />
+
+            {/* MAR-705, and MAR-874's `startable`. Under the folder block
+                because it is the same folder. The control is offered exactly as
+                often as it always was — see the component's own note on why a
+                repair door that appeared only once DASH had diagnosed a fault
+                would be missing in every case nobody predicted — but its
+                heading is now the predicate rather than an assertion, so this
+                stage stops telling a READY agent that it will not run. */}
+            <RepairAgent
+              agent={view.agent}
+              canAct={canAct}
+              hasFolder={view.folder_checkable}
+              onRepaired={() => setRefreshKey((value) => value + 1)}
+              setFeedback={setFeedback}
+              startable={view.startable}
+            />
+
+            {/* MAR-681. Renders nothing for an agent nobody has answered
+                "always this" for — see the component's own note. */}
+            <StandingAnswers
+              agent={view.agent}
+              answers={view.standing_answers}
+              canAct={canAct}
+              onChanged={() => setRefreshKey((value) => value + 1)}
+              setFeedback={setFeedback}
+            />
+          </>
+        }
         danger={
             /* MAR-595 finding 18 shipped these two buttons and Henrik still
                asked for a remove button, which means the buttons were not where
@@ -1216,75 +1299,7 @@ function AgentWorkspace(): ReactNode {
               deployedServers={view.deploy_targets.map((target) => target.label)}
             />
           }
-        >
-          {/* MAR-583. The model picker is a setting, and it was a full-width
-              section on the page competing with the agent's own output. Its
-              behaviour is unchanged — this stage owns where it sits, not what
-              it does. Renders nothing for an agent whose plan uses no model. */}
-          <ModelChoice
-            agent={view.agent}
-            settings={view.models}
-            canAct={canAct}
-            onChanged={() => setRefreshKey((value) => value + 1)}
-            setFeedback={setFeedback}
-          />
-
-          {/* MAR-577, moved onto this stage by MAR-641 and **not** changed by
-              it. Where an agent lives is a setting, and the Local/Cloud chip in
-              the header clicks through to here.
-
-              Henrik decided deploy single-home on 2026-08-15: push to cloud and
-              bring home live *only* here. The other half of that decision —
-              the Servers page's card losing its "Put an agent here" panel and
-              linking into this stage instead — is scoped to MAR-642, so
-              `app/settings/servers` is untouched by this packet. Nothing here
-              says out loud that this is the only way to deploy, because until
-              MAR-642 lands it is not: a sentence claiming exclusivity while a
-              second door is still open is the kind of copy MAR-624 was filed
-              on. The component itself is unchanged. */}
-          <DeployToServer
-            agent={view.agent}
-            title={view.title}
-            deploy={view.deploy}
-            targets={view.deploy_targets}
-            canAct={canAct}
-            onBroughtHome={() => setRefreshKey((value) => value + 1)}
-          />
-
-          {/* MAR-584. Same argument: a person opens this page to read what
-              their agent found, not to audit its folder. Renders nothing at all
-              for an agent DASH holds no folder of its own for. */}
-          <FolderUpdate
-            agent={view.agent}
-            canAct={canAct}
-            checkable={view.folder_checkable}
-            onAdopted={() => setRefreshKey((value) => value + 1)}
-            setFeedback={setFeedback}
-          />
-
-          {/* MAR-705. Under the folder block because it is the same folder, and
-              after it because the order is how likely a person is to want them:
-              editing an agent is the ordinary visit, repairing one is the visit
-              they were sent here by. Renders nothing at all where there is no
-              folder to set up again from — see the component's own note. */}
-          <RepairAgent
-            agent={view.agent}
-            canAct={canAct}
-            hasFolder={view.folder_checkable}
-            onRepaired={() => setRefreshKey((value) => value + 1)}
-            setFeedback={setFeedback}
-          />
-
-          {/* MAR-681. Renders nothing for an agent nobody has answered
-              "always this" for — see the component's own note. */}
-          <StandingAnswers
-            agent={view.agent}
-            answers={view.standing_answers}
-            canAct={canAct}
-            onChanged={() => setRefreshKey((value) => value + 1)}
-            setFeedback={setFeedback}
-          />
-        </AgentSettings>
+      />
     ),
 
     /*

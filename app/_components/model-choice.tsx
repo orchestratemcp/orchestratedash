@@ -5,8 +5,15 @@ import { useState, type Dispatch, type ReactNode, type SetStateAction } from "re
 
 import { describeCatalogueResult } from "../../lib/ai/model-choice";
 import { DEFAULT_MODEL_LEVELS, levelLabel } from "../../lib/ai/model-levels";
+import { AGENT_SETTINGS_COPY } from "../../lib/copy/agent-page";
 import type { AgentModelSettingsView, ModelStepView } from "../../lib/views/types";
-import { chooseAgentModel, listAgentModels, setAgentStepLevel } from "../_data/source";
+import {
+  chooseAgentModel,
+  listAgentModels,
+  setAgentStepLevel,
+  submitConnectionCommand,
+} from "../_data/source";
+import { WhyDisclosure } from "./agent-settings";
 
 /**
  * Which model this agent uses (MAR-583).
@@ -62,6 +69,20 @@ export function ModelChoice({
 }): ReactNode {
   const [models, setModels] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
+  /*
+   * MAR-874. The picker opens on a press rather than standing open.
+   *
+   * The rule this stage now follows is one state sentence and one action per
+   * section, and for an agent that already has a model the state is
+   * `in_force` — *Using your default, …* — while the action is *Change*. A
+   * dropdown standing open under a setting almost nobody should touch was the
+   * shape that made this section three controls tall before anybody had decided
+   * to change anything.
+   *
+   * Component state and not remembered: like every disclosure on this stage,
+   * the section looks the same on every visit.
+   */
+  const [changing, setChanging] = useState(false);
 
   /*
    * Nothing at all for an agent with no model in its plan and no levels to show.
@@ -74,6 +95,17 @@ export function ModelChoice({
   if (!settings.can_choose && settings.reason === "no_model_needed") {
     return null;
   }
+
+  /*
+   * MAR-874. The adoptable press, normalised once.
+   *
+   * `AgentModelSettingsView.adopt` is optional and absent means the same as
+   * null — see its own note. Read here rather than at each of the three places
+   * below that ask about it, so the two spellings of "there is nothing to
+   * adopt" cannot come apart between the arm that draws the button and the arm
+   * that decides whether to draw the Why? beside it.
+   */
+  const adoptable = settings.can_choose ? null : (settings.adopt ?? null);
 
   async function ask(): Promise<void> {
     if (!settings.can_choose) {
@@ -125,6 +157,47 @@ export function ModelChoice({
     }
   }
 
+  /**
+   * The adoption press (MAR-874, ADR 0013 moment 2).
+   *
+   * ## What it is, and what it deliberately is not
+   *
+   * It is **the connect that was already on this agent's own connection row**,
+   * aimed from the place a person actually asks the question. `performConnectionAction`
+   * routes a `connect` on an agent's row through `adoptFleetCredential` before
+   * anything else, so a fleet connection for that provider is reused rather than
+   * a second consent screen being opened — and the record of the decision is
+   * filed there, beside the write, as it always was.
+   *
+   * It is **not** a new power and not a wider grant. Nothing here reads a
+   * credential, nothing widens `resolveKeyGrant`, and no fleet key is bypassed:
+   * if `materialize` produces no record for this agent the adoption undoes its
+   * own grant row and the ordinary flow runs, which is main's business and not
+   * this button's. The button reports whatever came back rather than predicting
+   * it — `settings.adopt` says a press is *worth offering*, never that it will
+   * succeed.
+   */
+  async function adopt(target: { connection_id: string; field_id: string }): Promise<void> {
+    setBusy(true);
+    setFeedback(null);
+    const result = await submitConnectionCommand("connect", {
+      agent_id: agent,
+      connection_id: target.connection_id,
+      field_id: target.field_id,
+    });
+    setBusy(false);
+    setFeedback({
+      ok: result.ok,
+      message: result.detail ?? (result.ok ? "" : "DASH could not connect this agent's key."),
+    });
+    if (result.ok) {
+      // The whole section is decided by `buildAgentModelSettings`, so the row
+      // becomes the ordinary "talks with your default" state on the re-read
+      // rather than on a second local guess about what the press did.
+      onChanged();
+    }
+  }
+
   async function setLevel(step: number, level: string): Promise<void> {
     setBusy(true);
     setFeedback(null);
@@ -150,22 +223,70 @@ export function ModelChoice({
           headings above it, which is a broken hierarchy for a screen reader as
           well as an odd-looking page. This component renders on the agent page
           and nowhere else, so the level is not shared with another surface. */}
-      <h3 id="model-choice">{settings.headline}</h3>
-      <p className="muted wrap">{settings.detail}</p>
+      <h3 id="model-choice">{AGENT_SETTINGS_COPY.model.heading}</h3>
 
-      {settings.can_choose ? (
+      {/*
+        MAR-874. Four states, one line each, and at most one press.
+
+        The section used to open with whichever headline
+        `lib/ai/model-choice.ts` had composed, follow it with a paragraph of
+        detail, a second sentence about what is in force, a standing dropdown
+        and a button that contacts a provider — all before anybody had decided
+        to change anything. What a person opening this stage wants from it is
+        one line: *which model does this talk with*. The four arms below each
+        answer that in a sentence and offer the one thing there is to do.
+
+        - **Waiting for your key.** `settings.adopt` — the agent declares a
+          provider, holds no key, and DASH already holds a fleet key for that
+          same provider. One button, and it asks for nothing.
+        - **Talks with your default.** `in_force`, plus *Change*, which opens
+          today's picker.
+        - **Needs a provider.** The view's own headline and its next action,
+          which is a link rather than a button, because the step is on another
+          page.
+        - **Cannot talk.** The view's headline with no action at all. Its words
+          are `describeNoChoice`'s and stay that way deliberately: they say the
+          agent either arranges its own model or names a service DASH cannot
+          ask, *because the manifest does not distinguish those two* — and a
+          sentence here asserting the agent was built without a model would be
+          this stage guessing at exactly the thing that module refuses to guess.
+      */}
+      {adoptable !== null ? (
+        <ModelAdoption
+          adopt={adoptable}
+          busy={busy}
+          canAct={canAct}
+          detail={settings.detail}
+          onAdopt={(target) => void adopt(target)}
+        />
+      ) : settings.can_choose ? (
         <>
-          <p className="model-in-force wrap">{settings.in_force}</p>
+          <p className="settings-state model-in-force wrap">{settings.in_force}</p>
           {canAct ? (
-            <ModelPicker
-              chosen={settings.chosen_model_id}
-              unpinned={settings.unpinned_option}
-              models={models}
-              provider={settings.provider_label}
-              busy={busy}
-              onChoose={(id) => void choose(id)}
-              onAsk={() => void ask()}
-            />
+            changing ? (
+              <ModelPicker
+                chosen={settings.chosen_model_id}
+                unpinned={settings.unpinned_option}
+                models={models}
+                provider={settings.provider_label}
+                busy={busy}
+                onChoose={(id) => void choose(id)}
+                onAsk={() => void ask()}
+              />
+            ) : (
+              <div className="button-row">
+                <button
+                  type="button"
+                  className="button-secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    setChanging(true);
+                  }}
+                >
+                  {AGENT_SETTINGS_COPY.model.change}
+                </button>
+              </div>
+            )
           ) : (
             /*
              * Said rather than drawn disabled, `FolderUpdate`'s reason: a greyed
@@ -177,20 +298,114 @@ export function ModelChoice({
             </p>
           )}
         </>
-      ) : settings.next_action === null ? null : (
-        <p className="model-next wrap">{settings.next_action}</p>
+      ) : (
+        <>
+          <p className="settings-state wrap">{settings.headline}</p>
+          {settings.next_action === null ? null : (
+            <p className="model-next wrap">{settings.next_action}</p>
+          )}
+        </>
       )}
 
-      <ModelSteps
-        steps={settings.steps}
-        canAct={canAct && settings.can_choose}
-        inForce={!settings.can_choose || settings.steps_in_force}
-        note={settings.can_choose ? settings.steps_note : null}
-        linkLabel={settings.can_choose ? settings.steps_link_label : null}
-        busy={busy}
-        onSetLevel={(step, level) => void setLevel(step, level)}
-      />
+      {/* The rest, behind the one word (MAR-874). `detail` is the trusted
+          side's explanation of the state above, and the per-step levels are the
+          second question this component's own header says nobody has to open.
+          The adoptable arm draws its own Why? inside `ModelAdoption`, because
+          its explanation is about the press rather than about the steps. */}
+      {adoptable !== null ? null : (
+        <WhyDisclosure>
+          <p className="muted wrap">{settings.detail}</p>
+          <ModelSteps
+            steps={settings.steps}
+            canAct={canAct && settings.can_choose}
+            inForce={!settings.can_choose || settings.steps_in_force}
+            note={settings.can_choose ? settings.steps_note : null}
+            linkLabel={settings.can_choose ? settings.steps_link_label : null}
+            busy={busy}
+            onSetLevel={(step, level) => void setLevel(step, level)}
+          />
+        </WhyDisclosure>
+      )}
     </section>
+  );
+}
+
+/**
+ * The one state on this row that has a press and costs nothing (MAR-874,
+ * ADR 0013 moment 2).
+ *
+ * ## The journey this exists for
+ *
+ * A person builds an agent with the assistant. It declares `model_provider`,
+ * because every plugin-built agent does now. They already gave DASH an
+ * OpenRouter key months ago, for their other agents. They open the new agent,
+ * ask it something, and are told it has no model — and the way to fix that was
+ * to find the Connections page, find this agent's row on it, and press Connect
+ * there.
+ *
+ * That press is unchanged and is still the one that runs. What is new is that
+ * it is offered *here*, where the question is asked. Unfindable is the same as
+ * missing, and this is the same key, the same command and the same audit row.
+ *
+ * ## What the sentence promises, and what it does not
+ *
+ * It promises that pressing asks for nothing and contacts nobody, which is
+ * exactly what `adoptFleetCredential` does: it reuses a consent DASH already
+ * holds rather than opening a second consent screen, on the argument that
+ * making somebody re-approve what they have already approved teaches them to
+ * click through consent screens.
+ *
+ * It promises nothing about whether the key still works. That is the fleet
+ * card's to say, and a sentence here implying a live key would be this stage
+ * vouching for something it never read.
+ */
+function ModelAdoption({
+  adopt,
+  busy,
+  canAct,
+  detail,
+  onAdopt,
+}: {
+  adopt: { connection_id: string; field_id: string; provider_label: string };
+  busy: boolean;
+  canAct: boolean;
+  /** `describeNoChoice`'s own account of the no-key state, behind the Why?. */
+  detail: string;
+  onAdopt: (target: { connection_id: string; field_id: string }) => void;
+}): ReactNode {
+  return (
+    <>
+      <p className="settings-state wrap">
+        {AGENT_SETTINGS_COPY.model.adopt_headline(adopt.provider_label)}
+      </p>
+      {canAct ? (
+        <div className="button-row">
+          <button
+            type="button"
+            className="button-primary"
+            disabled={busy}
+            onClick={() => {
+              onAdopt({ connection_id: adopt.connection_id, field_id: adopt.field_id });
+            }}
+          >
+            {busy
+              ? AGENT_SETTINGS_COPY.model.adopt_pending
+              : AGENT_SETTINGS_COPY.model.adopt_action}
+          </button>
+        </div>
+      ) : (
+        /* Said rather than drawn disabled, the same call every other control on
+           this stage makes: a greyed button here would read as a claim about
+           this agent, and the true statement is about which window this is. */
+        <p className="muted wrap">
+          Open the installed DASH app to let this agent use your key.
+        </p>
+      )}
+      <WhyDisclosure>
+        <p className="muted wrap">{AGENT_SETTINGS_COPY.model.adopt_detail}</p>
+        <p className="muted wrap">{detail}</p>
+      </WhyDisclosure>
+    </>
   );
 }
 

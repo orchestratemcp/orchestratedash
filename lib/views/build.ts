@@ -73,7 +73,7 @@ import {
 } from "../agent-dom/store";
 import { readStandingAnswers } from "../agent-dom/standing-answers";
 import { readAgentSchedule, readScheduleRuns, readScheduleSpend } from "../schedule/store";
-import { buildAgentScheduleView } from "./agent-schedule";
+import { buildAgentScheduleView, residentHostLabel } from "./agent-schedule";
 import { dataDir } from "../db";
 /* MAR-697. The exports folder and the two words DASH puts around a file in it.
    `listAgentExports` reaches `node:fs`, which is ordinary here — this module
@@ -126,6 +126,7 @@ import {
   readHostDeploys,
   readHostKeyPlacements,
   readHostResidency,
+  readResidentHosts,
   readAgentManifest,
   readEvidencePulls,
   readHost,
@@ -1949,6 +1950,12 @@ export function workspaceView(
       newestScheduleRun === null || newestScheduleRun.allowance_calls <= 0
         ? null
         : readScheduleSpend(agent, newestScheduleRun.settled_at, SPEND_ALLOWANCE_MS),
+      // MAR-874. Which machine actually keeps this schedule — the same set
+      // `splitSchedules` partitions the push with, so the panel and the push
+      // cannot name different machines. Null for every agent that is not
+      // enrolled anywhere, which is every agent until somebody switches
+      // residency on for a server.
+      residentHostLabel(agent, readResidentHosts(), readHost),
     ),
     // MAR-645. A projection of records already read or stored, with no probe
     // and no provider call. The page draws it only on the Health stage.

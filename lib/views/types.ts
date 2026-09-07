@@ -791,6 +791,40 @@ export type AgentModelSettingsView =
       next_action: string | null;
       /** Drawn even here, so an agent's declared levels are readable. */
       steps: ModelStepView[];
+      /**
+       * The one press that would end this state without asking for anything
+       * (MAR-874, ADR 0013 moment 2).
+       *
+       * Non-null in exactly one situation: the agent declares a model provider,
+       * DASH holds no key of its own for it, **and** DASH already holds a fleet
+       * connection for that same provider. Pressing Connect on the agent's own
+       * row is what `lib/connection-actions.ts` already routes through
+       * `adoptFleetCredential`, so this field is not a new power — it is the
+       * existing one made findable from the place a person actually asks the
+       * question.
+       *
+       * It carries the connection's address and nothing else. **No credential,
+       * no masked hint, not even whether the fleet key still works** — those
+       * are the fleet card's to say, and a field here that implied a working
+       * key would be this stage vouching for something it never read.
+       *
+       * Null everywhere else, which is every agent that needs no model, every
+       * agent that arranges its own, and every agent whose provider DASH holds
+       * nothing for at all.
+       *
+       * **Optional, and absent means the same as null.** The alternative was a
+       * required field, which would make every fixture in the repository — and
+       * every future one — restate "there is nothing to adopt here" in order to
+       * describe an agent this row is not about. `buildAgentModelSettings`
+       * always sets it explicitly; a reader normalises with `?? null` and gets
+       * the same two states either way.
+       */
+      adopt?: {
+        connection_id: string;
+        field_id: string;
+        /** DASH's friendly name for the provider. What the sentence says. */
+        provider_label: string;
+      } | null;
     }
   | {
       can_choose: true;

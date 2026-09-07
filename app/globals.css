@@ -8802,3 +8802,116 @@ main:has(.agent-cockpit) {
   background: var(--surface-2);
 }
 /* ==== MAR-875 end ==== */
+
+/* ==== MAR-874 begin ==== */
+/*
+ * The agent Settings stage: one state, one action, everything else behind a
+ * question (MAR-874).
+ *
+ * Append-only and additive by construction — nothing above this fence is
+ * restyled, because three other lanes are live in the same file. Every rule
+ * here is either a new class this packet introduced or a narrowing of one of
+ * its own containers.
+ */
+
+/*
+ * The one sentence a section leads with.
+ *
+ * Set at the body size rather than muted: it is the answer, not a footnote, and
+ * the old shape's mistake was that the answer and the explanation were the same
+ * weight. Everything that is genuinely secondary keeps `.muted`, which is now
+ * mostly inside a closed disclosure.
+ */
+.settings-state {
+  margin: 0 0 var(--space-2);
+  color: var(--text);
+}
+
+/* The identity row: portrait, name and its two presses on one line (MAR-874). */
+.settings-identity-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.settings-identity-row .agent-name-field {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/*
+ * The Why? disclosure.
+ *
+ * Deliberately quiet: a small caps summary that reads as a link rather than a
+ * button, so it does not compete with the one real control above it. Zero
+ * corners, like everything else in Bit-Command.
+ */
+.settings-why {
+  margin: var(--space-2) 0 0;
+  border-left: 2px solid var(--line);
+  padding-left: var(--space-3);
+}
+
+.settings-why > summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The gap only exists once something is open; a closed disclosure is one line. */
+.settings-why[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
+.settings-why > :not(summary) {
+  margin-top: var(--space-2);
+}
+
+/*
+ * Advanced and Remove, which are `details` rather than `section` (MAR-874).
+ *
+ * `.agent-settings-block:first-of-type` above matches per element type, so the
+ * first `details` child would otherwise lose the divider every `section` block
+ * has. Restated here rather than changed there, which is this fence's rule.
+ */
+details.agent-settings-block {
+  margin-top: var(--density-gap);
+  padding-top: var(--density-gap);
+  border-top: 1px solid var(--line);
+}
+
+details.agent-settings-block > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+details.agent-settings-block[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
+/* The removal disclosure keeps the red edge its section had. */
+details.agent-settings-danger > summary {
+  color: var(--err);
+}
+
+/*
+ * Sections that render their own `section.section` inside the drawer — the
+ * model row, the deploy row, the folder and repair blocks. They carry the
+ * page's standalone-section padding, which inside the drawer stacks two
+ * paddings deep.
+ */
+.agent-settings .section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* The deploy row's sent-to card, now a row inside a disclosure. */
+.settings-why .sent-servers {
+  margin-top: 0;
+}
+/* ==== MAR-874 end ==== */
