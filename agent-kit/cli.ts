@@ -115,6 +115,10 @@ export function run(argv: readonly string[], options: CliOptions): CliResult {
 /**
  * The template files this build carries.
  *
+ * `dash-agent-sdk.mjs` is carried verbatim beside `agent.mjs`, because the
+ * generated project imports it with a relative path and has no dependencies to
+ * resolve it through (ADR 0034).
+ *
  * `open-in-dash.mjs` is the *bundle*, not the TypeScript source — a scaffolded
  * project has no compiler and no dependency on this kit, so the script it runs
  * has to be one self-contained file. It is built by
@@ -123,14 +127,16 @@ export function run(argv: readonly string[], options: CliOptions): CliResult {
  */
 function readTemplates(kitRoot: string): TemplateSources {
   const agentFile = path.join(kitRoot, "template", "agent.mjs");
+  const sdkFile = path.join(kitRoot, "template", "dash-agent-sdk.mjs");
   const openFile = path.join(kitRoot, "dist", "open-in-dash.mjs");
-  for (const file of [agentFile, openFile]) {
+  for (const file of [agentFile, sdkFile, openFile]) {
     if (!existsSync(file)) {
       return missing(file);
     }
   }
   return {
     agent: readFileSync(agentFile, "utf8"),
+    sdk: readFileSync(sdkFile, "utf8"),
     openInDash: readFileSync(openFile, "utf8"),
   };
 }

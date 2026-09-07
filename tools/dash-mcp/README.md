@@ -85,9 +85,9 @@ artifacts per run:
   `items_digest` DASH recomputes and checks.
 
 That second document is what makes the output judgeable rather than only
-readable, and it is why `brief-fingerprint.mjs` is a separate file marked *do
-not edit*: it is the agent's half of one function DASH holds the other half of.
-`tests/fingerprint-mirror.test.ts` pins the two together.
+readable, and it is why the fingerprint lives in `dash-agent-sdk.mjs`, the file
+marked *do not edit*: it is the agent's half of one function DASH holds the
+other half of. `tests/fingerprint-mirror.test.ts` pins the two together.
 
 It also declares one `model_provider` connection, `optional: true`, so the
 person can ask it a question about what it found even though none of its own
@@ -116,9 +116,12 @@ src/
   paths.ts        where it may write, and the one place it may not
   open-in-dash.ts bundled into every scaffold as scripts/open-in-dash.mjs
 template/
-  agent.mjs               the program
-  brief-fingerprint.mjs   the mirror; do not edit either copy alone
+  agent.mjs               the program; task logic only
 ```
+
+The runtime the program imports is not in this directory. There is one, it lives
+at `agent-kit/template/dash-agent-sdk.mjs`, and this scaffold writes those bytes
+(ADR 0034). A second copy here would be a fork that looks maintained.
 
 ## Working on it
 

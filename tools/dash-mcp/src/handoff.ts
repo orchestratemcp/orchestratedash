@@ -19,8 +19,9 @@
  * is correct for a project the kit wrote and never correct for one somebody has
  * edited since: a file added after the scaffold is a file the fixed list drops
  * silently, and the agent DASH stores is missing a module it imports. This
- * scaffold has a file the kit's list does not name — `brief-fingerprint.mjs` —
- * so a fixed list here would ship an agent that crashes on its first line.
+ * A fixed list here would also ship an agent that crashes on its first line the
+ * moment the two scaffolds' file sets differ by one, which they did until
+ * MAR-887 and may again.
  *
  * Walking is bounded by the same ceilings `lib/handoff.ts` enforces, and skips
  * the same directories `lib/folder-import.ts` skips for a chosen folder, plus

@@ -215,8 +215,16 @@ export type ScaffoldPlan =
 export interface TemplateSources {
   /** `tools/dash-mcp/template/agent.mjs`. */
   agent: string;
-  /** `tools/dash-mcp/template/brief-fingerprint.mjs`. Copied verbatim. */
-  fingerprint: string;
+  /**
+   * `agent-kit/template/dash-agent-sdk.mjs`. Copied verbatim.
+   *
+   * Read from the Agent Kit's template directory rather than from this
+   * package's, because there is exactly one runtime and both scaffolders write
+   * the same bytes. A second copy under `tools/dash-mcp/template/` would be a
+   * fork with a build date on it, and ADR 0032 decision 4 already refuses that
+   * shape for the validator; ADR 0034 refuses it for the runtime.
+   */
+  sdk: string;
   /** The bundled `open-in-dash.mjs`, copied into the project's `scripts/`. */
   openInDash: string;
 }
@@ -274,7 +282,7 @@ export function planScaffold(request: ScaffoldRequest, sources: TemplateSources)
       },
       { path: "package.json", contents: `${JSON.stringify(projectPackage(request), null, 2)}\n` },
       { path: "agent.mjs", contents: sources.agent },
-      { path: "brief-fingerprint.mjs", contents: sources.fingerprint },
+      { path: "dash-agent-sdk.mjs", contents: sources.sdk },
       { path: "scripts/open-in-dash.mjs", contents: sources.openInDash },
       { path: SOURCES_FILE_NAME, contents: `${JSON.stringify({ sources: feeds }, null, 2)}\n` },
       { path: "README.md", contents: readme(request) },
@@ -575,7 +583,7 @@ function readme(request: ScaffoldRequest): string {
     "| `agent.mjs` | The agent. `runOnce` is yours; the rest is plumbing. |",
     "| `sources.json` | What it reads. Edit freely. |",
     "| `agent.manifest.json` | What it promises DASH. |",
-    "| `brief-fingerprint.mjs` | **Do not edit.** One half of a function DASH holds the other half of. |",
+    "| `dash-agent-sdk.mjs` | **Do not edit.** DASH's runtime, and DASH upgrades it. |",
     "",
     "## Running it outside DASH",
     "",

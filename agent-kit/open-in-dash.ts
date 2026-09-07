@@ -59,14 +59,18 @@ export interface HandoffWriteResult {
  * going to fix, because nothing was broken. `sources.json`, `README.md` and
  * `.gitignore` are convenience scaffolding an agent may outgrow; a missing one
  * means this agent does not use it, not that the build failed. The program
- * itself — the manifest, the package, the agent, and the very script running
- * this check — has no such reading: losing one of those is a real incomplete
- * build, and `writeHandoff` below still refuses for exactly that reason.
+ * itself — the manifest, the package, the agent, the runtime it imports, and
+ * the very script running this check — has no such reading: losing one of those
+ * is a real incomplete build, and `writeHandoff` below still refuses for
+ * exactly that reason. `dash-agent-sdk.mjs` is required for the most literal
+ * version of it: `agent.mjs` imports it by relative path, so an agent shipped
+ * without it fails on its first line.
  */
 const AGENT_KIT_PROJECT_FILES = [
   { path: "agent.manifest.json", required: true },
   { path: "package.json", required: true },
   { path: "agent.mjs", required: true },
+  { path: "dash-agent-sdk.mjs", required: true },
   { path: "scripts/open-in-dash.mjs", required: true },
   { path: "sources.json", required: false },
   { path: "README.md", required: false },

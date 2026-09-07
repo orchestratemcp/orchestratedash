@@ -57,6 +57,15 @@ export interface ScaffoldRequest {
 export interface TemplateSources {
   /** `agent-kit/template/agent.mjs`. */
   agent: string;
+  /**
+   * `agent-kit/template/dash-agent-sdk.mjs` — the runtime `agent.mjs` imports.
+   *
+   * A file inside the project rather than a dependency, because a scaffolded
+   * project has an empty dependency list on purpose and the packaged sample is
+   * copied as raw bytes with no registry anywhere in the journey. ADR 0034
+   * records the decision and the two alternatives it rejects.
+   */
+  sdk: string;
   /** The bundled `open-in-dash.mjs`, copied into the project's `scripts/`. */
   openInDash: string;
 }
@@ -113,6 +122,7 @@ export function planScaffold(request: ScaffoldRequest, sources: TemplateSources)
       },
       { path: "package.json", contents: `${JSON.stringify(projectPackage(request), null, 2)}\n` },
       { path: "agent.mjs", contents: sources.agent },
+      { path: "dash-agent-sdk.mjs", contents: sources.sdk },
       { path: "scripts/open-in-dash.mjs", contents: sources.openInDash },
       {
         path: SOURCES_FILE_NAME,
@@ -425,9 +435,13 @@ item's source attached.
 
 ## Make it yours
 
-\`agent.mjs\` is the whole agent, in one file with no dependencies. The part
-that does the work is \`runOnce\`; everything above it is how DASH watches and
-controls it.
+\`agent.mjs\` is the part that does the work, and \`runOnce\` is one run of it.
+Change what it reads, what it collects and what it says about it.
+
+\`dash-agent-sdk.mjs\` beside it is DASH's, and you should not edit it: it is how
+DASH watches and controls the agent, and DASH replaces that file when it has a
+newer one. An edit there is an edit you lose. There are no dependencies in
+either file.
 
 If you change what the agent *does* in a way that changes what it is allowed to
 do, edit \`agent.manifest.json\` and run \`npm run open-in-dash\` again. DASH

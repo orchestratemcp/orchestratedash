@@ -12,7 +12,8 @@ The one-command path from nothing to an agent running inside DASH.
 | `cli.ts` | `create-dash-agent`, minus the process. |
 | `open-in-dash.ts` | Writes the handoff and asks the OS to open it. |
 | `bin/*.ts` | The two program entry points. Bundled to `dist/`. |
-| `template/agent.mjs` | The generated agent, copied verbatim. |
+| `template/agent.mjs` | The generated agent's task logic, copied verbatim. |
+| `template/dash-agent-sdk.mjs` | The runtime it imports. One file, node builtins only, copied verbatim into every scaffold and into the packaged shell. |
 
 ## What a person does
 
@@ -59,13 +60,39 @@ controls.
 It declares **no connections**, which is its most useful property: it can be
 added and watched working without anybody having a credential to hand.
 
+## Which files are the author's
+
+A generated project holds two programs and only one of them is yours.
+
+| File | Yours? |
+| --- | --- |
+| `agent.mjs` | Yes. `runOnce` is the run; everything under it is the task logic. |
+| `sources.json` | Yes. What it reads. |
+| `agent.manifest.json` | Through the generator. It is what DASH holds the agent to, so a change to it is a change DASH asks about. |
+| `dash-agent-sdk.mjs` | No. DASH's runtime, and DASH upgrades it in place, so an edit here is lost on the next upgrade. |
+| `scripts/open-in-dash.mjs` | No. A bundle of DASH's own handoff code. |
+
+The split is ADR 0034. It is what lets a runtime fix reach an agent somebody
+has been editing for months without a merge, and it is why the plumbing is no
+longer the first 500 lines of the file you open to change what the agent does.
+[`docs/foundation/sdk-upgrades.md`](../docs/foundation/sdk-upgrades.md) has the
+versioning rule.
+
 ## Why the generated project has no dependencies
 
 `npm install` in a scaffold that pulls a tree is a scaffold that can fail on
-somebody's corporate network before they have seen anything work. `agent.mjs` is
-plain Node in one file, and `scripts/open-in-dash.mjs` is a bundle the scaffolder
-copies in, so after `create-dash-agent` itself there is no registry in the path
-at all.
+somebody's corporate network before they have seen anything work. `agent.mjs`
+and `dash-agent-sdk.mjs` are plain Node with node builtins only, and
+`scripts/open-in-dash.mjs` is a bundle the scaffolder copies in, so after
+`create-dash-agent` itself there is no registry in the path at all.
+
+This is also why the runtime is a file rather than a package. The packaged
+sample has it worse than the CLI does: `scripts/build-shell.mjs` copies these
+bytes into the shell and `electron/sample-agent.ts` writes them into the user's
+Documents folder, with no install step anywhere in that journey and no place to
+put one that a person would forgive. `tests/agent-sdk.test.ts` holds the runtime
+to builtins so that property cannot be lost in a repository where
+`node_modules` is always there.
 
 ## Why `open-in-dash` is bundled rather than templated
 
