@@ -211,11 +211,16 @@ success. Refusing (`ok: false`) is a good answer; silence is not.
 
 ```
 <project>/
-  agent.manifest.json      what it promises DASH
+  agent.recipe.json        what this agent IS. The manifest is generated from it.
+                           Change the agent here.
+  agent.manifest.json      what it promises DASH. Generated — do not hand-edit.
   agent.mjs                the program; DASH looks for this exact name.
                            This is the file to edit.
   dash-agent-sdk.mjs       DASH's runtime. Do not edit it; DASH upgrades it.
   sources.json             what it reads
+  AGENT_BUILDER.md         which files are yours, and how to check your changes
+  evals/run-evals.mjs      four checks against the real agent
+  evals/cases.json         the four acceptance cases, from the recipe
   package.json
   README.md
   scripts/open-in-dash.mjs the author's own install command
@@ -224,6 +229,30 @@ success. Refusing (`ok: false`) is a good answer; silence is not.
 A folder with no `agent.mjs` still imports — DASH stores it and says plainly
 that it cannot run it, writing no registration. That is a real outcome, not an
 error, but it is rarely what anybody meant.
+
+### Edit the recipe, never the manifest
+
+`agent.manifest.json` is generated from `agent.recipe.json`. An edit made only
+in the manifest survives until the next build and no longer, and in the meantime
+it is invisible: the edited document is usually still perfectly valid, so
+nothing DASH validates says a word about it while every run is graded against a
+route the program does not follow.
+
+Run `dash_agent_validate` on the directory after any change. It returns
+`recipe_matches_manifest`, and on a mismatch a `recipe_drift[]` naming each
+place the two disagree.
+
+### Run the checks
+
+`node evals/run-evals.mjs` spawns the real agent the way DASH's runner does and
+plays DASH's side of the conversation: a loopback server serves fixed feed
+bytes, and every brokered request is answered by the check rather than by DASH.
+Four cases — a normal run, a run with nothing to read, a run where one source
+answers with an error, and a run where every brokered request is refused. No
+network beyond loopback, no key, no model, no dependency.
+
+Add a case by adding it to `acceptance` in the recipe and building again. All
+four kinds must be present; a recipe missing one is refused.
 
 ## The manifest
 

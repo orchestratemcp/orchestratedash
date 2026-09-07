@@ -60,6 +60,43 @@ controls.
 It declares **no connections**, which is its most useful property: it can be
 added and watched working without anybody having a credential to hand.
 
+## The recipe
+
+Since MAR-888 the manifest is not written by this module. `agent-kit/recipe.ts`
+holds one `AgentRecipe` — `recipe_version: 1` — and one `planFromRecipe`, and
+the three programs that write a DASH agent folder go through it:
+`agent-kit/scaffold.ts`, `lib/sample-agent.ts`, and
+`tools/dash-mcp/src/scaffold.ts`. Each carries only what actually differs
+between the agents it builds: the steps, the sources, the connections, what a
+run emits, the permissions it claims and the panel it asks DASH to draw.
+Everything the three share — manifest version, safety contract, monitoring,
+runtime, trigger, locations, control — is assembled once and is not a choice a
+recipe gets to make.
+
+Two properties follow, and they are the reason for the shape.
+
+**Nothing is written by a build that refuses.** `validateRecipe` runs the
+recipe's own rules and then puts the manifest it *would* write through
+`validateManifest` and `checkManifestConstraints` — DASH's own import verdict —
+before `planFromRecipe` returns a single file. It refuses an id that cannot be a
+folder name, a relative or traversing directory, a symlinked target, a folder
+with somebody's work in it, a write inside DASH's own agents directory, and a
+dependency pinned to a range rather than an exact version. Everything is decided
+before anything is returned, so there is no state in which half a project exists.
+
+**The definition and the manifest cannot come apart unnoticed.** The recipe is
+written into the project as `agent.recipe.json`, and
+
+```sh
+npx create-dash-agent --check <folder>
+```
+
+reports where a hand-edited manifest disagrees with it. That check earns its
+keep because the edited manifest is usually still *valid*: nothing DASH
+validates would object to a route with a step the program never runs, and every
+run from then on is graded against it as drift. `dash_agent_validate` runs the
+same comparison.
+
 ## Which files are the author's
 
 A generated project holds two programs and only one of them is yours.
@@ -68,9 +105,29 @@ A generated project holds two programs and only one of them is yours.
 | --- | --- |
 | `agent.mjs` | Yes. `runOnce` is the run; everything under it is the task logic. |
 | `sources.json` | Yes. What it reads. |
-| `agent.manifest.json` | Through the generator. It is what DASH holds the agent to, so a change to it is a change DASH asks about. |
+| `evals/` | Yes. Four checks against the real agent; `npm run evals` runs them. |
+| `agent.recipe.json` | Yes, carefully. What this agent *is*. The manifest is generated from it. |
+| `agent.manifest.json` | No. Generated from the recipe — edit the recipe and build again. |
+| `AGENT_BUILDER.md` | Generated. The same table, written for whoever changes the agent next. |
 | `dash-agent-sdk.mjs` | No. DASH's runtime, and DASH upgrades it in place, so an edit here is lost on the next upgrade. |
 | `scripts/open-in-dash.mjs` | No. A bundle of DASH's own handoff code. |
+
+## The checks a scaffold comes with
+
+`evals/run-evals.mjs` is copied in verbatim and `evals/cases.json` is generated
+from the recipe's four acceptance cases. It spawns the real `agent.mjs` the way
+the runner does — a child process speaking newline-delimited JSON — and plays
+DASH's side: a local HTTP server on `127.0.0.1` serves fixed feed bytes, and
+every `broker_request` is answered here rather than by DASH. So a pass says the
+program works, not that a double of it works.
+
+The four cases are stage 4's: a normal run, a run with nothing to read, a run
+where one source answers with an error, and a run where every brokered request
+is refused. The last one also asserts the negative that matters most — that the
+agent never asked for an operation its own manifest does not declare.
+
+Node builtins only, no dependency, no network beyond loopback, no model and no
+key.
 
 The split is ADR 0034. It is what lets a runtime fix reach an agent somebody
 has been editing for months without a merge, and it is why the plumbing is no

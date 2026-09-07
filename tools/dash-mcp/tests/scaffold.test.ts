@@ -33,6 +33,7 @@ const TEMPLATES = {
   agent: "// agent\n",
   sdk: "// the runtime\n",
   openInDash: "// open in dash\n",
+  evals: "// the acceptance checks\n",
 };
 
 describe("the scaffolded manifest", () => {
@@ -154,10 +155,14 @@ describe("the file plan", () => {
     }
     expect(plan.files.map((file) => file.path).sort()).toEqual([
       ".gitignore",
+      "AGENT_BUILDER.md",
       "README.md",
       "agent.manifest.json",
       "agent.mjs",
+      "agent.recipe.json",
       "dash-agent-sdk.mjs",
+      "evals/cases.json",
+      "evals/run-evals.mjs",
       "package.json",
       "scripts/open-in-dash.mjs",
       "sources.json",

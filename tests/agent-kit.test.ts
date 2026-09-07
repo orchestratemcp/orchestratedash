@@ -56,6 +56,10 @@ const TEMPLATE_SDK = readFileSync(
   path.join(KIT_ROOT, "template", "dash-agent-sdk.mjs"),
   "utf8",
 );
+const TEMPLATE_EVALS = readFileSync(
+  path.join(KIT_ROOT, "template", "evals", "run-evals.mjs"),
+  "utf8",
+);
 
 const roots: string[] = [];
 const supervisors: Supervisor[] = [];
@@ -97,6 +101,7 @@ const SOURCES: TemplateSources = {
   agent: TEMPLATE_AGENT,
   sdk: TEMPLATE_SDK,
   openInDash: "// bundled by scripts/build-agent-kit.mjs\n",
+  evals: TEMPLATE_EVALS,
 };
 
 function scaffold(agentId = "folder-digest"): string {
@@ -429,6 +434,12 @@ describe("the command", () => {
     mkdirSync(path.join(kitRoot, "dist"), { recursive: true });
     writeFileSync(path.join(kitRoot, "template", "agent.mjs"), TEMPLATE_AGENT, "utf8");
     writeFileSync(path.join(kitRoot, "template", "dash-agent-sdk.mjs"), TEMPLATE_SDK, "utf8");
+    mkdirSync(path.join(kitRoot, "template", "evals"), { recursive: true });
+    writeFileSync(
+      path.join(kitRoot, "template", "evals", "run-evals.mjs"),
+      TEMPLATE_EVALS,
+      "utf8",
+    );
     writeFileSync(path.join(kitRoot, "dist", "open-in-dash.mjs"), "// stub\n", "utf8");
 
     const result = run(["folder-digest"], { kitRoot, kitVersion: "0.1.1", cwd, now: new Date() });
@@ -437,6 +448,7 @@ describe("the command", () => {
     expect(result.output).toContain("npm run open-in-dash");
     expect(existsSync(path.join(cwd, "folder-digest", "agent.mjs"))).toBe(true);
     expect(existsSync(path.join(cwd, "folder-digest", "scripts", "open-in-dash.mjs"))).toBe(true);
+    expect(existsSync(path.join(cwd, "folder-digest", "evals", "run-evals.mjs"))).toBe(true);
   });
 });
 
@@ -488,6 +500,51 @@ describe("open-in-dash", () => {
     const result = writeHandoff(temporary("not-an-agent-"), "0.1.1");
     expect(result).toMatchObject({ ok: false });
     expect(result.ok ? "" : result.problem).toMatch(/no agent here/i);
+  });
+
+  /*
+   * MAR-888. The recipe is the document the manifest was generated from, so an
+   * agent that reaches DASH without it arrives carrying a claim and nothing to
+   * check the claim against. It travels with the rest of the declared file set
+   * — and it travels *optionally*, which the second test is about.
+   */
+  describe("the recipe travels with the agent", () => {
+    it("carries agent.recipe.json into the handoff, beside the manifest", () => {
+      const directory = scaffold();
+
+      const written = writeHandoff(directory, "0.1.1");
+
+      expect(written.ok).toBe(true);
+      const files = written.ok ? written.value.handoff.files ?? [] : [];
+      expect(files.map((file) => file.path)).toContain("agent.recipe.json");
+
+      // Not merely present: the same bytes the scaffold wrote, and a document
+      // that still describes this agent. A handoff carrying a stale or empty
+      // recipe would be worse than one carrying none, because DASH's drift
+      // check would then be comparing the manifest against a fiction.
+      const carried = files.find((file) => file.path === "agent.recipe.json");
+      expect(carried?.contents).toBe(
+        readFileSync(path.join(directory, "agent.recipe.json"), "utf8"),
+      );
+      const recipe = JSON.parse(carried?.contents ?? "{}") as { agent?: { id?: string } };
+      expect(recipe.agent?.id).toBe("folder-digest");
+    });
+
+    it("still produces a handoff for an agent built before recipes existed", () => {
+      // The reason it is `required: false`. Every agent scaffolded before
+      // MAR-888 has no recipe, and refusing one would tell a person their build
+      // was incomplete over a file that is missing because of when it was made.
+      const directory = scaffold();
+      rmSync(path.join(directory, "agent.recipe.json"));
+
+      const written = writeHandoff(directory, "0.1.1");
+
+      expect(written.ok).toBe(true);
+      const paths = written.ok ? written.value.handoff.files?.map((file) => file.path) ?? [] : [];
+      expect(paths).not.toContain("agent.recipe.json");
+      expect(paths).toContain("agent.manifest.json");
+      expect(paths).toContain("agent.mjs");
+    });
   });
 
   /*

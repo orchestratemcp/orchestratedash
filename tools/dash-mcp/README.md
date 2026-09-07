@@ -98,6 +98,32 @@ Settings → AI, or connects it on the agent's own row. Pass `model_provider`
 `dash_agent_scaffold` to match whichever provider the person already has
 connected.
 
+## The recipe (MAR-888)
+
+The manifest is not assembled here any more. `agent-kit/recipe.ts` holds one
+`AgentRecipe` and one `planFromRecipe`, and this package's `recipeFor` is the
+only thing that says how an agent this tool builds differs from one the Agent
+Kit builds. `tools/dash-mcp/src/scaffold.ts` no longer carries a manifest
+literal.
+
+Two consequences a caller sees:
+
+- **`dash_agent_scaffold` writes `agent.recipe.json`** beside the manifest, plus
+  `AGENT_BUILDER.md` and an `evals/` folder with four runnable checks. It also
+  refuses a folder that already has somebody's files in it — a draft this tool
+  saved under `.dash/` is the one exception, since that is where the interview
+  lives.
+- **`dash_agent_validate` reports drift.** Given a directory holding a recipe it
+  returns `recipe_matches_manifest`, and on a mismatch a `recipe_drift[]` with a
+  JSON pointer, what the recipe says and what the manifest says. A manifest
+  edited by hand is usually still valid and still wrong, and DASH grades every
+  later run against the route it declares.
+
+[`docs/foundation/mcp-recipe-contract.md`](../../docs/foundation/mcp-recipe-contract.md)
+has the shape, the mapping from `dash_agent_plan`, and an explicit statement of
+what is **not** proven: no MCP server outside this checkout produces a recipe,
+and the committed fixture is a local example rather than live integration.
+
 ## Layout
 
 ```

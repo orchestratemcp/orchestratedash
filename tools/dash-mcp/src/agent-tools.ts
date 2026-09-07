@@ -18,6 +18,12 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
+import {
+  RECIPE_FILE_NAME,
+  checkRecipeAgainstManifest,
+  readTargetState,
+  type AgentRecipe,
+} from "../../../agent-kit/recipe";
 import { AI_PROVIDER_IDS, type AiProviderId } from "../../../lib/ai/providers";
 import {
   isReady,
@@ -151,6 +157,14 @@ export function scaffoldAgent(input: ScaffoldInput, now: Date = new Date()): Too
     sources: input.sources ?? [],
     now,
     model_provider: modelProvider,
+    // What is already there, so `planFromRecipe` refuses a folder with
+    // somebody's work in it rather than writing over it (MAR-888). `.dash` is
+    // named as expected: it is where `dash_agent_interview` saves its draft,
+    // in the very directory the agent is about to be built in, and refusing to
+    // build beside a draft this tool wrote itself would break the one flow it
+    // exists for. Nothing in it is replaced.
+    target: readTargetState(directory),
+    overwrite: [DRAFT_DIRECTORY],
   };
 
   // Judged before written. See the docblock.
@@ -224,15 +238,18 @@ export function scaffoldAgent(input: ScaffoldInput, now: Date = new Date()): Too
  * is one runtime, both scaffolders write the same bytes, and a second copy
  * under this package's `template/` would be a fork nobody would notice had
  * drifted (ADR 0034).
+ *
+ * `evals/run-evals.mjs` is the Agent Kit's for the same reason (MAR-888): the
+ * checks are generic, and everything about a particular agent reaches them
+ * through the `evals/cases.json` its recipe generates.
  */
 function readTemplates(): TemplateSources {
   const root = templateRoot();
+  const kit = path.join(repoRoot(), "agent-kit", "template");
   return {
     agent: readFileSync(path.join(root, "agent.mjs"), "utf8"),
-    sdk: readFileSync(
-      path.join(repoRoot(), "agent-kit", "template", "dash-agent-sdk.mjs"),
-      "utf8",
-    ),
+    sdk: readFileSync(path.join(kit, "dash-agent-sdk.mjs"), "utf8"),
+    evals: readFileSync(path.join(kit, "evals", "run-evals.mjs"), "utf8"),
     openInDash: readFileSync(path.join(repoRoot(), "tools", "dash-mcp", "dist", "open-in-dash.mjs"), "utf8"),
   };
 }
@@ -294,8 +311,58 @@ export function validateAgent(input: ValidateInput): ToolResult {
   const directory = path.dirname(manifestPath);
   return asResult(verdict, {
     source: manifestPath,
+    ...driftNotes(directory, json),
     ...folderNotes(directory, verdict),
   });
+}
+
+/**
+ * Whether this folder's recipe and its manifest still describe the same agent
+ * (MAR-888).
+ *
+ * Reported beside the verdict rather than folded into it, because it is a
+ * different question with a different owner. `verdictForManifest` answers
+ * *would DASH import this*, which is DASH's rule. This answers *is this still
+ * the agent the recipe says it is*, which is the author's own consistency —
+ * and a manifest edited by hand can be perfectly valid and completely wrong
+ * about what the program does. `lib/analyze.ts` grades a run against
+ * `planned_route`, so a route that has drifted from the recipe the program was
+ * built from turns a correct run into a page of findings.
+ *
+ * A folder with no recipe gets nothing: every agent scaffolded before this
+ * existed has none, and a note about a missing file on a folder nothing is
+ * wrong with is noise.
+ */
+function driftNotes(directory: string, manifestJson: string): Record<string, unknown> {
+  let recipe: AgentRecipe;
+  try {
+    recipe = JSON.parse(
+      readFileSync(path.join(directory, RECIPE_FILE_NAME), "utf8"),
+    ) as AgentRecipe;
+  } catch {
+    return {};
+  }
+
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestJson);
+  } catch {
+    return {};
+  }
+
+  const drift = checkRecipeAgainstManifest(recipe, manifest);
+  if (drift.length === 0) {
+    return { recipe_matches_manifest: true };
+  }
+  return {
+    recipe_matches_manifest: false,
+    recipe_drift: drift,
+    recipe_drift_note:
+      `${RECIPE_FILE_NAME} and ${MANIFEST_FILE} no longer describe the same agent. The manifest ` +
+      "is generated from the recipe, so edit the recipe and build again — a change made only in " +
+      "the manifest is discarded by the next build, and until then DASH grades runs against a " +
+      "route the program does not follow.",
+  };
 }
 
 /**
