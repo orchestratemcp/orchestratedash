@@ -87,6 +87,26 @@ describe("parsing agent messages", () => {
     });
   });
 
+  it("reads a trace candidate without pre-validating the span body", () => {
+    /*
+     * MAR-889. The same envelope discipline as telemetry one test up, and for
+     * the same reason: this parser owns the newline-delimited framing and
+     * `contracts/run-span.schema.json` owns the document. Keeping a malformed
+     * span recognisable is what lets `ingestSpans` refuse it and record the
+     * refusal without discarding valid neighbours in the batch.
+     */
+    expect(
+      parseAgentMessage(
+        '{"type":"trace","span":{"trace_version":1,"agent":"a","run_id":"r","span_id":"s","parent_span_id":null,"name":"Did a thing","kind":"step","started_at":"2026-09-07T12:00:00Z","status":"unknown"}}',
+      ),
+    ).toMatchObject({ type: "trace", span: { trace_version: 1, span_id: "s" } });
+
+    expect(parseAgentMessage('{"type":"trace","span":{"trace_version":1}}')).toEqual({
+      type: "trace",
+      span: { trace_version: 1 },
+    });
+  });
+
   it.each([
     ["ordinary logging", "starting up..."],
     ["an empty line", "   "],
@@ -97,6 +117,7 @@ describe("parsing agent messages", () => {
     ["an ack whose ok is not a boolean", '{"type":"ack","command_id":"c","ok":"yes"}'],
     ["a state message whose state is an array", '{"type":"state","state":[]}'],
     ["a telemetry message with no event", '{"type":"telemetry"}'],
+    ["a trace message with no span", '{"type":"trace"}'],
   ])("returns null for %s", (_label, line) => {
     expect(parseAgentMessage(line)).toBeNull();
   });

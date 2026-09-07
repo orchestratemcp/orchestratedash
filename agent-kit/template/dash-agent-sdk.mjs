@@ -558,7 +558,7 @@ function originOf(value) {
  * helper called from a timer, or from module scope, costs nothing and records
  * nothing rather than inventing a run to hang itself on.
  */
-function openSpan(name, kind, attributes) {
+function openSpan(name, kind, attributes, parentId) {
   const trace = activeTrace;
   if (trace === null) {
     return null;
@@ -567,7 +567,15 @@ function openSpan(name, kind, attributes) {
   const span = {
     trace,
     span_id: randomUUID(),
-    parent_span_id: scoped?.spanId ?? trace.stepSpanId ?? trace.rootSpanId,
+    /*
+     * `parentId` is passed by exactly one caller — `step()`, which names the run
+     * itself. A step is a sibling of the steps around it, and taking the default
+     * would make the second step a child of the first, then the third a child of
+     * the second, and a run of five steps would draw as a staircase five levels
+     * deep. Every other caller wants the default, which is why the override is
+     * an argument here rather than a field somebody has to remember to clear.
+     */
+    parent_span_id: parentId ?? scoped?.spanId ?? trace.stepSpanId ?? trace.rootSpanId,
     name: String(name).slice(0, 120),
     kind,
     started_at: new Date().toISOString(),
@@ -882,9 +890,12 @@ export function startAgent({ definition, runOnce }) {
        * `step()` calls lands underneath the step it happened in.
        */
       closeSpan(trace.stepSpan, "ok");
-      const stepSpan = openSpan(label ?? componentId, "step", {
-        component_id: componentId,
-      });
+      const stepSpan = openSpan(
+        label ?? componentId,
+        "step",
+        { component_id: componentId },
+        trace.rootSpanId,
+      );
       trace.stepSpan = stepSpan;
       trace.stepSpanId = stepSpan?.span_id ?? null;
 

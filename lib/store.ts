@@ -361,6 +361,12 @@ export function resetStore(): void {
     database.exec("DELETE FROM command_audit");
     database.exec("DELETE FROM agent_handoffs");
     database.exec("DELETE FROM run_artifacts");
+    // MAR-889. A trace goes with the run it explains, for the reason the pull
+    // record below goes with the evidence it was a reading of: a reset that kept
+    // the spans would leave the run inspector drawing a tree of operations
+    // belonging to a run nothing else in the store has heard of.
+    database.exec("DELETE FROM run_spans");
+    database.exec("DELETE FROM run_span_drops");
     database.exec("DELETE FROM workspace_artifacts");
     // MAR-488. DASH's record of its own reading goes with the thing it was a
     // reading of: a reset that kept it would leave the Runs page disclosing a

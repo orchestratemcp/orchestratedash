@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://orchestratemcp.dev/orchestratedash/contracts/run-span.schema.json",
   "title": "OrchestrateDASH run span v1",
-  "description": "One node of a run's operation tree, sent by an agent on the runner's own pipe as { type: \"trace\", span: {...} } and drained by DASH at POST /traces/drain. Deliberately NOT a telemetry v1 event: the seven event types and their schema are frozen, a run's status is derived from them, and a document that could arrive as an event would be a document that could change a run's status by existing. A span is emitted twice — once when the operation opens and once when it closes — and DASH keys on (agent, run_id, span_id), so the second write revises the first and a span whose close never arrived stays honestly unfinished. additionalProperties is left open at every level per the repository's additive-versioning rule; DASH stores only the members named here.",
+  "description": "One node of a run's operation tree, sent by an agent on the runner's own pipe as { type: \"trace\", span: {...} } and drained by DASH at POST /traces/drain. Deliberately NOT a telemetry v1 event: the seven event types and their schema are frozen, a run's status is derived from them, and a document that could arrive as an event would be a document that could change a run's status by existing. A span is emitted twice — once when the operation opens and once when it closes — and DASH keys on (agent, run_id, span_id), so the second write revises the first and a span whose close never arrived stays honestly unfinished. Nullable members are written as anyOf rather than as a type array because DASH compiles every contract in this folder under Ajv's strict mode, which refuses a union type keyword. additionalProperties is left open at every level per the repository's additive-versioning rule; DASH stores only the members named here.",
   "type": "object",
   "required": [
     "trace_version",
@@ -37,10 +37,8 @@
       "description": "Unique within the run. The primary key, with agent and run_id, so re-sending a span revises it."
     },
     "parent_span_id": {
-      "type": ["string", "null"],
-      "minLength": 1,
-      "maxLength": 128,
-      "description": "The span this one happened inside, or null for the run's own root span. Required as a member — an absent parent and a null parent would otherwise be indistinguishable, and DASH renders a span whose named parent never arrived under an explicit unknown-parent node rather than silently reparenting it."
+      "description": "The span this one happened inside, or null for the run's own root span. Required as a member — an absent parent and a null parent would otherwise be indistinguishable, and DASH renders a span whose named parent never arrived under an explicit unknown-parent node rather than silently reparenting it.",
+      "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 128 }, { "type": "null" }]
     },
     "name": {
       "type": "string",
@@ -49,55 +47,66 @@
       "description": "What was done, in the author's own words, for a person to read. Not an identifier."
     },
     "kind": {
-      "enum": [
-        "run",
-        "step",
-        "source_fetch",
-        "broker",
-        "browser",
-        "artifact",
-        "custom"
-      ],
+      "enum": ["run", "step", "source_fetch", "broker", "browser", "artifact", "custom"],
       "description": "A closed vocabulary. An operation DASH has no word for is custom rather than a new member, so a span from a future agent renders instead of being refused."
     },
     "started_at": { "type": "string", "format": "date-time" },
     "ended_at": {
-      "type": ["string", "null"],
-      "format": "date-time",
-      "description": "Null while the operation is open. A span that is still null when the run ended is unfinished, which DASH says rather than guesses at."
+      "description": "Null while the operation is open. A span that is still null when the run ended is unfinished, which DASH says rather than guesses at.",
+      "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
     },
     "status": {
       "enum": ["ok", "error", "cancelled", "unknown"],
       "description": "unknown is the honest value for an open span and for one whose close never arrived. It is never upgraded by inference."
     },
     "error": {
-      "type": ["object", "null"],
       "description": "What failed, when something did. Null otherwise.",
-      "properties": {
-        "code": { "type": "string", "maxLength": 80 },
-        "message": {
-          "type": "string",
-          "maxLength": 300,
-          "description": "A short human sentence, bounded exactly as telemetry's detail is. No bodies, no payloads, no credentials — DASH strips an obvious credential value before storing it, but the agent must not put one here."
-        }
-      }
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": { "type": "string", "maxLength": 80 },
+            "message": {
+              "type": "string",
+              "maxLength": 300,
+              "description": "A short human sentence, bounded exactly as telemetry's detail is. No bodies, no payloads, no credentials — DASH strips an obvious credential value before storing it, but the agent must not put one here."
+            }
+          }
+        },
+        { "type": "null" }
+      ]
     },
     "attributes": {
-      "type": ["object", "null"],
       "description": "A few named facts about this operation and nothing else. DASH keeps an allowlist of keys and drops every other one, and bounds each value at 200 characters, because an open attribute bag is where a prompt, a page body or a credential would eventually arrive.",
-      "additionalProperties": {
-        "type": ["string", "number", "boolean", "null"]
-      }
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" }
+            ]
+          }
+        },
+        { "type": "null" }
+      ]
     },
     "usage": {
-      "type": ["object", "null"],
       "description": "What the agent says this operation cost. DASH never computes a price and never claims this is a provider's charge — source is a constant saying whose figure it is.",
-      "properties": {
-        "tokens_in": { "type": "number", "minimum": 0 },
-        "tokens_out": { "type": "number", "minimum": 0 },
-        "cost_usd": { "type": "number", "minimum": 0 },
-        "source": { "const": "reported" }
-      }
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "tokens_in": { "type": "number", "minimum": 0 },
+            "tokens_out": { "type": "number", "minimum": 0 },
+            "cost_usd": { "type": "number", "minimum": 0 },
+            "source": { "const": "reported" }
+          }
+        },
+        { "type": "null" }
+      ]
     }
   }
 }

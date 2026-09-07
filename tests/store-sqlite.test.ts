@@ -53,7 +53,7 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * they assert that a re-open, or a migration of an old store, lands at the head,
  * and following the head is the whole content of that claim.
  */
-const HEAD_VERSION = 38;
+const HEAD_VERSION = 39;
 
 async function freshStore(seed?: (dataDir: string) => void): Promise<{
   dataDir: string;

@@ -46,7 +46,7 @@ const dataDir = mkdtempSync(path.join(tmpdir(), "dash-evidence-"));
 process.env.DASH_DATA_DIR = dataDir;
 
 const { pullEvidence } = await import("../lib/agent-dom/evidence");
-const { ingestEvents, readEvidencePulls, recordEvidencePull, readStore, resetStore } =
+const { ingestEvents, readEvidencePulls, recordEvidencePull, readStore, resetStore, spansForRun } =
   await import("../lib/store");
 const { closeDb } = await import("../lib/db");
 const { runsView } = await import("../lib/views/build");
@@ -237,6 +237,86 @@ describe("a pull over a channel", () => {
 /* ---------------------------------------------------------------------- *
  * The exclusion
  * ---------------------------------------------------------------------- */
+
+describe("the run-span side channel, from the same pull (MAR-889)", () => {
+  it("stores what the runner drained, bound to the child that wrote it", async () => {
+    const { channel } = scriptedChannel({
+      "/traces/drain": {
+        spans: [
+          {
+            agent_id: AGENT,
+            span: {
+              trace_version: 1,
+              agent: AGENT,
+              run_id: RUN,
+              span_id: "root",
+              parent_span_id: null,
+              name: "This run",
+              kind: "run",
+              started_at: "2026-08-07T09:01:00.000Z",
+              ended_at: "2026-08-07T09:03:00.000Z",
+              status: "ok",
+            },
+          },
+          {
+            // The provenance check the drains share. A hosted child publishing
+            // spans under another agent's run would be describing somebody
+            // else's work in its own words, on a page built to be trusted.
+            agent_id: "some-other-agent",
+            span: {
+              trace_version: 1,
+              agent: AGENT,
+              run_id: RUN,
+              span_id: "smuggled",
+              parent_span_id: null,
+              name: "Not this agent's",
+              kind: "custom",
+              started_at: "2026-08-07T09:02:00.000Z",
+              status: "unknown",
+            },
+          },
+        ],
+        dropped: 3,
+      },
+    });
+
+    const pull = await pullEvidence(channel, {
+      source: "host-1",
+      kind: "another_machine",
+      log: () => {},
+    });
+
+    expect(pull.spans_ingested).toBe(1);
+    expect(pull.spans_dropped).toBe(3);
+    expect(spansForRun(AGENT, RUN).spans.map((span) => span.span_id)).toEqual(["root"]);
+  });
+
+  it("reads a runner with no such route as holding no spans, not as a failure", async () => {
+    /*
+     * Every runner built before this packet. The scripted channel answers 501
+     * for a route it was not given, which is the same "this runner does not
+     * serve that" as the 404 a real older runner returns — and the pull is
+     * still `reached`, because a runner that served telemetry and refused this
+     * one is a runner DASH reached. Treating it as unreachable would make the
+     * honesty sentence say DASH never looked, on a poll where it did.
+     */
+    const { channel, asked } = scriptedChannel({
+      "/telemetry/drain": { events: [{ agent_id: AGENT, event: event(1, "run_started") }] },
+    });
+
+    const pull = await pullEvidence(channel, {
+      source: "host-1",
+      kind: "another_machine",
+      log: () => {},
+    });
+
+    expect(asked).toContain("/traces/drain");
+    expect(pull.reached).toBe(true);
+    expect(pull.spans_ingested).toBe(0);
+    expect(pull.spans_dropped).toBe(0);
+    expect(spansForRun(AGENT, RUN).spans).toEqual([]);
+  });
+});
 
 describe("the brokered routes, from the evidence path", () => {
   /**
