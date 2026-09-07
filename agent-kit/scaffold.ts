@@ -435,9 +435,13 @@ item's source attached.
 
 ## Make it yours
 
-\`agent.mjs\` is the whole agent, in one file with no dependencies. The part
-that does the work is \`runOnce\`; everything above it is how DASH watches and
-controls it.
+\`agent.mjs\` is the part that does the work, and \`runOnce\` is one run of it.
+Change what it reads, what it collects and what it says about it.
+
+\`dash-agent-sdk.mjs\` beside it is DASH's, and you should not edit it: it is how
+DASH watches and controls the agent, and DASH replaces that file when it has a
+newer one. An edit there is an edit you lose. There are no dependencies in
+either file.
 
 If you change what the agent *does* in a way that changes what it is allowed to
 do, edit \`agent.manifest.json\` and run \`npm run open-in-dash\` again. DASH
