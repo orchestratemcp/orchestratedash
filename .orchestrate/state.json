@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 06:50: merged this wave: MAR-880 #322, MAR-878 template half #320, MAR-876 #324, MAR-875 #328, MAR-871 #325, MAR-877 #327, MAR-874 #332. MAR-868 proven. Open: MAR-878b #329 (draft). Installed proof pass pending DASH being frontmost; rebuild after #329.",
+  "lifecycle_note": "2026-09-07 07:10: the approved UX wave is on master except MAR-879 (lane dispatched): MAR-875 #328, MAR-876 #324, MAR-877 #327, MAR-878 #320+#329, MAR-871 #325, MAR-874 #332, MAR-880 #322. MAR-868 proven. Follow-ups filed: MAR-881, MAR-882, MAR-883. Next: rebuild DASH on b38b28a and run the installed proof pass.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2071,9 +2071,10 @@
     },
     {
       "id": "MAR-878",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "b38b28a",
+      "note": "Two PRs: #320 (dash-mcp scaffold declares the ADR-0013 model_provider connection; template half) and #329 (readiness/chat capability/recovery agree across header, footer and chief; chief hosts wired with askCapabilitiesFor; eight-state tuple pinned). Fixture tests + 34 scratch frames. Proof owed: fresh scaffold imported idle, adopted via Use my key / Connect, real question answered on the installed build."
     },
     {
       "id": "MAR-879",
@@ -2094,6 +2095,20 @@
       "linear_status": "Backlog",
       "commit": null,
       "note": "agent page scrolls to top on a live poll tick during a judgement (found proving MAR-868); serialized behind MAR-875"
+    },
+    {
+      "id": "MAR-882",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "Ask the chief about this agent opens the fleet page cold; prefill the composer (found by MAR-878b). Serialized behind MAR-879 on app/page.tsx."
+    },
+    {
+      "id": "MAR-883",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "Connections Gmail row renders agent ids as labels (GIVE IT TO MEETING-ASSISTANT); pre-existing, found by MAR-877 frames. lib/connectors.ts / lib/fleet/**."
     }
   ]
 }
