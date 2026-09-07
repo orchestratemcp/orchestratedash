@@ -559,13 +559,18 @@ export function planFromRecipe(
   if (!path.isAbsolute(build.directory)) {
     return { ok: false, problem: "The project directory must be a full path." };
   }
-  const directory = path.resolve(build.directory);
-  if (directory.split(path.sep).includes("..")) {
+  // Read before `path.resolve`, deliberately: resolving a path is what makes a
+  // traversal disappear, so a check made afterwards can never see one. The
+  // caller wrote `..`, and whether it happens to normalise somewhere harmless
+  // is not the question — a scaffolder should write where it was told and
+  // refuse anything it would have to interpret.
+  if (build.directory.split(/[\\/]/).includes("..")) {
     return {
       ok: false,
       problem: `“${build.directory}” walks out of itself. Give the whole path to the folder.`,
     };
   }
+  const directory = path.resolve(build.directory);
 
   if (build.dashAgentsRoot !== undefined && isInside(build.dashAgentsRoot, directory)) {
     return {
