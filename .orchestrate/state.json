@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 03:20: merged this wave so far: MAR-880 #322, MAR-878 template half #320, MAR-876 #324, MAR-875 #328, MAR-871 #325. MAR-868 proven. Open: MAR-877 #327 (draft), MAR-874 (lane G), MAR-878b #329 (draft). Next: rebuild DASH once and run the installed proofs.",
+  "lifecycle_note": "2026-09-07 03:25: merged this wave: MAR-880 #322, MAR-878 template half #320, MAR-876 #324, MAR-875 #328, MAR-871 #325, MAR-877 #327. MAR-868 proven. Open: MAR-874 (lane G), MAR-878b #329 (draft). DASH rebuilt on 10efc71 at 03:15; installed proofs queued behind the lock screen.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2063,9 +2063,10 @@
     },
     {
       "id": "MAR-877",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null
+      "commit": "ca73496",
+      "note": "PR #327: task-first global Settings (AI: connect-then-choose / summary + Advanced routing + Troubleshoot; Connections: services first, lapses summarised, same-name agents disambiguated; Notifications: Alerts vs Chat with the chief, Manage disclosure). Placement only, no copy rewritten. Fixture tests + 17 scratch frames incl. the ADR 0013 adoption scene. Proof owed: installed Connections/AI at 100% and 80%. Follow-ups: disclosure persistence needs a pre-paint script; agent ids as labels on the Gmail row (lib/connectors.ts) wants a packet."
     },
     {
       "id": "MAR-878",
