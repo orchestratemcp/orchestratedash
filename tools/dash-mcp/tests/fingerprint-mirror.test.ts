@@ -1,10 +1,16 @@
 /**
  * The mirror, pinned (MAR-862, ADR 0032 decision 6).
  *
- * `template/brief-fingerprint.mjs` is the agent's half of a function DASH holds
- * the other half of in `lib/brief/fingerprint.ts`. It has to be a mirror rather
- * than an import: the template is a dependency-free `.mjs` an author owns and
- * edits, and it cannot reach into this repository.
+ * `agent-kit/template/dash-agent-sdk.mjs` is the agent's half of a function
+ * DASH holds the other half of in `lib/brief/fingerprint.ts`. It has to be a
+ * mirror rather than an import: the runtime is a dependency-free `.mjs` that
+ * ships inside the agent's own folder, and it cannot reach into this
+ * repository.
+ *
+ * The mirror moved into the runtime in MAR-887 (ADR 0034). It used to be its
+ * own `brief-fingerprint.mjs` beside the program; a file marked *do not edit*
+ * next to a file marked *do not edit* was one file too many, and the runtime
+ * already carried the same warning.
  *
  * ADR 0025 amendment 1 records what an unpinned mirror costs, and the cost is
  * why this file exists: *a drift between the two ends turns every correct brief
@@ -20,7 +26,7 @@ import { describe, expect, it } from "vitest";
 import { canonicaliseItems, fingerprintItems } from "../../../lib/brief/fingerprint";
 import type { ArtifactItem } from "../../../lib/contracts";
 
-const template = (await import("../template/brief-fingerprint.mjs")) as {
+const template = (await import("../../../agent-kit/template/dash-agent-sdk.mjs")) as {
   canonicaliseItems: (items: readonly ArtifactItem[]) => string;
   fingerprintItems: (items: readonly ArtifactItem[]) => string;
 };

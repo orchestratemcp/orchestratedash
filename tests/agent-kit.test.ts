@@ -52,6 +52,10 @@ import { Supervisor } from "../runner/supervisor";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const KIT_ROOT = path.join(repoRoot, "agent-kit");
 const TEMPLATE_AGENT = readFileSync(path.join(KIT_ROOT, "template", "agent.mjs"), "utf8");
+const TEMPLATE_SDK = readFileSync(
+  path.join(KIT_ROOT, "template", "dash-agent-sdk.mjs"),
+  "utf8",
+);
 
 const roots: string[] = [];
 const supervisors: Supervisor[] = [];
@@ -91,6 +95,7 @@ function temporary(prefix: string): string {
  */
 const SOURCES: TemplateSources = {
   agent: TEMPLATE_AGENT,
+  sdk: TEMPLATE_SDK,
   openInDash: "// bundled by scripts/build-agent-kit.mjs\n",
 };
 
@@ -423,6 +428,7 @@ describe("the command", () => {
     mkdirSync(path.join(kitRoot, "template"), { recursive: true });
     mkdirSync(path.join(kitRoot, "dist"), { recursive: true });
     writeFileSync(path.join(kitRoot, "template", "agent.mjs"), TEMPLATE_AGENT, "utf8");
+    writeFileSync(path.join(kitRoot, "template", "dash-agent-sdk.mjs"), TEMPLATE_SDK, "utf8");
     writeFileSync(path.join(kitRoot, "dist", "open-in-dash.mjs"), "// stub\n", "utf8");
 
     const result = run(["folder-digest"], { kitRoot, kitVersion: "0.1.1", cwd, now: new Date() });

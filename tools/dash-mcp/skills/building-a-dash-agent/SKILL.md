@@ -212,8 +212,9 @@ success. Refusing (`ok: false`) is a good answer; silence is not.
 ```
 <project>/
   agent.manifest.json      what it promises DASH
-  agent.mjs                the program; DASH looks for this exact name
-  brief-fingerprint.mjs    one half of a function DASH holds the other half of
+  agent.mjs                the program; DASH looks for this exact name.
+                           This is the file to edit.
+  dash-agent-sdk.mjs       DASH's runtime. Do not edit it; DASH upgrades it.
   sources.json             what it reads
   package.json
   README.md
@@ -299,10 +300,12 @@ i.item_url ?? null]))`. DASH recomputes it from the digest it holds. **On a
 mismatch it draws the brief with no citations at all**, because a real link
 under a claim it does not support is worse than no link.
 
-That is why `brief-fingerprint.mjs` is a separate file the scaffold marks *do
-not edit*: it is one half of a function DASH holds the other half of, and a
-drift between them turns every correct brief into an uncited one — silently, and
-on screen it looks like a model that forgot to cite.
+That function lives in `dash-agent-sdk.mjs`, which the scaffold marks *do not
+edit*: it is one half of a function DASH holds the other half of, and a drift
+between them turns every correct brief into an uncited one — silently, and
+on screen it looks like a model that forgot to cite. The runtime fills
+`derived_from` in for you from the digest it actually sent; you never compute
+it yourself.
 
 Fingerprint the array you actually sent. Recomputing the items from a second
 read of the same sources produces a different list and fails the join for a

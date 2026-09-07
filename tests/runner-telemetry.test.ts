@@ -85,6 +85,10 @@ function scaffold(): string {
     },
     {
       agent: readFileSync(path.join(repoRoot, "agent-kit", "template", "agent.mjs"), "utf8"),
+      sdk: readFileSync(
+        path.join(repoRoot, "agent-kit", "template", "dash-agent-sdk.mjs"),
+        "utf8",
+      ),
       openInDash: "// bundled by scripts/build-agent-kit.mjs\n",
     },
   );

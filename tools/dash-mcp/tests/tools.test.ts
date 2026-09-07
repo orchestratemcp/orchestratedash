@@ -113,15 +113,15 @@ describe("dash_agent_scaffold", () => {
     expect(validateManifest(manifest).ok).toBe(true);
   });
 
-  it("writes the program and the fingerprint mirror the program imports", () => {
+  it("writes the program and the runtime the program imports", () => {
     const directory = path.join(scratch, "project");
     scaffold(directory);
 
     expect(existsSync(path.join(directory, "agent.mjs"))).toBe(true);
-    expect(existsSync(path.join(directory, "brief-fingerprint.mjs"))).toBe(true);
+    expect(existsSync(path.join(directory, "dash-agent-sdk.mjs"))).toBe(true);
     expect(existsSync(path.join(directory, "scripts", "open-in-dash.mjs"))).toBe(true);
     expect(readFileSync(path.join(directory, "agent.mjs"), "utf8")).toContain(
-      "./brief-fingerprint.mjs",
+      "./dash-agent-sdk.mjs",
     );
   });
 
@@ -221,7 +221,7 @@ describe("dash_agent_install", () => {
       expect.arrayContaining([
         "agent.manifest.json",
         "agent.mjs",
-        "brief-fingerprint.mjs",
+        "dash-agent-sdk.mjs",
         "package.json",
         "scripts/open-in-dash.mjs",
         "sources.json",
