@@ -58,6 +58,7 @@ import type { Recovery } from "../lib/copy/recovery";
 import { recordBrokerCall } from "../lib/broker/store";
 import { FLEET_PRINCIPAL } from "../lib/fleet/principal";
 import { agentsView } from "../lib/views/build";
+import { askCapabilitiesFor } from "../lib/views/chief";
 import { chiefLibraryFor } from "../lib/views/chief-library";
 import { hostBroker } from "./broker-host";
 
@@ -136,7 +137,13 @@ function mainDeps(): ChiefAnswerDeps {
   return {
     snapshot: {
       fleet: chiefFleetFrom(agents),
-      briefing: briefingFor(agents),
+      /* MAR-878. The same lookup `chiefRoomView` resolves, so the chief is
+         told what each agent can be asked, why not, and the recovery sentence
+         the agent's own page shows — the surface a person is sent to when
+         direct chat is unavailable was the one surface that could not say why.
+         Resolved on main because it reads the store; the runner cannot and
+         must not try (ADR 0028 decision 6). */
+      briefing: briefingFor(agents, askCapabilitiesFor(agents)),
       /*
        * The fleet's own reports, read from the same store in the same breath
        * (MAR-744). Main can afford this per question where the runner cannot:

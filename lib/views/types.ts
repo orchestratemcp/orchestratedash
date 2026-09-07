@@ -41,6 +41,7 @@ import type { ManifestGapView } from "../sample-refresh";
 import type { AgentHealthView } from "./agent-health";
 import type { AgentScheduleView } from "./agent-schedule";
 import type { AgentPlanStep } from "../agent-plan";
+import type { AskCapability } from "../copy/ask";
 import type { Recovery } from "../copy/recovery";
 import type { ConnectionRequirementRow } from "../connections";
 import type { ChiefRunnerHolds } from "../chief/discord";
@@ -450,6 +451,23 @@ export interface ChiefReceiptRow {
   last_run: string | null;
   /** Declared component ids. Values, never labels. */
   capabilities: readonly string[];
+  /**
+   * Whether this agent could be asked a question when the turn was answered,
+   * and what would change that (MAR-878).
+   *
+   * Restated structurally, like the row around it. Null for a receipt written
+   * before the field existed and for a host that resolved no capability —
+   * `ChiefBriefingRow.ask` is where that reading is argued.
+   */
+  ask: {
+    available: boolean;
+    /** The enumerated reason. A value: compared, never printed. */
+    reason: "available" | "no_provider" | "no_key" | "no_model_chosen" | "nothing_saved";
+    /** The page's own headline for what is missing. */
+    requirement: string;
+    /** The page's own next action. */
+    recovery: string;
+  } | null;
 }
 
 /**
@@ -2350,6 +2368,22 @@ export type AgentAskView =
   | {
       can_ask: true;
       heading: string;
+      /**
+       * What this agent can be asked, separately from whether it is running
+       * (MAR-878).
+       *
+       * On **both** arms, and that is the point of it. The header draws a chip
+       * from this beside the runtime status pill, and a field that existed only
+       * on the blocked arm would leave the header deciding what an absent
+       * capability means — which is the defect: a READY chip beside a footer
+       * saying the agent had no way to answer questions, because nothing on the
+       * page carried the second fact.
+       *
+       * `lib/views/ask.ts`' `askCapabilityFor` produces the same value for a
+       * caller that wants only this, so the chief's briefing and this page
+       * cannot come to word one agent's ability differently.
+       */
+      capability: AskCapability;
       purpose: { headline: string; detail: string };
       custody: string;
       placeholder: string;
@@ -2398,6 +2432,22 @@ export type AgentAskView =
   | {
       can_ask: false;
       heading: string;
+      /**
+       * What this agent can be asked, separately from whether it is running
+       * (MAR-878).
+       *
+       * On **both** arms, and that is the point of it. The header draws a chip
+       * from this beside the runtime status pill, and a field that existed only
+       * on the blocked arm would leave the header deciding what an absent
+       * capability means — which is the defect: a READY chip beside a footer
+       * saying the agent had no way to answer questions, because nothing on the
+       * page carried the second fact.
+       *
+       * `lib/views/ask.ts`' `askCapabilityFor` produces the same value for a
+       * caller that wants only this, so the chief's briefing and this page
+       * cannot come to word one agent's ability differently.
+       */
+      capability: AskCapability;
       blocked: Recovery;
       /**
        * The connection to open, when the reason is a missing key. Null for every

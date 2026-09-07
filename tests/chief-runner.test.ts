@@ -363,6 +363,7 @@ describe("re-delivery after bridge setup (MAR-745)", () => {
       runs: "Has run before.",
       last_run: null,
       capabilities: ["news.collect"],
+      ask: null,
     };
     const competitorScoutBriefing = {
       agent: "competitor-scout",
@@ -372,6 +373,7 @@ describe("re-delivery after bridge setup (MAR-745)", () => {
       runs: "Has not run yet.",
       last_run: null,
       capabilities: ["news.collect"],
+      ask: null,
     };
 
     // Step 2: "connect AI second" — main pushes again with a model, the fleet

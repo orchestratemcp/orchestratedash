@@ -1371,6 +1371,12 @@ function AgentWorkspace(): ReactNode {
           agent={view.agent}
           avatar={view.avatar}
           busy={pending}
+          /* MAR-878. The second fact the header was missing: READY answers
+             whether DASH can run this agent's plan, and this answers whether
+             it can be asked anything. Off `view.ask` rather than computed
+             here — `lib/views/ask.ts` resolves one gate for the header, the
+             footer, the Chat stage and the chief. */
+          capability={view.ask.capability}
           control={control}
           goal={view.goal}
           hasFolder={view.folder_checkable && canAct}
