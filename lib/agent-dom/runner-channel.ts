@@ -125,6 +125,19 @@ export const EVIDENCE_ROUTES = [
    */
   "/schedules",
   "/schedules/drain",
+  /**
+   * The run-span side channel (MAR-889).
+   *
+   * Admitted on the same two questions ADR 0014 puts to every widening of this
+   * list, and it passes both more plainly than `/run` does. It carries no
+   * credential in either direction — the reply is a batch of documents an agent
+   * wrote about its own steps, and DASH's ingest strips anything that looks like
+   * one before storing it. And it chooses *which* and never *what*: nothing on
+   * this route can cause a run, a spend or a write. It is a neighbour of
+   * `/telemetry/drain` in every sense that matters, which is why it is here
+   * rather than in a list of its own.
+   */
+  "/traces/drain",
 ] as const;
 
 /**

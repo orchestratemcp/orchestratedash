@@ -48,7 +48,8 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * moves it — MAR-654 took it to 28, MAR-479 to 31, ADR 0028's `chief_discord`
  * to 32, MAR-744's `evidence_json` to 33, ADR 0029's two schedule tables to 34,
  * and MAR-784's two `allowance_calls` columns to 35, MAR-794's
- * `host_key_placements` to 36, and MAR-795's `host_residency` to 37.
+ * `host_key_placements` to 36, MAR-795's `host_residency` to 37, MAR-863's
+ * `brief_adjudications` to 38, and MAR-889's two run-span tables to 39.
  *
  * `RECONCILED_VERSION` stayed at 27 through all of them, which is the property
  * the paragraph above is guarding and the one MAR-784 and MAR-795 were each
@@ -61,7 +62,7 @@ const opened: Array<{ dataDir: string; closeDb: () => void }> = [];
  * a migration look like nine broken assertions — which is how a signature
  * number gets "fixed" by somebody moving it.
  */
-const HEAD_VERSION = 38;
+const HEAD_VERSION = 39;
 
 async function freshStore(): Promise<{ dataDir: string; db: typeof import("../lib/db") }> {
   const dataDir = mkdtempSync(path.join(tmpdir(), "dash-reconcile-"));

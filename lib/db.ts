@@ -2189,6 +2189,102 @@ const MIGRATIONS: readonly Migration[] = [
   CREATE INDEX IF NOT EXISTS brief_adjudications_by_artifact
     ON brief_adjudications (agent, artifact_id, started_at DESC);
   `,
+
+  /**
+   * What a run actually did, in the shape it did it (MAR-889).
+   *
+   * ## Why this is not more columns on `events`
+   *
+   * Because telemetry v1 is frozen and `events` stores its documents whole. A
+   * run's status is *derived* from those rows at read time, so anything stored
+   * beside them that could be mistaken for one would be a description of the
+   * work able to change what DASH says the work was. Spans arrive on their own
+   * message, their own route and their own schema for that reason, and this is
+   * the durable end of the same separation. A run with no spans reads exactly as
+   * it read before this table existed.
+   *
+   * ## Written twice, on purpose
+   *
+   * The primary key is `(agent, run_id, span_id)` and the ingest upserts, because
+   * an agent emits each span when the operation opens and again when it closes.
+   * That is what gives a run in flight a tree instead of a blank space, and it is
+   * what makes an unfinished span honest rather than absent: if the closing write
+   * never arrives — the agent died mid-fetch — the row keeps `ended_at` null and
+   * `status` "unknown", and `lib/views/run-trace.ts` says so on the page.
+   *
+   * ## What is not here
+   *
+   * No inputs and no outputs. A span says *what was done*, never what was sent
+   * or what came back, so there is no column a prompt, a page body or a model's
+   * reasoning could arrive in. `attributes_json` is a handful of allowlisted
+   * keys bounded at 200 characters each and `error_json` is a code and a
+   * sentence bounded at 300 — the same bound telemetry's `detail` carries — and
+   * `lib/store.ts` strips an obvious credential value out of both before the
+   * insert. Capturing payloads is a later packet with its own opt-in, and this
+   * schema is deliberately not shaped to make it a small change.
+   *
+   * `run_span_drops` is the second table because the first cannot hold the fact:
+   * a span the per-run cap refused has no row to record its own absence in. A
+   * count DASH can show beats a tree quietly missing its tail.
+   *
+   * Appended on the standing terms: an installed store that has recorded 0 to 38
+   * runs exactly one more, and both steps are bare `CREATE TABLE IF NOT EXISTS`
+   * statements, so a store the tests rewind runs them again without complaint.
+   * The index was assigned as 38 and confirmed against the literal pin in
+   * `tests/store-sqlite.test.ts` before it was written — `user_version` was 38 at
+   * this branch point, so this step is index 38 and produces 39.
+   */
+  `
+  CREATE TABLE IF NOT EXISTS run_spans (
+    agent           TEXT NOT NULL,
+    run_id          TEXT NOT NULL,
+    -- Unique within the run, minted by the agent. Never rendered in primary
+    -- copy; the page shows it only behind the developer disclosure.
+    span_id         TEXT NOT NULL,
+    -- Null for the run's own root span. A named parent that never arrived is
+    -- kept as written and drawn under an explicit unknown-parent node, because
+    -- silently reparenting an orphan is how a tree starts lying.
+    parent_span_id  TEXT,
+    -- The author's own words for what was done. Not an identifier.
+    name            TEXT NOT NULL,
+    -- One of RunSpanKind. "custom" is what an operation DASH has no word for
+    -- becomes, so a span from a future agent renders rather than being refused.
+    kind            TEXT NOT NULL,
+    started_at      TEXT NOT NULL,
+    -- Null while the operation is open, and still null for one that never
+    -- closed. Both are the same honest answer and the view says which.
+    ended_at        TEXT,
+    -- One of RunSpanStatus. Never inferred from silence.
+    status          TEXT NOT NULL,
+    -- {code, message} as the agent reported it, bounded and stripped. Null when
+    -- nothing failed.
+    error_json      TEXT,
+    -- Allowlisted keys only. Everything else was dropped before this insert.
+    attributes_json TEXT,
+    -- The agent's own figure for what this operation cost, carrying the word
+    -- "reported" so no renderer can present it as a provider's charge.
+    usage_json      TEXT,
+    -- DASH's clock when it stored this write, which is the only time here DASH
+    -- is the authority on.
+    received_at     TEXT NOT NULL,
+    PRIMARY KEY (agent, run_id, span_id)
+  );
+
+  -- The one question the run detail page asks: give me this run's spans, in the
+  -- order they opened.
+  CREATE INDEX IF NOT EXISTS run_spans_by_run
+    ON run_spans (agent, run_id, started_at);
+
+  -- How many spans the per-run cap refused, so the page can say the tree is
+  -- incomplete instead of drawing a shorter one and calling it complete.
+  CREATE TABLE IF NOT EXISTS run_span_drops (
+    agent      TEXT NOT NULL,
+    run_id     TEXT NOT NULL,
+    dropped    INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (agent, run_id)
+  );
+  `,
 ];
 
 /**

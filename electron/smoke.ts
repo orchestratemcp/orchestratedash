@@ -2281,6 +2281,99 @@ if (recorded !== null) {
             );
           }
 
+          /*
+           * 6q — the run the sample just did has a trace, on the installed
+           * shell (MAR-889).
+           *
+           * Read through `window.dashData.run` for 6i/6k's reason, which is the
+           * whole point of putting it here rather than in a unit test: the
+           * fixture tests prove the SDK writes spans, the store keeps them and
+           * the view builds a tree, and every one of them passed while the
+           * pieces were unconnected — which is exactly the state MAR-457's
+           * artifact drain was in when its unit test was green and no caller
+           * existed. This asserts the whole chain in one look: the packaged
+           * sample's own program wrote `trace` lines, the bundled runner
+           * buffered them, the installed shell's own five-second poll drained
+           * `/traces/drain`, the ingest kept them, and `runView` built a tree
+           * the read bridge hands to the page.
+           *
+           * The assertion is a **tree with a step in it**, not a count. A count
+           * would pass on a run that emitted only its own root span, which is
+           * what a broken `step()` would produce and is precisely the
+           * regression worth catching.
+           */
+          const trace =
+            completed === null
+              ? null
+              : (
+                  await waitForObserved(
+                    async () => {
+                      const view = (await window.webContents.executeJavaScript(
+                        `window.dashData.run(${JSON.stringify(agentId)}, ${JSON.stringify(
+                          completed.run_id ?? "",
+                        )})`,
+                      )) as {
+                        data?: {
+                          trace?: {
+                            total?: number;
+                            dropped?: number;
+                            orphans?: unknown[];
+                            roots?: Array<{
+                              span?: { kind?: string; status?: string };
+                              children?: Array<{ span?: { kind?: string; name?: string } }>;
+                            }>;
+                          };
+                        };
+                      };
+                      const seen = view.data?.trace;
+                      const root = seen?.roots?.[0];
+                      const steps = (root?.children ?? []).filter(
+                        (child) => child.span?.kind === "step",
+                      );
+                      return {
+                        value:
+                          root === undefined || steps.length === 0
+                            ? null
+                            : {
+                                total: seen?.total ?? 0,
+                                dropped: seen?.dropped ?? 0,
+                                orphans: seen?.orphans?.length ?? 0,
+                                root_kind: root.span?.kind,
+                                root_status: root.span?.status,
+                                steps: steps.map((child) => child.span?.name),
+                              },
+                        seen: { total: seen?.total ?? 0 },
+                      };
+                    },
+                    "the run's trace to reach DASH through the read bridge",
+                    BRIDGE_BUDGET_MS,
+                  )
+                ).value;
+
+          if (completed === null) {
+            skip(
+              "6q. the sample's run has a step trace on the installed shell",
+              "6g produced no run whose trace could be read",
+            );
+          } else {
+            check(
+              "6q. the sample's run has a step trace on the installed shell",
+              trace !== null &&
+                trace.root_kind === "run" &&
+                // The run finished, so its own span closed with an outcome. An
+                // "unknown" here would mean the closing write never reached the
+                // store, which is the trace's own failure mode.
+                trace.root_status === "ok" &&
+                (trace.steps?.length ?? 0) > 0 &&
+                // Nothing was orphaned and nothing was dropped: on a run this
+                // small either would mean a link or a candidate was lost
+                // between the child and the store.
+                trace.orphans === 0 &&
+                trace.dropped === 0,
+              trace,
+            );
+          }
+
           const finalLedger = readHandoffRecord(created.value.handoff.handoff_id);
           check(
             "6f. the handoff ledger keeps the first final outcome",

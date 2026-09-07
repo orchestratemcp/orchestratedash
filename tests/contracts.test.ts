@@ -297,6 +297,103 @@ describe("Agent DOM v2 schemas", () => {
   });
 });
 
+describe("run span v1 (MAR-889)", () => {
+  const spanValidator = compile("contracts/run-span.schema.json");
+
+  it("validates the example span", () => {
+    expect(spanValidator(loadJson("examples/run-span.example.json")), JSON.stringify(spanValidator.errors)).toBe(true);
+  });
+
+  it("is not in the telemetry lock, and must not be", () => {
+    /*
+     * `contract.lock.json` fingerprints telemetry v1's two schemas, and
+     * `docs/telemetry-contract-v1.md` says so. `run-artifact`,
+     * `agent-dom-state` and `agent-command` are all compiled by DASH and none
+     * of them is in it either: a lock over a schema no third party validates
+     * against is a ceremony rather than a guard, and adding one here would
+     * quietly change what the lock means.
+     */
+    const lock = loadJson("contracts/contract.lock.json") as {
+      schema_semantic_sha256: Record<string, string>;
+    };
+    expect(Object.keys(lock.schema_semantic_sha256)).toEqual([
+      "agent.manifest.schema.json",
+      "run-event.schema.json",
+    ]);
+  });
+
+  it("leaves telemetry v1 exactly as it was", () => {
+    /*
+     * The whole compatibility claim in one assertion. A span rides its own
+     * message on its own route because widening the event enum would break a
+     * contract DASH does not own both ends of — so if somebody ever "tidies" a
+     * span type into here, this is where it stops.
+     */
+    const event = loadObject("contracts/run-event.schema.json");
+    const type = (event.properties as Record<string, { enum: string[] }>).type;
+    expect(type.enum).toEqual([
+      "run_started",
+      "step_started",
+      "step_completed",
+      "gate_requested",
+      "gate_resolved",
+      "run_completed",
+      "run_failed",
+    ]);
+  });
+
+  it.each([
+    "trace_version",
+    "agent",
+    "run_id",
+    "span_id",
+    "parent_span_id",
+    "name",
+    "kind",
+    "started_at",
+    "status",
+  ])("rejects a span missing %s", (field) => {
+    const span = loadObject("examples/run-span.example.json");
+    delete span[field];
+    expect(spanValidator(span)).toBe(false);
+  });
+
+  it("requires parent_span_id as a member even when it is null", () => {
+    // An absent parent and a null parent would otherwise be the same document,
+    // and they are not: one says "this is the root" and the other says nothing
+    // at all. DASH draws a span whose named parent never arrived under an
+    // explicit unknown-parent node, which it cannot do if it cannot tell them
+    // apart.
+    const span = loadObject("examples/run-span.example.json");
+    span.parent_span_id = null;
+    expect(spanValidator(span)).toBe(true);
+  });
+
+  it("refuses a payload where a small named fact belongs", () => {
+    const span = loadObject("examples/run-span.example.json");
+    (span.attributes as Record<string, unknown>).operation = { body: "a whole page" };
+    expect(spanValidator(span)).toBe(false);
+  });
+
+  it("bounds the error message at telemetry's own 300", () => {
+    const span = loadObject("examples/run-span.example.json");
+    span.error = { code: "http_401", message: "x".repeat(301) };
+    expect(spanValidator(span)).toBe(false);
+  });
+
+  it("keeps unknown additive fields forward-compatible", () => {
+    const span = loadObject("examples/run-span.example.json");
+    span.future_span_hint = { safe_count: 1 };
+    expect(spanValidator(span)).toBe(true);
+  });
+
+  it("refuses an incompatible trace_version", () => {
+    const span = loadObject("examples/run-span.example.json");
+    span.trace_version = 2;
+    expect(spanValidator(span)).toBe(false);
+  });
+});
+
 describe("security policies across schemas and examples", () => {
   const exampleFiles = readdirSync(path.join(root, "examples"))
     .filter((file) => file.endsWith(".json"))

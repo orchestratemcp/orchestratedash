@@ -20,7 +20,11 @@
  * 3. **It records what it did.** Every run appends telemetry v1 events to
  *    `runs/events.jsonl` beside the agent and emits them on the runner pipe. A
  *    run outside the bundled runner can still post to DASH when this process is
- *    explicitly given a remote ingest URL.
+ *    explicitly given a remote ingest URL. Beside those events, and never inside
+ *    them, it draws the run as a tree of operations: the run, each `step()`,
+ *    each `ask()` and `browse()`, each document it hands over, and anything you
+ *    wrap in `span()`. That is what lets DASH show a person which step failed
+ *    and which one succeeded on the second try, instead of a flat list.
  * 4. **It records what it produced.** A `digest` artifact — the evidence, every
  *    item carrying the address it came from — and optionally a `brief`: a short
  *    document about that digest, bound to the exact list it was written from.
@@ -58,6 +62,7 @@
  */
 
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -68,7 +73,7 @@ import path from "node:path";
  * It exists so that a future "check for changes" can compare the file an agent
  * carries with the file DASH ships and replace only this one, never `agent.mjs`.
  */
-export const SDK_VERSION = "1.0.0";
+export const SDK_VERSION = "1.1.0";
 
 /** The runner protocol this file speaks, and the telemetry version it emits. */
 export const PROTOCOL_VERSION = 1;
@@ -197,15 +202,44 @@ let brokerSequence = 0;
 export function ask(connectionId, operation, input = {}) {
   const requestId = `${String(process.pid)}-${String((brokerSequence += 1))}`;
 
+  /*
+   * MAR-889. The operation's name and the connection it names, and nothing from
+   * `input` — which is the search text, the message body, the thing a person
+   * would not want on a page. A brokered call is the most interesting node in a
+   * trace and the one where an unbounded attribute bag would do the most harm,
+   * so it carries two strings DASH already shows elsewhere and no third.
+   */
+  const traced = openSpan(`Asked DASH for ${String(operation)}`, "broker", {
+    operation: String(operation),
+    connection_id: String(connectionId),
+  });
+
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pendingBrokerRequests.delete(requestId);
+      closeSpan(traced, "error", { code: "broker_unavailable" });
       resolve({ ok: false, refusal: "broker_unavailable" });
     }, BROKER_TIMEOUT_MS);
     timer.unref?.();
 
     pendingBrokerRequests.set(requestId, (response) => {
       clearTimeout(timer);
+      /*
+       * A refusal closes the span as `error` carrying the refusal's own code.
+       *
+       * Not because a refusal is a fault — the docblock above is emphatic that
+       * it is a normal outcome — but because the span answers *what did this
+       * operation achieve*, and a refused call achieved nothing. The code is
+       * what makes it readable rather than alarming: DASH draws `revoked` and
+       * `needs_a_person` as the sentences they are, and a person looking at a
+       * run that produced less than they expected can see the reason on the
+       * operation it belongs to instead of hunting for it in a log.
+       */
+      closeSpan(
+        traced,
+        response.ok === true ? "ok" : "error",
+        response.ok === true ? null : { code: String(response.refusal) },
+      );
       resolve(response);
     });
 
@@ -296,15 +330,34 @@ let browserSequence = 0;
 export function browse(operation, input = {}) {
   const requestId = `${String(process.pid)}-b${String((browserSequence += 1))}`;
 
+  /*
+   * MAR-889. The operation and the page's **origin** — scheme and host, never
+   * the path and never the query. The origin is the thing the manifest's
+   * allowlist is written in and the thing a refusal talks about, so it is what
+   * makes a `origin_not_allowed` span readable. A full address would put the
+   * article somebody read on a page beside their agent's name, which is a
+   * different disclosure than the one this feature was asked for.
+   */
+  const traced = openSpan(`Asked DASH to ${String(operation)}`, "browser", {
+    operation: String(operation),
+    origin: originOf(input?.url),
+  });
+
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       pendingBrowserRequests.delete(requestId);
+      closeSpan(traced, "error", { code: "browser_unavailable" });
       resolve({ ok: false, refusal: "browser_unavailable" });
     }, BROWSER_TIMEOUT_MS);
     timer.unref?.();
 
     pendingBrowserRequests.set(requestId, (response) => {
       clearTimeout(timer);
+      closeSpan(
+        traced,
+        response.ok === true ? "ok" : "error",
+        response.ok === true ? null : { code: String(response.refusal) },
+      );
       resolve(response);
     });
 
@@ -381,6 +434,233 @@ export function fingerprintItems(items) {
 }
 
 /* ---------------------------------------------------------------------- *
+ * The trace: what this run actually did (MAR-889)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The trace contract this file speaks. Its own integer, on purpose.
+ *
+ * Telemetry v1 is frozen and its schema is fingerprinted in
+ * `contracts/contract.lock.json`, which producers outside DASH validate
+ * against. Spans therefore travel on their own message — `{ type: "trace", span }`
+ * — their own runner route and their own schema, and every existing message this
+ * file sends is byte for byte what it was. An agent whose runtime predates this
+ * writes no `trace` lines and DASH says the run has no step trace; a runner that
+ * predates it has no route to drain and DASH says exactly the same thing.
+ */
+export const TRACE_VERSION = 1;
+
+/**
+ * Which span the calling code is inside.
+ *
+ * `AsyncLocalStorage` rather than a module-level "current span", and the
+ * difference is the whole reason `span()` is safe to use. Two sub-spans started
+ * concurrently — `await Promise.all([span("a", …), span("b", …)])` — each run
+ * their callback in their own store, so a grandchild started inside `a` is a
+ * child of `a` even while `b` is open. A global would have made it a child of
+ * whichever happened to start last, and the tree would be wrong in a way that
+ * only appears under concurrency, which is the worst kind of wrong to debug.
+ */
+const spanScope = new AsyncLocalStorage();
+
+/**
+ * The run currently in flight, or null between runs.
+ *
+ * A module-level slot is honest here where it would not be for parentage above:
+ * this runtime runs one run at a time by construction — `retry` is refused while
+ * `state.current` is set — so "the open run" is a fact about the process rather
+ * than about a call stack. `ask` and `browse` are module-level exports and this
+ * is how they find the run to attach their span to; called outside a run they
+ * find null and record nothing, which is the truthful outcome for an operation
+ * that belongs to no run.
+ */
+let activeTrace = null;
+
+/** One span on the wire. Sent when the operation opens, and again when it closes. */
+function sendSpan(trace, span) {
+  send({
+    type: "trace",
+    span: {
+      trace_version: TRACE_VERSION,
+      agent: trace.agent,
+      run_id: trace.runId,
+      span_id: span.span_id,
+      parent_span_id: span.parent_span_id,
+      name: span.name,
+      kind: span.kind,
+      started_at: span.started_at,
+      ended_at: span.ended_at,
+      status: span.status,
+      error: span.error,
+      attributes: span.attributes,
+      usage: span.usage,
+    },
+  });
+}
+
+/**
+ * A few named facts about an operation, and never a payload.
+ *
+ * Whatever this file passes, DASH keeps only an allowlist of keys and bounds
+ * every value — so the filter that matters is on the other side of the pipe,
+ * where it cannot be edited out of an agent. This trims here as well because a
+ * value that will be cut anyway should not cost the buffer its bytes on the way,
+ * and because an author reading a span in `runs/events.jsonl`'s neighbourhood
+ * should see what DASH will see.
+ */
+function traceAttributes(input) {
+  if (input === undefined || input === null || typeof input !== "object") {
+    return null;
+  }
+  const kept = {};
+  let any = false;
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined) {
+      continue;
+    }
+    kept[key] = typeof value === "string" ? value.slice(0, 200) : value;
+    any = true;
+  }
+  return any ? kept : null;
+}
+
+/**
+ * Scheme and host, or null.
+ *
+ * Deliberately lossy. `new URL(x).origin` is exactly "the part of an address the
+ * manifest's allowlist is written in", and dropping the path is what keeps the
+ * *article somebody read* out of a span while keeping the *site* in it. A value
+ * that will not parse yields null rather than being passed through: a string
+ * that is not an address is a string of unknown provenance, and this is not the
+ * place to find out what is in it.
+ */
+function originOf(value) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Open a span under whatever the caller is inside.
+ *
+ * The parent is taken in this order and the order is the design: the innermost
+ * `span()` the caller is running inside, else the step that is currently open,
+ * else the run itself. That is what makes `ask()` inside `span()` inside
+ * `step()` land in the right place without any of the three knowing about the
+ * others.
+ *
+ * Returns null when no run is open. Every close below tolerates null, so a
+ * helper called from a timer, or from module scope, costs nothing and records
+ * nothing rather than inventing a run to hang itself on.
+ */
+function openSpan(name, kind, attributes, parentId) {
+  const trace = activeTrace;
+  if (trace === null) {
+    return null;
+  }
+  const scoped = spanScope.getStore();
+  const span = {
+    trace,
+    span_id: randomUUID(),
+    /*
+     * `parentId` is passed by exactly one caller — `step()`, which names the run
+     * itself. A step is a sibling of the steps around it, and taking the default
+     * would make the second step a child of the first, then the third a child of
+     * the second, and a run of five steps would draw as a staircase five levels
+     * deep. Every other caller wants the default, which is why the override is
+     * an argument here rather than a field somebody has to remember to clear.
+     */
+    parent_span_id: parentId ?? scoped?.spanId ?? trace.stepSpanId ?? trace.rootSpanId,
+    name: String(name).slice(0, 120),
+    kind,
+    started_at: new Date().toISOString(),
+    ended_at: null,
+    // Open, and honestly so. Nothing upgrades this by inference: a span whose
+    // close never arrives — because the process died inside it — stays unknown
+    // in DASH's store and on DASH's page.
+    status: "unknown",
+    error: null,
+    attributes: traceAttributes(attributes),
+    usage: null,
+  };
+  sendSpan(trace, span);
+  return span;
+}
+
+/** Close a span that was opened above. Tolerates null for `openSpan`'s reason. */
+function closeSpan(span, status, error, usage) {
+  if (span === null || span.ended_at !== null) {
+    return;
+  }
+  span.ended_at = new Date().toISOString();
+  span.status = status;
+  span.error = error ?? null;
+  span.usage = usage ?? null;
+  sendSpan(span.trace, span);
+}
+
+/** What an unexpected throw becomes, bounded exactly as telemetry's detail is. */
+function spanError(code, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return { code, message: message.slice(0, 300) };
+}
+
+/**
+ * Mark a piece of your own work, so DASH can draw it under the step it happened
+ * in.
+ *
+ * ```js
+ * const items = await span("Read the newsroom feed", () => fetchFeed(url), {
+ *   kind: "source_fetch",
+ *   attempt: 1,
+ * });
+ * ```
+ *
+ * It returns whatever your function returns and re-throws whatever it throws, so
+ * wrapping something changes nothing about how your code behaves — the span is
+ * recorded either way, as `ok` or with the message of the error that ended it.
+ *
+ * ## Retries are new spans, not amended ones
+ *
+ * A retried operation is a **new child span carrying `attempt`**, beside the one
+ * that failed. Reusing the first span's id and overwriting its status would
+ * erase the failure, and the failure is the interesting half: a run that got
+ * there on the second try and a run that got there first time are different
+ * runs, and a person looking at why one was slow needs to see both.
+ *
+ * ## What it does not capture
+ *
+ * Not the arguments, not the return value, not a model's reasoning. A span says
+ * what was done and how it ended; `attributes` is for a handful of small named
+ * facts and DASH keeps only the keys it draws. There is no member here a page
+ * body, a prompt or a mailbox could arrive in, and that is deliberate rather
+ * than pending.
+ */
+export function span(name, fn, options = {}) {
+  const { kind = "custom", ...attributes } = options;
+  const opened = openSpan(name, kind, attributes);
+  if (opened === null) {
+    // No run open. Do the work; record nothing. See `openSpan`.
+    return Promise.resolve().then(fn);
+  }
+  return spanScope.run({ spanId: opened.span_id }, async () => {
+    try {
+      const result = await fn();
+      closeSpan(opened, "ok");
+      return result;
+    } catch (error) {
+      closeSpan(opened, "error", spanError("threw", error));
+      throw error;
+    }
+  });
+}
+
+/* ---------------------------------------------------------------------- *
  * Starting the agent
  * ---------------------------------------------------------------------- */
 
@@ -416,6 +696,12 @@ const READY_TASK_ID = "waiting-to-be-run";
  *   every paragraph citing the items it is about by position. Must be called
  *   after `digest`, because it cites it; a brief with nothing to derive from is
  *   refused rather than sent with a fingerprint of an empty list.
+ * - `span(name, fn, options)` — marks a piece of your own work so DASH can draw
+ *   it under the step it happened in. Optional: every `step()`, every `ask()`
+ *   and every document already appears without it. Reach for it when one step
+ *   does several things you would want to tell apart — a retried fetch, three
+ *   sources read in parallel — and pass `{ attempt }` on a retry so the failed
+ *   try stays visible beside the one that worked.
  * - `ask`, `browse`, `log` — the module-level functions, in the context for
  *   convenience. They are the same functions either way.
  * - `signal` — an `AbortSignal` that fires when a person cancels the run. The
@@ -541,6 +827,41 @@ export function startAgent({ definition, runOnce }) {
     state.status = "running";
     emit({ run_id: runId, seq: seq++, ts: startedAt, type: "run_started" });
 
+    /*
+     * MAR-889. The trace opens after `run_started`, and the order is deliberate
+     * rather than incidental: DASH's own drain pulls events before spans for the
+     * same reason, so that a page refreshing every five seconds never draws a
+     * tree of operations above a run it does not yet know exists.
+     *
+     * `activeTrace` is set before `runOnce` is called, so the module-level
+     * `ask` and `browse` — and any `span()` the task uses — find this run
+     * without being handed it.
+     */
+    activeTrace = {
+      agent: agentName,
+      runId,
+      rootSpanId: randomUUID(),
+      /** The step currently open, which is what a sub-span parents to. */
+      stepSpanId: null,
+      stepSpan: null,
+      closed: false,
+    };
+    const rootSpan = {
+      trace: activeTrace,
+      span_id: activeTrace.rootSpanId,
+      parent_span_id: null,
+      name: "This run",
+      kind: "run",
+      started_at: startedAt,
+      ended_at: null,
+      status: "unknown",
+      error: null,
+      attributes: null,
+      usage: null,
+    };
+    sendSpan(activeTrace, rootSpan);
+    const trace = activeTrace;
+
     const step = (componentId, label) => {
       const ts = new Date().toISOString();
       state.tasks.push({
@@ -553,6 +874,31 @@ export function startAgent({ definition, runOnce }) {
       run.current_step = componentId;
       run.progress = Math.min(0.9, run.progress + stepProgress);
       emit({ run_id: runId, seq: seq++, ts, type: "step_started", component_id: componentId });
+
+      /*
+       * MAR-889. A step span closes when the next step opens, and the last one
+       * closes with the run's own outcome.
+       *
+       * `step()` marks a beginning and there is no `stepDone` for it to pair
+       * with — the template calls it, does the work, and calls it again. So the
+       * honest reading is: the run demonstrably got past this step, therefore it
+       * finished; and the step the run was in when it failed is the step that
+       * failed. That is what puts a real error on the right step rather than at
+       * the bottom of a flat list, and it needs nothing added to `agent.mjs`.
+       *
+       * Sub-spans parent to `stepSpanId`, so anything the task does between two
+       * `step()` calls lands underneath the step it happened in.
+       */
+      closeSpan(trace.stepSpan, "ok");
+      const stepSpan = openSpan(
+        label ?? componentId,
+        "step",
+        { component_id: componentId },
+        trace.rootSpanId,
+      );
+      trace.stepSpan = stepSpan;
+      trace.stepSpanId = stepSpan?.span_id ?? null;
+
       publish();
     };
 
@@ -582,6 +928,17 @@ export function startAgent({ definition, runOnce }) {
       };
       emitted.digest = artifact;
       send({ type: "artifact", artifact });
+      // MAR-889. Opened and closed in one breath, because handing a document
+      // over is a moment rather than an interval. It is on the trace at all so
+      // that a step which produced nothing can be told apart from one that
+      // produced something DASH later refused.
+      closeSpan(
+        openSpan("Handed over what it collected", "artifact", {
+          artifact_kind: "digest",
+          item_count: Array.isArray(body?.items) ? body.items.length : undefined,
+        }),
+        "ok",
+      );
     };
 
     const brief = (body) => {
@@ -611,6 +968,13 @@ export function startAgent({ definition, runOnce }) {
           ...body,
         },
       });
+      closeSpan(
+        openSpan("Handed over what it had to say", "artifact", {
+          artifact_kind: "brief",
+          item_count: items.length,
+        }),
+        "ok",
+      );
     };
 
     const finish = (type, detail, status) => {
@@ -625,6 +989,34 @@ export function startAgent({ definition, runOnce }) {
       state.status = "ready";
       state.current = null;
       emit({ run_id: runId, seq: seq++, ts: run.finished_at, type, detail });
+
+      /*
+       * MAR-889. The run's outcome, given to the step it was in and then to the
+       * run itself.
+       *
+       * Guarded, because `finish` can legitimately run twice: a cancel finishes
+       * the run and aborts, and if the task then throws, the `.catch` below
+       * finishes it again. The telemetry does emit both — that is this file's
+       * existing behaviour and not something to change here — but a second span
+       * write would overwrite "cancelled" with "failed", and a person who
+       * pressed Stop would read that their agent had crashed.
+       */
+      if (!trace.closed) {
+        trace.closed = true;
+        const outcome = status === "completed" ? "ok" : status === "cancelled" ? "cancelled" : "error";
+        const failure =
+          outcome === "error" && typeof detail === "string"
+            ? { code: "run_failed", message: detail.slice(0, 300) }
+            : null;
+        closeSpan(trace.stepSpan, outcome, failure);
+        trace.stepSpan = null;
+        trace.stepSpanId = null;
+        closeSpan(rootSpan, outcome, failure);
+        if (activeTrace === trace) {
+          activeTrace = null;
+        }
+      }
+
       publish();
     };
 
@@ -648,6 +1040,10 @@ export function startAgent({ definition, runOnce }) {
       brief,
       ask,
       browse,
+      // MAR-889. In the context for `ask` and `browse`'s reason — it is the same
+      // module-level function either way, and a template that never calls it
+      // still produces a full trace of its steps and its brokered calls.
+      span,
       log,
       manifest,
       signal: cancellation.signal,
