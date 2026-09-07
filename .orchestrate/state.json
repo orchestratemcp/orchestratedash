@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 19:10: MAR-889 merged (#357, master green 3e0f63f). MAR-888 (#358) finishing its addendum. Stage 5 lane dispatching from 3e0f63f (migration 39); stage 4 waits for #358.",
+  "lifecycle_note": "2026-09-07 19:30: stages 1-3 merged (MAR-887 #356, MAR-889 #357, MAR-888 #358), master green at cfbe48c. Stage 5 (ProofPack) running; stage 4 (evals fixtures + installed-proof kit) dispatching.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2157,10 +2157,10 @@
     },
     {
       "id": "MAR-888",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "Foundation 2: versioned, validated build recipe + LLM-friendly generator instructions and evals; CLI and installed sample share one generator; MCP contract documented, not live."
+      "commit": "cfbe48c",
+      "note": "PR #358: AgentRecipe v1 + planFromRecipe behind CLI, sample and MCP scaffolder; validateRecipe before any write; agent.recipe.json + checkRecipeAgainstManifest (--check, dash_agent_validate); AGENT_BUILDER.md + evals/ in every scaffold; recipe optional in the kit handoff list; caught SDK_VERSION 1.0.0/1.1.0 union drift. Smoke 85/85 (6b carries recipe+evals). Proof owed: installed sample + assistant customisation (stage 4)."
     },
     {
       "id": "MAR-889",
