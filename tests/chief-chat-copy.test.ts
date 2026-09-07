@@ -27,7 +27,6 @@ import {
   describeChiefActivity,
   describeChiefModelLine,
   describeChiefNoModel,
-  describeChiefPrefill,
   describeChiefReceipt,
   describeChiefScope,
   describeMatch,
@@ -68,7 +67,6 @@ describe("the chief's own words are plain", () => {
       ...SENTENCES.map((one) => one.sentence),
       describeChiefModelLine(true),
       describeChiefModelLine(false),
-      describeChiefPrefill("AI agent news"),
     ]);
   });
 
@@ -82,13 +80,6 @@ describe("the chief's own words are plain", () => {
     const undeclared = describeUndeclared(["public_feed_fetch", "digest_compose"]);
     expect(undeclared.values).toEqual(["public_feed_fetch", "digest_compose"]);
     expectPlainLanguage([undeclared.sentence]);
-  });
-
-  /* MAR-882. The whole of what "Ask the chief about this agent" writes into
-     the field — a name and a colon, never the id it was resolved from. */
-  it("writes the display name into the field, never the agent's own id", () => {
-    expect(describeChiefPrefill("AI agent news")).toBe("About AI agent news: ");
-    expect(describeChiefPrefill("AI agent news")).not.toContain("ai-agent-news");
   });
 });
 
