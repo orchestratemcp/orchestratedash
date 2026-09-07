@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 12:05: every lane of the UX wave is on master (last: MAR-885 #342). Proven this wave: MAR-868, MAR-875, MAR-884. Next: rebuild DASH when Henrik is free; installed look for MAR-885/874; adoption + real question (needs go); MAR-881/882/883 lanes; owner rulings.",
+  "lifecycle_note": "2026-09-07 12:15: lanes dispatched for MAR-881 (scroll reset), MAR-882 (chief prefill), MAR-883 (agent labels), all Sonnet, disjoint files, from master fab9dce. DASH rebuild on the current master held until Henrik is out of his meeting; then installed look for MAR-885/874 and the adoption + real question (needs go).",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
