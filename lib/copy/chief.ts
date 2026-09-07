@@ -159,10 +159,20 @@ function pickChip(glance: readonly GlanceChip[]): GlanceChip | null {
  * job — it names how to add an agent because a person asking the chief
  * directly should not have to scroll up to find out, the same reasoning
  * `describeChiefNoModel` already applies to a missing model.
+ *
+ * ## Why it stopped giving coordinates (MAR-879)
+ *
+ * It used to say to choose the sample "from the menu button at the top left of
+ * the window", and that was true while the menu was the only entrance. It was
+ * also the chief telling somebody where to look on their own screen, which is
+ * what an interface says when it cannot offer the thing itself. The sample is a
+ * press on the Add agent page now — three doors, one of which is this — so the
+ * sentence names a control instead of a corner of a window, and stays true if
+ * the window chrome changes again.
  */
 export const CHIEF_WAITING =
-  "Your fleet is empty — no agents added yet. Choose \"Try a sample agent\" from the menu " +
-  "button at the top left of the window, or add one you built yourself from Settings.";
+  "Your fleet is empty — no agents added yet. Press Add agent on the Agents page and " +
+  "choose Try a sample agent, or import a folder you built yourself.";
 
 /**
  * What the band says when nothing is selected, summarising the fleet instead

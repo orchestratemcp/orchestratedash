@@ -713,7 +713,25 @@ export const AGENT_SETTINGS_COPY = {
  * all — they had to know Runs existed and go and find it.
  */
 export const AGENT_OUTPUTS_COPY = {
-  heading: "Generated assets",
+  /**
+   * "Results", since MAR-879, and the rename is a vocabulary decision rather
+   * than a wording one.
+   *
+   * The heading had already changed once, and that change *was* the feature:
+   * "Outputs" showed one run's, and this list shows every run's. What it never
+   * settled was what the thing is called across the *product*. A person met one
+   * name here, "Latest output" on the fleet card and a third in the plan — for
+   * one thing — and had to learn the word again in each room.
+   *
+   * "Results" wins on the same ground the last rename did: a name says what the
+   * thing is *for*, not how it was made. `lib/copy/nouns.ts` is the canon it
+   * belongs to now and is the one file that still spells the name it replaced;
+   * `tests/copy-nouns.test.ts` refuses that phrase everywhere else in
+   * `lib/copy` and `app`, comments included, so it cannot drift back one
+   * surface at a time — which is also why this docblock describes the old name
+   * instead of quoting it.
+   */
+  heading: "Results",
   /**
    * The empty state, and the most-read sentence on this page.
    *

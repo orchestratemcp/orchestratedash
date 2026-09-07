@@ -404,7 +404,7 @@ describe("opening one output in the stage", () => {
         <OutputsPanel
           cards={buildArtifactCards(RECORDS)}
           grounding={null}
-          heading="Generated assets"
+          heading="Results"
           openId={openId}
           single
         />,

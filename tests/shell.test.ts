@@ -193,6 +193,14 @@ describe("the audited command chokepoint", () => {
       // id: page script can ask DASH to regenerate an agent *from DASH's own
       // template* and has no way to hand DASH a document to store.
       "sample.refresh",
+      // MAR-879. The same family's second member, and the only command in this
+      // whole list whose payload is empty *and* whose effect is a mutation: it
+      // asks main to make DASH's own sample agent and offer it. There is nothing
+      // to name — not a template, not a folder, not a project name — so page
+      // script can ask for exactly the operation the menu's first item already
+      // performs, and cannot vary it. What it starts ends at a native consent
+      // dialog no renderer can answer.
+      "sample.create",
       // MAR-586. A sixth family, and the only command in DASH about the person
       // at the keyboard rather than about anything DASH supervises: it writes
       // down that an agent's page was opened, so a fleet card can say what has
@@ -2471,6 +2479,89 @@ describe("dispatch", () => {
 
     it("refuses to execute one without the trusted side", () => {
       expect(() => executeCommand(reviewCommand(refresh))).toThrowError(
+        /must go through dispatchCommand/,
+      );
+    });
+  });
+
+  /**
+   * MAR-879's `sample.create`, and the property worth pinning is the inverse of
+   * `sample.refresh`'s above: not what its payload cannot *say* but that it has
+   * no payload to say anything with.
+   *
+   * The sample used to be reachable only from the application menu, because
+   * `shell.menu` carries two numbers and cannot name an item — so the Add agent
+   * page's sample door could open a menu and never press it. This command is
+   * what makes that door one press. Its safety is entirely structural: an empty
+   * payload cannot name a template, a folder, a project or an agent, and the
+   * operation it reaches ends at a dialog a person answers.
+   */
+  describe("making the sample agent from the page (MAR-879)", () => {
+    const create = {
+      command: "sample.create",
+      request_id: "req-create-1",
+      payload: {},
+    };
+
+    it("routes to the sample side, naming no agent at all", async () => {
+      const ctx = context();
+      const result = await dispatchCommand(create, ctx);
+
+      expect(result).toMatchObject({ ok: true });
+      /*
+       * `agent_id` is `undefined` rather than the string "undefined", which is
+       * the whole reason the dispatcher reads this field instead of coercing it
+       * — `folder.choose` needed the same correction. A main that received the
+       * literal word would have to recognise it somewhere further in.
+       */
+      expect(ctx.samples).toEqual([{ action: "create", target: { agent_id: undefined } }]);
+      expect(ctx.inputs).toHaveLength(0);
+      expect(ctx.lifecycle).toHaveLength(0);
+      expect(ctx.connections).toHaveLength(0);
+      expect(ctx.workspaces).toHaveLength(0);
+    });
+
+    it.each(["agent_id", "manifest", "template", "path", "directory", "name"])(
+      "refuses a create carrying a %s field",
+      async (key) => {
+        const ctx = context();
+        const result = await dispatchCommand(
+          { ...create, payload: { [key]: "anything at all" } },
+          ctx,
+        );
+
+        expect(result).toMatchObject({ ok: false, reason: "unexpected_payload_field" });
+        expect(ctx.samples).toHaveLength(0);
+      },
+    );
+
+    /**
+     * Mutating and not irreversible, and the pair is the honest reading.
+     *
+     * On the far side of the person's yes this writes a project folder and a
+     * store row, so it is not a read merely because a human stands in the middle
+     * of it. It is reversible because the agent it can produce is removed the
+     * way every other agent is removed — and because a person who says no
+     * leaves nothing behind at all.
+     */
+    it("is audited as changing the store, with no payload keys to record", async () => {
+      const ctx = context();
+      await dispatchCommand(create, ctx);
+
+      expect(ctx.audited[0]).toMatchObject({
+        command: "sample.create",
+        decision: "allowed",
+        payload_keys: [],
+        mutates: true,
+      });
+      expect(COMMANDS["sample.create"].irreversible).toBe(false);
+    });
+
+    it("refuses to execute one without the trusted side", () => {
+      // Performing it writes a folder and raises a native dialog, neither of
+      // which a sandboxed preload can do. Succeeding here would report a sample
+      // offered that nobody was ever asked about.
+      expect(() => executeCommand(reviewCommand(create))).toThrowError(
         /must go through dispatchCommand/,
       );
     });

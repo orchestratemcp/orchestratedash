@@ -667,6 +667,22 @@ const dashShell = {
   refreshSampleAgent: (args: { agent_id: string }) => send("sample.refresh", { ...args }),
 
   /**
+   * Make DASH's sample agent and ask whether to add it (MAR-879).
+   *
+   * The same family's second member and it takes **nothing**, which is the
+   * whole of its security argument: there is no template, no folder, no project
+   * name and no agent for page script to name, so the only thing it can ask for
+   * is the one thing the application menu's first item already asks for. Main
+   * runs `offerSampleAgent`, which ends at a native consent dialog page script
+   * cannot answer.
+   *
+   * A named method rather than a generic `sample(action)`, for
+   * `refreshSampleAgent`'s reason: a generic entry point is one whose reachable
+   * surface grows without a review.
+   */
+  createSampleAgent: () => send("sample.create", {}),
+
+  /**
    * The three folder commands (MAR-584).
    *
    * One agent id each and nothing else, for `refreshSampleAgent`'s reason in its

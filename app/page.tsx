@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { TrySampleAgent } from "./_components/choose-folder";
 import { FleetList } from "./_components/fleet-list";
 import { FleetRail } from "./_components/fleet-rail";
 import { OAvatar } from "./_components/o-avatar";
@@ -255,12 +257,21 @@ function useFavouriteOverrides(): [Readonly<Record<string, boolean>>, (agent: st
  * they ask. A first-run card that promised only the benefit would be the kind of
  * onboarding that makes people close the window.
  *
- * The button is a link to Add agent rather than a handler. Creating the sample
- * is main's operation — it writes a project, mints a real nonce and raises a
- * native consent dialog — and a renderer that reached past that would be the
- * second registration path `lib/sample-agent.ts` exists to argue against.
+ * The card ends with the control rather than with directions to one (MAR-879).
+ * It used to end by naming the ☰ button and where on the window to find it,
+ * which was true and was still an interface asking a person to go and look for
+ * something. `TrySampleAgent` is the same operation reached the same way —
+ * creating the sample is main's, it writes a project, mints a real nonce and
+ * raises a native consent dialog, and a renderer that reached past that would
+ * be the second registration path `lib/sample-agent.ts` exists to argue
+ * against. What changed is that the person presses rather than hunts.
+ *
+ * The link underneath is the other two doors. It is deliberately quiet: a
+ * person with an empty DASH is being offered one thing, and the alternative is
+ * for the one in ten who arrived here with an agent already.
  */
 function TryTheScout(): ReactNode {
+  const canAct = useCanAct();
   return (
     <section className="section try-sample" aria-labelledby="try-sample-heading">
       <div className="agent-identity">
@@ -296,20 +307,23 @@ function TryTheScout(): ReactNode {
         <li>You choose what it reads, and can change it at any time.</li>
       </ul>
       {/*
-        MAR-440 made this sentence false and it is corrected here rather than in
-        that issue's own files, because it is the only place in the product that
-        told a user where the menu was.
+        A press, not directions to one (MAR-879).
 
-        The old wording — "open the DASH menu" — described the native menu bar,
-        which no longer exists. There is no menu *bar* to name any more, so the
-        copy names the button instead, and describes it by where it is and what
-        it looks like rather than by a word ("hamburger", "app menu") that a
-        novice has no reason to know.
+        MAR-440 removed the native menu bar and this paragraph was rewritten to
+        name the ☰ button instead — a correct sentence, and still a sentence
+        telling somebody where to look on their own screen. It was the only
+        place in the product that gave a user coordinates, and the whole reason
+        it had to was that the sample lived in a menu and nowhere else.
+
+        The sample now has a control on the Add agent page beside the other two
+        doors, and it is the same component standing here — so this card ends
+        where it should have ended all along, with the press itself. The link
+        under it goes to the other two doors, and is deliberately quiet: a
+        person whose DASH is empty is being offered one thing.
       */}
-      <p>
-        Choose <strong>Try a sample agent</strong> from the menu button
-        (<span aria-hidden="true">☰</span>) at the top left of the window. DASH
-        makes it, shows you what it will do, and asks before adding anything.
+      <TrySampleAgent canAct={canAct} />
+      <p className="wrap">
+        <Link href="/settings/add-agent">Other ways to add an agent</Link>
       </p>
     </section>
   );

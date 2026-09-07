@@ -1324,15 +1324,27 @@ export default function HostsPage(): ReactNode {
   return (
     <>
       {/*
-        MAR-599, the same fix MAR-593 made for Connections. The tab strip above
-        this page already says "Servers" — an `<h1>` repeating it says nothing
-        new to somebody who just read the word they pressed. "Remote machines"
-        says what a server *is* here: not a rented box in the abstract, but one
-        your agents keep running on after DASH itself is closed — the sentence
-        MAR-639's text axe removes from below the heading, since the deploy
-        flow itself says the rest.
+        MAR-879 overturns MAR-599 here, and the reasoning it overturns was good,
+        so it is worth stating what changed rather than quietly deleting it.
+
+        MAR-599's argument: the tab strip above already says "Servers", an `<h1>`
+        repeating it says nothing new to somebody who just read the word they
+        pressed, and the old title said what a server *is* here — not a
+        rented box in the abstract, but one your agents keep running on after
+        DASH itself is closed.
+
+        What that missed is who pays for it. A person presses **Servers** and
+        arrives at a page titled something else, so the first thing the page
+        does is make them check they are where they meant to be. The saving was
+        one repeated word; the cost was a moment of doubt on every arrival, and
+        a second name for a thing that already had one. `lib/copy/nouns.ts` is
+        the canon now: six nouns, one word each, and the tab and the heading are
+        the same word because they are the same place.
+
+        The definition MAR-599 wanted to give is not lost — it is `SECTION_NOUNS.servers.means`,
+        where a definition can be read once rather than standing in for a title.
       */}
-      <h1>Remote machines</h1>
+      <h1>Servers</h1>
       <HostNotice host={host} />
 
       {state.status === "loading" ? (

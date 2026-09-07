@@ -232,18 +232,46 @@ describe("the entrances that outlived the sidebar rows", () => {
  *
  * MAR-593 fixed this for Connections alone — `<h1>Accounts and keys</h1>`
  * under a CONNECTIONS tab — and its own handoff left the other three as an
- * open item. MAR-599 fixed Servers and Notifications the same way. Add agent
- * is the one deliberate exception: it is under Henrik's hold and moved
- * verbatim by MAR-592, so its `<h1>Add agent</h1>` still says the tab word —
- * on purpose, not by oversight.
+ * open item. MAR-599 fixed Servers and Notifications the same way.
  *
- * A source scan rather than a full render: three of these five pages read
- * through `useView` and need a data source to render past their loading
- * state, and the fact under test — which literal string sits inside the
- * `<h1>` tag — is as visible in the source as it would be in the markup.
+ * ## The rule still holds, and it now has a boundary (MAR-879)
+ *
+ * It is a good rule with one blind spot: it treats *every* repetition as waste,
+ * and some words are not the page's to vary. MAR-879 gave DASH six section
+ * nouns — Results, Sources, Activity, Connections, Channels, Servers
+ * (`lib/copy/nouns.ts`) — on the finding that the same thing was called
+ * different names in different rooms and a person had to learn each one twice.
+ * Servers was one of them: the tab said "Servers" and the page it opened was
+ * titled something else, so the first thing that page did was make somebody
+ * check they were where they meant to be.
+ *
+ * Between "do not say the same word twice" and "call one thing one name", the
+ * second wins — it is about whether a person can navigate, and the first is
+ * about elegance. So Servers joins Add agent in the exception set, and the rule
+ * goes on protecting the four pages whose titles are genuinely theirs to write.
+ * The definition the old heading carried is not lost; it is
+ * `SECTION_NOUNS.servers.means`.
+ *
+ * A source scan rather than a full render: three of these pages read through
+ * `useView` and need a data source to render past their loading state, and the
+ * fact under test — which literal string sits inside the `<h1>` tag — is as
+ * visible in the source as it would be in the markup.
  */
 describe("the heading does not repeat the tab it is under", () => {
-  const HELD_VERBATIM = new Set(["Add agent"]);
+  /**
+   * The two pages whose `<h1>` is deliberately its tab word, and they are
+   * deliberate for different reasons.
+   *
+   * **Add agent** was moved verbatim by MAR-592 under Henrik's hold, so its
+   * heading says the tab word by inheritance rather than by decision.
+   *
+   * **Servers** is a decision, taken by MAR-879: it is one of DASH's six
+   * section nouns, and a noun in that canon is the same word wherever it
+   * appears. Anything added to this set should have an argument of that kind
+   * beside it — an exception with no reason written down is how a rule stops
+   * being one.
+   */
+  const HELD_VERBATIM = new Set(["Add agent", "Servers"]);
 
   it("says what the surface is, not the word the tab already said", async () => {
     const { readFile } = await import("node:fs/promises");
