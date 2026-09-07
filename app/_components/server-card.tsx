@@ -252,17 +252,17 @@ export function ServerCard({
    * The next action, except where the primary control already *is* it.
    *
    * The rule the shipped card had for one state, applied to the four it is true
-   * of: "Check this server" printed immediately above a control reading CHECK
-   * NOW is noise, and noise directly above the thing a person is meant to press
-   * is the worst place to put it. `in_use` has no next action of its own and
+   * of: a sentence reading "check now" immediately above a control reading
+   * CHECK NOW is noise, and noise directly above the thing a person is meant to
+   * press is the worst place to put it. `in_use` has no next action of its own and
    * the unreachable states' next actions are guidance — install the tools,
    * check the address — which is not what the button does, so it stays.
    */
   const sayNextAction =
     copy.next_action !== null &&
     /*
-     * `never_checked`'s next action is literally "Check this server", which is
-     * the button. Every other suppression is decided by the control rather than
+     * `never_checked`'s next action is literally "Check now", which is the
+     * button. Every other suppression is decided by the control rather than
      * by the state, so a state whose primary is only a *refresh* — the walls
      * where DASH never got in, and `host_key_not_trusted`, which has no
      * fingerprint to confirm — keeps its own guidance above the button.

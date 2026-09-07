@@ -225,13 +225,9 @@ success states above without a real machine answering.
 
 ## Needs orchestrator
 
-1. **The headline still does not say "your server is up".** `no_runner_there`
-   reads *"…is reachable, with nothing running on it"*, from
-   `describeConnectState` in `lib/host-connect.ts` — **outside this lane's
-   ownership**, so it was not touched. The chip (`SIGNED IN, READY`), the
-   success border and the single **Put an agent here** carry the state; the
-   words do not yet. The change is the `no_runner_there` branch of
-   `describeUnreachable`, and `tests/host-connect.test.ts` pins that sentence.
+1. ~~The headline still does not say "your server is up".~~ **Done** — the
+   orchestrator extended this lane's ownership to `lib/host-connect.ts`. See
+   the addendum.
 2. **D5 — the schedule panel says "on this computer"** after residency has moved
    the schedule to the host, where ADR 0031 says the server honours it. Agent
    settings, not this lane. Belongs with MAR-874 or MAR-864.
@@ -240,10 +236,8 @@ success states above without a real machine answering.
 4. **D7 — the header chip reads `LIVES ON Local` after a successful deploy**
    until an unrelated re-render. `app/_components/agent-header.tsx`, not this
    lane.
-5. **`lib/host-sighting.ts:354` and `lib/host-connect.ts:308`** both carry the
-   phrase *"Check this server"*. The button is now **Check now**. They read as
-   English instructions rather than as control names, so nothing is broken, but
-   a reviewer may want them aligned — both files are outside this lane.
+5. ~~`lib/host-sighting.ts` and `lib/host-connect.ts` still say "Check this
+   server".~~ **Done** — same extension. See the addendum.
 6. **The residency read now rides along with a check.** `check()` calls
    `residencyState` when the runner answered and named at least one agent, which
    is a second `ssh` round trip per press. It is quiet — no notice on failure —
@@ -252,3 +246,49 @@ success states above without a real machine answering.
 7. **`electron/capture-deploy.ts`'s `servers-refused` / `servers-chosen` scenes
    were already dead** before this packet: they focus `.deploy-panel`, which
    MAR-642 removed. Not touched here.
+
+---
+
+## Addendum — the ownership extension, 2026-09-07
+
+The orchestrator extended this lane to two files it had filed above, so items 1
+and 5 of *Needs orchestrator* are closed here rather than handed on. Items 2, 3
+and 4 (D5, D6, D7) stay with MAR-874/MAR-864, and item 6 — the second `ssh`
+round trip a check now costs — is accepted and left as it is.
+
+**`lib/host-connect.ts`, the `no_runner_there` branch.** The headline read
+*"<label> is reachable, with nothing running on it"*: three clauses, two of them
+negative, on the state **every freshly enrolled server sits in before its first
+deploy**. It is the first sentence a person ever reads about a machine they have
+just rented and correctly set up, and the attended run photographed it under a
+banner claiming nothing had answered. It now reads **"Your server is up. <label>
+is signed in and ready."** — the only headline in that function that does not
+open on a fault, because it is the only state that is not one. The label is
+still named, because a page can hold several servers and a sentence about one of
+them has to say which, and it comes second so the good news is read first. The
+body carries the honest remainder: DASH signed in, found no agent runner yet,
+*which is how every new server starts*, and nothing is wrong with the
+connection. `next_action` and `reach` are untouched, so the chip, the tone and
+the card's primary control are unchanged — which is the point: the words caught
+up with what the rest of the card already said.
+
+`tests/host-connect.test.ts` gains a pin asserting the headline *leads* with it
+(`/^Your server is up\./`) rather than merely contains it — a sentence that
+ended on the good news after two clauses of absence would pass a `toContain` and
+fail the person reading it — and asserts no other problem's headline opens that
+way. Every other state's wording is byte-identical.
+
+**The two stale instructions.** `describeConnectState`'s `not_checked` next
+action and `summariseWhatIsOnHost`'s sentence both told somebody to press
+*"Check this server"*, which is not what the control says any more. They read
+*"Check now"* and *"Press Check now to see what is on it."* A direction naming a
+button that no longer exists fails while looking authoritative, which is the
+fault `describeImportUnavailable` was corrected for one surface over.
+`tests/host-sighting-render.test.tsx`'s pin moves with it, and two comments in
+`app/_components/server-card.tsx` that quoted the old label as a present fact
+were corrected with it.
+
+**Merged forward** to `origin/master` `4ae4625` (MAR-875, #328). One conflict, in
+`app/globals.css`: both packets append a fenced block to the end of it. Resolved
+by keeping **both**, MAR-875's first and MAR-871's after — neither restyles a
+shared rule, which is what the fences are for.
