@@ -98,6 +98,170 @@ export const CHOOSE_FOLDER_COPY = {
 } as const;
 
 /**
+ * One of the three ways an agent gets into DASH (MAR-879).
+ *
+ * ## Why three doors and one room
+ *
+ * Before this there was one door on the page and two elsewhere: the folder
+ * chooser was the page, the sample lived only in the application menu, and
+ * building one was a paragraph of terminal commands behind a disclosure
+ * labelled for developers. Somebody with an empty DASH was told, in prose, to
+ * go and find a menu — `TryTheScout` on the Agents page spelled out where the
+ * button was and what glyph it wore, which is the shape of an interface
+ * apologising for itself.
+ *
+ * So all three stand on this page, at the same rank, each saying what it is
+ * for. What they emphatically do **not** do is fork the product: every one of
+ * them ends at the same import, the same consent question and the same first
+ * manual run. The sample presses the menu's own command, the assistant hands
+ * DASH a handoff through `dash://`, the folder chooser is unchanged. Three
+ * doors, one room — which is the only arrangement where adding a door costs
+ * nothing to maintain.
+ *
+ * ## Why the order is sample, assistant, folder
+ *
+ * It is the order of how much a person has to have already. The sample needs
+ * nothing; the assistant needs a coding assistant; the folder needs an agent
+ * that already exists. A novice reading top to bottom stops at the first one
+ * they can do, which is the whole job of an ordering.
+ */
+export interface AddAgentPath {
+  /** The heading, and the promise. Short enough to be scanned in a column. */
+  heading: string;
+  /** What this door is and what it will cost, in one or two sentences. */
+  means: string;
+  /** The label on this path's control, or `null` where the path only explains. */
+  action: string | null;
+  /** What happens after the press, said before it. */
+  detail: string;
+}
+
+/**
+ * The three doors, and the sentence that says they are the same room.
+ *
+ * `lede` is the page's, and it carries the fact that makes three choices safe
+ * to offer at once: whichever one somebody picks, DASH still shows them what it
+ * found and still asks. Without that, three doors read as three commitments.
+ */
+export const ADD_AGENT_PATHS = {
+  lede: "Three ways to get an agent into DASH. Whichever you choose, DASH shows you what it found and asks you before it adds anything.",
+  /**
+   * Under the sample's heading in a window that cannot make one.
+   *
+   * `CHOOSE_FOLDER_COPY.read_only`'s sentence, aimed at this door: a browser
+   * tab has no shell behind it, so there is no menu to open and no operation to
+   * reach. Said rather than drawn disabled, for that constant's reason.
+   */
+  sample_read_only:
+    "Open the installed DASH app to try the sample agent. This window can show everything and change nothing.",
+  /**
+   * The one for a person who has nothing.
+   *
+   * The character, the sources and the summary are named because they are what
+   * the person will actually see a minute later — the same promise
+   * `TryTheScout` makes on the Agents page, and it is kept by the same
+   * operation.
+   *
+   * `detail` names the menu, and that is a compromise rather than a design.
+   * DASH's sample is a main-process operation reachable only through the
+   * application menu; the renderer can *show* that menu at a point it names and
+   * cannot invoke an item in it (see `shell.menu` in `lib/shell/ipc.ts`, which
+   * deliberately carries two numbers and nothing else). So the button opens
+   * DASH's own menu with this item at the top of it, and says so, rather than
+   * pretending to a press it cannot make. A one-press version needs a command
+   * of its own on that channel.
+   */
+  sample: {
+    heading: "Try a sample agent",
+    means:
+      "DASH makes one for you: a news scout that reads the sources you choose and writes you a short summary of what is new. No account, no password, and it runs only when you ask it to.",
+    action: "Try a sample agent",
+    detail:
+      "DASH's own menu opens, with Try a sample agent at the top of it. DASH then shows you what it will make and asks before adding anything.",
+  },
+  /**
+   * The one for a person who has an idea and a coding assistant.
+   *
+   * Every sentence here is about what the *assistant* does, because that is
+   * where the work happens — DASH's part is the last four words of it. The
+   * unsupported-answers promise is not decoration: it is the difference between
+   * finding out during the questions that DASH cannot post to Slack and finding
+   * out after an agent is installed and silent.
+   */
+  assistant: {
+    heading: "Build one with an assistant",
+    means:
+      "Tell a coding assistant what you want an agent to do. It asks you what it needs to know, one or two questions at a time, and names anything you ask for that a DASH agent cannot do yet. Then it builds the agent and hands it to DASH.",
+    action: null,
+    detail:
+      "When it is ready, DASH comes to the front by itself and asks whether to add it. Nothing is added until you say yes.",
+  },
+  /**
+   * The one that was the whole page before this. `means` is
+   * `CHOOSE_FOLDER_COPY.lede` unchanged, because it was already the right
+   * sentence for this door — what changed is that it now introduces one door
+   * rather than the page.
+   */
+  folder: {
+    heading: "Import an agent folder",
+    means: CHOOSE_FOLDER_COPY.lede,
+    action: null,
+    detail:
+      "For an agent somebody has already built — one you made yourself, or one an assistant built earlier.",
+  },
+} as const satisfies { lede: string; sample_read_only: string } & Record<
+  "sample" | "assistant" | "folder",
+  AddAgentPath
+>;
+
+/**
+ * Setting the builder up, in the one line a person pastes.
+ *
+ * ## Why this is a line and not a button
+ *
+ * The builder is a plugin for a *coding assistant*, not a part of DASH: it runs
+ * in Claude Code or Codex, holds DASH's own import validator, and reaches DASH
+ * only at the end through `dash://` (ADR 0032, `tools/dash-mcp`). DASH cannot
+ * install it, because DASH is not the program it installs into.
+ *
+ * ## Why the path is left as a placeholder
+ *
+ * The line is `tools/dash-mcp/README.md`'s own, verbatim in shape, and the
+ * folder really does differ per machine — the plugin lives with DASH's source
+ * code, which an installed DASH does not carry. A line that guessed a path
+ * would be a line that fails silently for everybody whose checkout is
+ * somewhere else, so the placeholder is visible and the sentence above it says
+ * what to put there.
+ */
+export const ASSISTANT_SETUP = {
+  intro:
+    "The builder is a plugin for your coding assistant. Paste this into it once, with the folder DASH's own code lives in:",
+  command: "/plugin install <path to the DASH code>/tools/dash-mcp",
+  /** The button beside it. Short: buttons render uppercase. */
+  copy_action: "Copy setup line",
+  copied: "Copied",
+  copy_failed: "Select it and copy",
+  after: "Then tell it what you want your agent to do. It takes DASH's questions from there.",
+} as const;
+
+/** Everything on the Add agent page that is not a card, for the copy gate. */
+export function everyAddAgentPathSentence(): string[] {
+  return [
+    ADD_AGENT_PATHS.lede,
+    ADD_AGENT_PATHS.sample_read_only,
+    ...(["sample", "assistant", "folder"] as const).flatMap((key) => {
+      const path = ADD_AGENT_PATHS[key];
+      return [path.heading, path.means, path.action ?? "", path.detail];
+    }),
+    ASSISTANT_SETUP.intro,
+    ASSISTANT_SETUP.copy_action,
+    ASSISTANT_SETUP.copied,
+    ASSISTANT_SETUP.copy_failed,
+    ASSISTANT_SETUP.after,
+  ].filter((sentence) => sentence !== "");
+}
+
+/**
  * The receipt for a folder DASH has just taken into its keeping.
  *
  * Three facts, and every one of them is something a person would otherwise have
@@ -150,13 +314,38 @@ export function describeFolderAdded(input: {
     headline,
     meaning: `${where} ${startSentence}`,
     /*
-     * The next step is the one that makes the copy make sense. A person who has
-     * just been told DASH runs a copy needs to know which folder to point an
-     * editor at, and it is the one named above — not the one they chose.
+     * One next step, then the fact that makes the copy make sense (MAR-879).
+     *
+     * The order used to be the other way round, and it read as a warning rather
+     * than as a direction: somebody who had just added their first agent was
+     * told, first, that editing their own folder would not work. True, and not
+     * what they were about to do. So the *action* leads now — and it is one
+     * action, phrased for the state the import actually reached — with the
+     * copy's own sentence kept behind it verbatim, because a person who edits
+     * the wrong folder for a week is the failure that sentence exists against.
      */
-    next_action:
-      "Changes you make in your own folder do not reach DASH. To change this agent, edit the copy above and press Check for changes on its page.",
+    next_action: `${openingStep(input.start)} Changes you make in your own folder do not reach DASH — to change this agent, edit the copy above and press Check for changes on its page.`,
   };
+}
+
+/**
+ * The single thing to do next, decided by what the import could promise.
+ *
+ * Three states rather than one sentence, because "press Start" is wrong advice
+ * for two of them: an agent whose supervisor has not confirmed the re-read may
+ * not have a reachable Start until DASH is opened again, and a folder with a
+ * plan and no program has no Start at all. Telling somebody to press a button
+ * that is not there is the same defect as a control that silently does nothing.
+ */
+function openingStep(start: "ready" | "next_open" | "none"): string {
+  switch (start) {
+    case "ready":
+      return "Open its page, connect anything it still needs, and press Start when you want it to run.";
+    case "next_open":
+      return "Open its page to see what this agent needs and what it will do.";
+    case "none":
+      return "Open its page to read what this agent plans to do.";
+  }
 }
 
 /**

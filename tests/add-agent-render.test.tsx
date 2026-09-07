@@ -18,9 +18,16 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { AddedReport, ChooseFolder } from "../app/_components/choose-folder";
+import {
+  AddedReport,
+  ChooseFolder,
+  CopyableCommand,
+  SampleAgentControl,
+} from "../app/_components/choose-folder";
 import AddAgentPage from "../app/settings/add-agent/page";
 import {
+  ADD_AGENT_PATHS,
+  ASSISTANT_SETUP,
   CHOOSE_FOLDER_COPY,
   FOLDER_ALREADY_IN_DASH,
   FOLDER_DECLINED,
@@ -31,6 +38,24 @@ import { explainImportFailure } from "../lib/import-feedback";
 import type { AddedAgentReport } from "../lib/shell/ipc";
 
 const DESTINATION = "C:\\Users\\sam\\AppData\\Roaming\\orchestratedash\\agents\\ai-news-scout";
+
+/**
+ * The markup as a reader sees it.
+ *
+ * `renderToStaticMarkup` escapes apostrophes and angle brackets, so a copy
+ * assertion written against the constant fails on a sentence that is on screen
+ * and correct. Decoding here rather than writing the entities into the
+ * expectations keeps the test comparing DASH's own strings — which is the
+ * point, since the strings are what the copy gate holds.
+ */
+function text(markup: string): string {
+  return markup
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
 
 function draw(report: AddedAgentReport): string {
   return renderToStaticMarkup(<AddedReport report={report} />);
@@ -45,6 +70,53 @@ describe("the primary action", () => {
     // point is that the renderer never holds a path — see the component header.
     expect(markup).not.toContain("<input");
     expect(markup).not.toContain("<textarea");
+  });
+
+  it("offers the sample as a press, and says what the press opens", () => {
+    /*
+     * `SampleAgentControl` takes the decided boolean rather than discovering it,
+     * for `SettingsTabsStrip`'s reason: a static render runs no effects, so a
+     * component that read `window.dashShell` itself could only be tested in one
+     * of its two states.
+     *
+     * The detail sentence is asserted beside the button because it is the
+     * honest half. The renderer cannot invoke a menu item — `shell.menu` carries
+     * two numbers and nothing else — so this press *opens DASH's menu* with the
+     * sample at the top of it, and a person is told that before they press
+     * rather than after.
+     */
+    const markup = renderToStaticMarkup(<SampleAgentControl available />);
+    expect(markup).toContain(ADD_AGENT_PATHS.sample.action);
+    expect(markup).toContain("button-primary");
+    expect(markup).toContain('aria-haspopup="menu"');
+    expect(text(markup)).toContain(ADD_AGENT_PATHS.sample.detail);
+  });
+
+  it("says which window can make a sample rather than drawing a dead control", () => {
+    const markup = renderToStaticMarkup(<SampleAgentControl available={false} />);
+    expect(markup).toContain(ADD_AGENT_PATHS.sample_read_only);
+    expect(markup).not.toContain("<button");
+  });
+
+  it("puts the builder's setup line beside a button that copies it", () => {
+    /*
+     * "Copyable, not typed" is the issue's own wording. A line a person has to
+     * transcribe from a screen into another program is a terminal instruction
+     * wearing a different coat.
+     */
+    const markup = renderToStaticMarkup(
+      <CopyableCommand
+        text={ASSISTANT_SETUP.command}
+        label={ASSISTANT_SETUP.copy_action}
+        copied={ASSISTANT_SETUP.copied}
+        failed={ASSISTANT_SETUP.copy_failed}
+      />,
+    );
+    expect(markup).toContain(ASSISTANT_SETUP.copy_action);
+    expect(markup).toContain("button-secondary");
+    // The line stays on screen and selectable whatever the clipboard does — the
+    // reason `copyText` has a second attempt and a spoken failure.
+    expect(markup).toContain("setup-line");
   });
 
   it("says which window can act rather than drawing a dead control", () => {
@@ -62,24 +134,84 @@ describe("the primary action", () => {
 describe("the page's order", () => {
   const markup = renderToStaticMarkup(<AddAgentPage />);
 
-  it("leads with choosing a folder", () => {
+  it("leads with a choice between three doors, and with no command at all", () => {
     /*
-     * The issue in one assertion: the first thing on the page is about a folder,
-     * and the commands are not.
+     * MAR-598's assertion, moved up a level by MAR-879.
      *
-     * Asserted on the lede rather than on the button, because the button is
-     * deliberately withheld until `useHost` has answered — an effect, which does
-     * not run in a static render. That withholding is the same one
-     * `AddAgentForm` has always had and it is the right way round: showing
-     * nothing for one frame is better than showing "open the installed app"
-     * inside the installed app. `ChooseFolder`'s own tests above cover the
-     * control itself.
+     * It used to read "leads with choosing a folder", which was the fix for a
+     * page that led with two terminal commands. The invariant it was protecting
+     * — **the first thing this page says is not a command** — is unchanged and
+     * is asserted below; what changed is that a folder is now one of three
+     * doors rather than the page, so leading with it would leave a person who
+     * has no agent yet in the same place MAR-598 found them.
+     *
+     * Asserted on the ledes and headings rather than on the buttons, because
+     * every control here is deliberately withheld until `useHost` has answered
+     * — an effect, which does not run in a static render. `ChooseFolder`'s and
+     * `SampleAgentControl`'s own tests cover the controls themselves.
      */
-    const ledeAt = markup.indexOf(CHOOSE_FOLDER_COPY.lede);
-    const commandAt = markup.indexOf("npx create-dash-agent");
-    expect(ledeAt).toBeGreaterThan(-1);
-    expect(commandAt).toBeGreaterThan(ledeAt);
+    const ledeAt = markup.indexOf(ADD_AGENT_PATHS.lede);
     expect(markup.indexOf(CHOOSE_FOLDER_COPY.heading)).toBeLessThan(ledeAt);
+    expect(ledeAt).toBeGreaterThan(-1);
+
+    const order = [
+      ADD_AGENT_PATHS.sample.heading,
+      ADD_AGENT_PATHS.assistant.heading,
+      ADD_AGENT_PATHS.folder.heading,
+    ].map((heading) => markup.indexOf(heading));
+    for (const at of order) {
+      expect(at).toBeGreaterThan(ledeAt);
+    }
+    // Sample, assistant, folder — the order of how much a person has to have
+    // already. See `ADD_AGENT_PATHS`' header; a reordering that put the folder
+    // first would be MAR-598's page again.
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    // And the commands are still after all three, where MAR-598 put them.
+    expect(markup.indexOf("npx create-dash-agent")).toBeGreaterThan(Math.max(...order));
+  });
+
+  it("offers the sample here rather than describing where its menu is", () => {
+    /*
+     * The defect MAR-879 names first. Before this the only way to the sample
+     * was a paragraph on the Agents page giving a person coordinates — "the
+     * menu button (☰) at the top left of the window" — and this page did not
+     * mention the sample at all. A page that offers three ways to add an agent
+     * and leaves one of them to be found by reading is offering two.
+     */
+    expect(markup).toContain(ADD_AGENT_PATHS.sample.heading);
+    expect(markup).toContain(ADD_AGENT_PATHS.sample.means);
+    expect(markup).not.toMatch(/top left of the window/i);
+  });
+
+  it("carries the builder's real setup line, copyable and behind a disclosure", () => {
+    /*
+     * The one line a person pastes, and it is `tools/dash-mcp/README.md`'s own
+     * — a plugin install for a coding assistant, not a shell command, and not
+     * something DASH can do for them because DASH is not the program it
+     * installs into.
+     *
+     * Behind a disclosure because it is done once. Asserted as present rather
+     * than as positioned: what would be wrong is this page explaining the
+     * builder and then leaving somebody to search for how to get it.
+     */
+    expect(text(markup)).toContain(ASSISTANT_SETUP.command);
+    expect(markup).toContain("dash-mcp");
+    const summaryAt = text(markup).indexOf(ASSISTANT_SETUP.intro);
+    expect(summaryAt).toBeGreaterThan(-1);
+    expect(text(markup).indexOf(ASSISTANT_SETUP.command)).toBeGreaterThan(summaryAt);
+    // The whole point of the assistant path: it ends where the other two end.
+    expect(ADD_AGENT_PATHS.assistant.detail).toMatch(/asks whether to add it/i);
+  });
+
+  it("opens the builder's disclosure closed when no link asked for it", () => {
+    /*
+     * `?path=assistant` is read after mount, from `window.location` rather than
+     * from a router — see `useOpenedPath`. A static render is the "nobody asked"
+     * case and must not spring open, which is also what makes the assertion
+     * above about ordering meaningful.
+     */
+    expect(markup).not.toContain("<details open");
   });
 
   it("keeps the scaffold path, behind a disclosure that says who it is for", () => {

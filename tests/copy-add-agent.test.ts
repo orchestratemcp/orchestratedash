@@ -29,6 +29,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ADD_AGENT_PATHS,
+  ASSISTANT_SETUP,
   CANNOT_START,
   CHOOSE_FOLDER_COPY,
   FOLDER_ALREADY_IN_DASH,
@@ -40,6 +42,7 @@ import {
   describeFolderAdded,
   describeFolderNotRead,
   describeFolderNotStored,
+  everyAddAgentPathSentence,
   type AddAgentCard,
 } from "../lib/copy/add-agent";
 import { describeFolderTooBig } from "../lib/folder-import";
@@ -146,6 +149,42 @@ describe("the page's own strings", () => {
     // missing. A question answers itself for the person who is not building an
     // agent from scratch, which is nearly everybody standing here.
     expect(CHOOSE_FOLDER_COPY.scaffold_summary).toBe("Building an agent from scratch?");
+  });
+
+  it("offers three doors, and says they end at the same question", () => {
+    /*
+     * MAR-879's acceptance line, asserted where the sentences live.
+     *
+     * Three doors is only an improvement if a person can tell they are not
+     * three commitments — so the page's lede carries the fact that DASH still
+     * shows what it found and still asks, whichever one is chosen, and each
+     * door's own `detail` says the same thing in its own terms.
+     */
+    expectPlainLanguage(everyAddAgentPathSentence());
+    expect(ADD_AGENT_PATHS.lede).toMatch(/asks you before it adds anything/i);
+    for (const key of ["sample", "assistant", "folder"] as const) {
+      expect(ADD_AGENT_PATHS[key].heading, key).not.toBe("");
+      expect(ADD_AGENT_PATHS[key].means, key).not.toBe("");
+    }
+    // The two that end at DASH's own consent dialog say so before the press.
+    expect(ADD_AGENT_PATHS.sample.detail).toMatch(/asks before adding anything/i);
+    expect(ADD_AGENT_PATHS.assistant.detail).toMatch(/nothing is added until you say yes/i);
+  });
+
+  it("keeps the builder's setup line out of the prose it is embedded in", () => {
+    /*
+     * `ASSISTANT_SETUP.command` is deliberately **not** in
+     * `everyAddAgentPathSentence`. It is a command, in the exact shape
+     * `tools/dash-mcp/README.md` gives it — the identifier rule would reject
+     * most of it, and rightly, which is why the two npx lines on this page have
+     * always been JSX literals rather than copy. What the gate does hold is the
+     * sentence around it, and that sentence has to say where the command goes:
+     * into a coding assistant, not a terminal.
+     */
+    expect(everyAddAgentPathSentence()).not.toContain(ASSISTANT_SETUP.command);
+    expect(ASSISTANT_SETUP.command).toContain("tools/dash-mcp");
+    expect(ASSISTANT_SETUP.intro).toMatch(/coding assistant/i);
+    expect(ASSISTANT_SETUP.intro).not.toMatch(/terminal|command line|shell/i);
   });
 });
 
