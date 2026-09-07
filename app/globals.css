@@ -9101,7 +9101,10 @@ main:has(.agent-cockpit) {
  * three-line footer that replaced a one-line one.
  *
  * Layout and tone only. Every colour is a token — `app/tokens.css` owns them
- * and this block defines none.
+ * and this block defines none — and every length is off the 4px grid or the
+ * type scale. `tests/panel-render.test.tsx` slices this stylesheet from the
+ * panel's own comment to the end of the file, so its three gates apply to
+ * every block appended after it, this one included.
  */
 
 /* The header chip. Sized off the status pill beside it rather than given its
@@ -9109,12 +9112,12 @@ main:has(.agent-cockpit) {
 .ask-capability-chip {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: var(--space-1);
   margin: 0;
-  padding: 0.15rem 0.5rem;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line);
   background: var(--surface-2);
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -9123,7 +9126,7 @@ main:has(.agent-cockpit) {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
 }
 
 .ask-capability-chip .ask-capability-value {
@@ -9144,14 +9147,14 @@ main:has(.agent-cockpit) {
 /* The footer. Three stacked lines and a row of actions, where the blocked bar
    used to be a sentence and a link on one line. */
 .cockpit-chat-blocked .ask-capability-line {
-  margin: 0 0 0.35rem;
+  margin: 0 0 var(--space-1);
 }
 
 .cockpit-chat-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--space-2);
 }
 
 /* The chief entry: a control and the one line that says what pressing it does.
@@ -9160,18 +9163,18 @@ main:has(.agent-cockpit) {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .ask-chief-entry .muted {
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 
 .ask-blocked-card .ask-capability-line {
-  margin: 0 0 0.4rem;
+  margin: 0 0 var(--space-1);
 }
 
 .ask-blocked-card .ask-chief-entry {
-  margin-top: 0.6rem;
+  margin-top: var(--space-2);
 }
 /* ==== MAR-878 end ==== */
