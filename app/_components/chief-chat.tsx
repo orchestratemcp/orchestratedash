@@ -227,6 +227,31 @@ export function visibleChiefTurns(
   return filterAfterClear(turns, clearedThroughId);
 }
 
+/**
+ * Whether a newly arrived prefill (MAR-882) should overwrite the field.
+ *
+ * Pure for `visibleChiefTurns`' own reason: every render test here is
+ * `renderToStaticMarkup`, which fires no effect, so "a later prefill for a
+ * different agent replaces an untouched draft but never a draft the person
+ * has edited" is exactly the claim a render cannot exercise. `touched` is
+ * true from the moment the field's own `onChange` has fired even once since
+ * the room last opened empty or with a prefill of DASH's own writing — see
+ * the effect that calls this for how that ref is kept.
+ *
+ * `prefill === appliedPrefill` is the ordinary case on every render that is
+ * not the one where a new `?ask=` arrived — most of them — and is checked by
+ * the caller before this runs at all; restated here as `false` so the
+ * function is correct on its own rather than only in the context of one
+ * caller's guard.
+ */
+export function shouldApplyPrefill(
+  prefill: string | null,
+  appliedPrefill: string | null,
+  touched: boolean,
+): boolean {
+  return prefill !== null && prefill !== appliedPrefill && !touched;
+}
+
 export function ChiefChat({
   agents,
   view,
@@ -236,6 +261,7 @@ export function ChiefChat({
   onOpen,
   onClose,
   decisionsTotal = 0,
+  prefill = null,
 }: {
   /** The fleet as the band already has it — filtered, in the list's own order. */
   agents: readonly AgentRow[];
@@ -257,6 +283,17 @@ export function ChiefChat({
    * this packet and hold no fleet view keep compiling.
    */
   decisionsTotal?: number;
+  /**
+   * "About <agent>: ", set once per agent asked about from that agent's own
+   * page (MAR-882). `app/page.tsx` resolves the id on the query string to a
+   * display name and hands the finished sentence down through `FleetList` —
+   * this component never sees the id, only `describeChiefPrefill`'s answer.
+   *
+   * Null covers both the ordinary case (no `?ask=` at all) and the one that
+   * matters more: an id that named nobody in this fleet reads exactly like no
+   * id, never as a sentence with a blank where a name should be.
+   */
+  prefill?: string | null;
 }): ReactNode {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
@@ -297,6 +334,39 @@ export function ChiefChat({
    */
   const [clearedThroughId, setClearedThroughId] = useState<number | null>(null);
   const visible = visibleChiefTurns(view.turns, clearedThroughId);
+
+  /*
+   * MAR-882. `prefill`, applied at most once each time it names a new agent —
+   * `shouldApplyPrefill`'s own header has the rule. `appliedPrefill` remembers
+   * what this instance last acted on so a re-render with the same `?ask=`
+   * (asking a question re-reads the whole fleet view, which re-renders this
+   * component with the identical prop) does not steal the field back a second
+   * time; `touchedDraft` remembers whether the person has typed anything since,
+   * so their half-written question about one agent survives a link to another.
+   * Both are refs rather than state: neither should itself cause a render.
+   */
+  const appliedPrefill = useRef<string | null>(null);
+  const touchedDraft = useRef(false);
+  const [focusSignal, setFocusSignal] = useState(0);
+
+  useEffect(() => {
+    if (prefill === appliedPrefill.current) {
+      return;
+    }
+    const apply = shouldApplyPrefill(prefill, appliedPrefill.current, touchedDraft.current);
+    appliedPrefill.current = prefill;
+    if (!apply || prefill === null) {
+      return;
+    }
+    setQuestion(prefill);
+    onOpen();
+    setFocusSignal((value) => value + 1);
+  }, [prefill, onOpen]);
+
+  function handleQuestionChange(next: string): void {
+    touchedDraft.current = true;
+    setQuestion(next);
+  }
 
   /*
    * Whole seconds since the press — the one number on this surface the renderer
@@ -385,7 +455,8 @@ export function ChiefChat({
       chips={<ChiefChips decisionsTotal={decisionsTotal} />}
       placeholder={CHIEF_CHAT_COPY.placeholder}
       value={question}
-      onChange={setQuestion}
+      onChange={handleQuestionChange}
+      focusSignal={focusSignal}
       /*
        * MAR-746. Through the guard rather than straight at `ask` — `start`
        * drops a press that arrives while the last one is still in flight, and

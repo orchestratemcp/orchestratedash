@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { AGENT_COCKPIT_COPY } from "../../lib/copy/agent-page";
@@ -20,7 +21,7 @@ import {
 } from "../../lib/copy/ask";
 import type { OName } from "../../lib/brand/o-cast";
 import type { AgentAskView, AskExchangeView } from "../../lib/views/types";
-import { agentStageHref } from "../_data/routes";
+import { AGENT_WORKSPACE_PARAMS, agentStageHref, chiefAskHref } from "../_data/routes";
 import { askAgentQuestion, submitConnectionCommand } from "../_data/source";
 import { Composer, filterAfterClear, type ComposerClassNames } from "./composer";
 import { useSingleFlight } from "./single-flight";
@@ -132,6 +133,18 @@ export function AskThread({
   setFeedback: Dispatch<SetStateAction<{ ok: boolean; message: string } | null>>;
 }): ReactNode {
   const [busy, setBusy] = useState(false);
+  /*
+   * MAR-882. The one id the fix-it card's chief entry needs and `AgentAskView`
+   * does not carry on its blocked arm — see that type's own header. Read off
+   * the address rather than added as a prop: this section is mounted only
+   * inside the agent workspace route (`app/agents/detail/page.tsx`, which
+   * this lane does not own — the sibling files list names it), and that route
+   * already reads `AGENT_WORKSPACE_PARAMS.agent` off the same address for the
+   * identical reason. `app/agents/detail/page.tsx`'s own `Suspense` boundary
+   * (`AgentWorkspacePage`) already covers everything this component renders
+   * under, so no second boundary is needed here.
+   */
+  const agent = useSearchParams().get(AGENT_WORKSPACE_PARAMS.agent) ?? "";
 
   async function connect(): Promise<void> {
     if (ask.can_ask || ask.connect === null) {
@@ -206,7 +219,7 @@ export function AskThread({
               the chief entry is on every arm of it — the surface that can still
               answer questions about this agent, told the same reason id and the
               same recovery sentence this card shows. */}
-          <ChiefEntry />
+          <ChiefEntry agent={agent} />
         </div>
       )}
 
@@ -583,10 +596,13 @@ function capabilityHref(agent: string, action: AskCapabilityAction): string {
       return agentStageHref(agent, "run");
     case "chief":
     case "ask":
-      // The fleet, where the chief's composer is. `ask` never reaches here —
-      // an agent that can be asked draws a composer, not a link — and it is
-      // answered rather than thrown so a future arm cannot crash a footer.
-      return "/";
+      // The fleet, where the chief's composer is — with this agent already
+      // named (MAR-882), so the one thing this action *is* ("ask the chief
+      // about this agent") is not lost at the door the way it used to be.
+      // `ask` never reaches here — an agent that can be asked draws a
+      // composer, not a link — and it is answered rather than thrown so a
+      // future arm cannot crash a footer.
+      return chiefAskHref(agent);
   }
 }
 
@@ -600,11 +616,17 @@ function capabilityHref(agent: string, action: AskCapabilityAction): string {
  * reason id and the same recovery sentence shown here — see
  * `lib/chief/briefing.ts`. So the two surfaces cannot send somebody to
  * different places.
+ *
+ * The link carries `agent` on the query string (MAR-882) rather than opening
+ * a bare fleet page: the design asked for the chief's composer to open
+ * "with this agent in context", and `chiefAskHref` plus `app/page.tsx`
+ * reading it back is the other half of that — nothing about what the chief is
+ * *told* changes, only where a person's cursor already is when they arrive.
  */
-function ChiefEntry(): ReactNode {
+function ChiefEntry({ agent }: { agent: string }): ReactNode {
   return (
     <span className="ask-chief-entry">
-      <Link className="button-link" href="/">
+      <Link className="button-link" href={chiefAskHref(agent)}>
         {ASK_CHIEF_ENTRY}
       </Link>
       <span className="muted wrap">{ASK_CHIEF_ENTRY_DETAIL}</span>
@@ -727,7 +749,7 @@ export function AgentChatBar({
                 none of them — except on `no_provider`, where it *is* the
                 action and drawing it twice would be two buttons doing one
                 thing. */}
-            {ask.capability.action.kind === "chief" ? null : <ChiefEntry />}
+            {ask.capability.action.kind === "chief" ? null : <ChiefEntry agent={agent} />}
           </div>
         </div>
       )}
