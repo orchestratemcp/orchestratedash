@@ -29,12 +29,23 @@
 
 import { resolveCredentialTarget, type CredentialTarget } from "../connection-credentials";
 import type { ConnectionSourceManifest } from "../connections";
+import { disambiguateAgentTitles, type AgentIdentity } from "../views/agent-labels";
 import type { FleetConnector } from "./catalogue";
 
 /** One agent DASH holds a manifest for, as this module needs it. */
 export interface FleetCandidate {
   agent_id: string;
   manifest: ConnectionSourceManifest;
+  /**
+   * `agentDisplayName`'s answer for this agent, when the caller has it
+   * (MAR-883). Optional and carried straight through to `FleetMaterialization`
+   * rather than resolved in here, because this module has no manifest field
+   * and no rename column to resolve it from — only `lib/views/build.ts`'s own
+   * `titleByAgent` does. A caller that omits it (`lib/fleet/actions.ts`'s own
+   * candidates, which have no title source available) gets exactly today's
+   * behaviour: `describeFleetReach` falls back to `agent_id`.
+   */
+  title?: string;
 }
 
 /**
@@ -48,6 +59,8 @@ export interface FleetCandidate {
 export interface FleetMaterialization {
   agent_id: string;
   target: CredentialTarget;
+  /** Carried from the matching `FleetCandidate`. See its own doc. */
+  title?: string;
 }
 
 /**
@@ -131,7 +144,7 @@ export function fleetReach(
       });
       continue;
     }
-    materializes.push({ agent_id: candidate.agent_id, target: resolved });
+    materializes.push({ agent_id: candidate.agent_id, target: resolved, title: candidate.title });
   }
 
   return { materializes, skipped };
@@ -243,12 +256,23 @@ export function describeSkip(reason: FleetSkip, service: string): {
  * agent that asked for more than this consent covers still shows "you did not
  * give this one" on its own actions, and this sentence must not promise
  * otherwise.
+ *
+ * MAR-883. Names by title, not by `agent_id` — the same fix and the same
+ * `disambiguateAgentTitles` source `shareLabel` and `describeSharedGrant`
+ * use, so a name collision reads the identical suffix wherever a person meets
+ * it. `title` is optional on `FleetMaterialization` because not every caller
+ * has one to give (`lib/fleet/actions.ts`'s own candidates do not); a missing
+ * title falls back to `agent_id`, which is exactly what this sentence said
+ * before this fix existed.
  */
 export function describeFleetReach(connector: FleetConnector, reach: FleetReach): string | null {
-  const names = reach.materializes.map((one) => one.agent_id);
-  if (names.length === 0) {
+  if (reach.materializes.length === 0) {
     return null;
   }
+  const labels = disambiguateAgentTitles(
+    reach.materializes.map((one) => ({ name: one.agent_id, title: one.title ?? one.agent_id })),
+  );
+  const names = labels.map((one) => (one.suffix === null ? one.title : `${one.title} — ${one.suffix}`));
   const last = names[names.length - 1] as string;
   const list =
     names.length === 1
@@ -272,6 +296,49 @@ export function describeFleetReach(connector: FleetConnector, reach: FleetReach)
 }
 
 /**
+ * Every sentence `describeFleetReach` can produce, for the copy sweep.
+ *
+ * `describeFleetReach` reads only `connector.service`, so a minimal stand-in
+ * is honest here rather than a full `FleetConnector` fixture nothing else in
+ * this enumerator needs. One of each shape: a single agent, a same-named pair
+ * (the MAR-883 case — this sentence used to say the id twice, indistinguishable
+ * from each other and from a novice's expectations), and three or more.
+ */
+export function everyFleetReachSentence(): string[] {
+  const connector = { service: "Gmail" } as FleetConnector;
+  const one: FleetReach = {
+    materializes: [
+      { agent_id: "news-scout", target: {} as CredentialTarget, title: "News Scout" },
+    ],
+    skipped: [],
+  };
+  const collision: FleetReach = {
+    materializes: [
+      {
+        agent_id: "meeting-assistant-2",
+        target: {} as CredentialTarget,
+        title: "Meeting Assistant",
+      },
+      { agent_id: "standup-notes", target: {} as CredentialTarget, title: "Meeting Assistant" },
+    ],
+    skipped: [],
+  };
+  const three: FleetReach = {
+    materializes: [
+      { agent_id: "a", target: {} as CredentialTarget, title: "News Scout" },
+      { agent_id: "b", target: {} as CredentialTarget, title: "Invoice Reviewer" },
+      { agent_id: "c", target: {} as CredentialTarget, title: "Ledger Reporter" },
+    ],
+    skipped: [],
+  };
+  return [
+    describeFleetReach(connector, one) ?? "",
+    describeFleetReach(connector, collision) ?? "",
+    describeFleetReach(connector, three) ?? "",
+  ];
+}
+
+/**
  * Every sentence this module can produce, for the copy sweep.
  *
  * Derived from the union rather than written out, so a skip added without being
@@ -283,3 +350,65 @@ export const FLEET_SKIPS = [
   "does_not_qualify",
   "not_dash_held",
 ] as const satisfies readonly FleetSkip[];
+
+/* ---------------------------------------------------------------------- *
+ * The share button
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The "Give it to …" button's own words (MAR-883).
+ *
+ * `waiting` is the id list `FleetConnectorView.waiting` and `ServiceRow.fleet`
+ * both carry — a value slot, by MAR-589's ruling, because it travels straight
+ * into the `share` command, which addresses an agent by id. Printing one of
+ * those ids as the button's whole label was the defect: `known` is every
+ * agent the same card already has a title for (`agents`, on both views), so a
+ * single waiting agent is looked up rather than shown as the id it arrived as.
+ *
+ * `disambiguateAgentTitles` is the same call the per-agent list beside this
+ * button already makes, so a waiting agent whose name collides with another
+ * agent on the card gets the identical folder suffix — never a second
+ * decision about how to tell two "Meeting Assistant"s apart.
+ *
+ * Null when nobody is waiting, matching both callers' own "draw no button"
+ * rule. The two-or-more case still counts rather than lists — the sentence
+ * this replaces never named anyone once there was more than one, and that
+ * half was never the id leak.
+ */
+export function shareLabel(
+  waiting: readonly string[],
+  known: readonly AgentIdentity[],
+): string | null {
+  if (waiting.length === 0) {
+    return null;
+  }
+  if (waiting.length > 1) {
+    return `Give it to ${String(waiting.length)} waiting agents`;
+  }
+  const id = waiting[0] as string;
+  const label = disambiguateAgentTitles(known).find((one) => one.name === id);
+  const title = label?.title ?? id;
+  return label?.suffix == null ? `Give it to ${title}` : `Give it to ${title} — ${label.suffix}`;
+}
+
+/**
+ * Every sentence `shareLabel` can produce, for the copy sweep.
+ *
+ * One of each shape: nobody waiting (excluded — null is not a sentence),
+ * one waiting agent with a name nobody shares, one waiting agent whose name
+ * collides with another agent on the same card, and more than one waiting.
+ */
+export function everyShareLabelSentence(): string[] {
+  return [
+    shareLabel(["meeting-assistant"], [{ name: "meeting-assistant", title: "Meeting Assistant" }]) ??
+      "",
+    shareLabel(
+      ["meeting-assistant-2"],
+      [
+        { name: "meeting-assistant-2", title: "Meeting Assistant" },
+        { name: "standup-notes", title: "Meeting Assistant" },
+      ],
+    ) ?? "",
+    shareLabel(["news-scout", "invoice-reviewer"], []) ?? "",
+  ];
+}

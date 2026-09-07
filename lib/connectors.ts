@@ -50,6 +50,7 @@ import {
   classifyProof,
   type ConnectionProof,
 } from "./connection-card";
+import { disambiguateAgentTitles } from "./views/agent-labels";
 import type { AgentConnections, ConnectionRowWithCredential } from "./views/types";
 
 /* ---------------------------------------------------------------------- *
@@ -321,7 +322,17 @@ export function describeSharedGrant(tile: ConnectorTile): string | null {
   if (sharing.length < 2) {
     return null;
   }
-  const names = sharing.map((one) => one.agent);
+  /*
+   * MAR-883. This used to map `one.agent` — the folder id, a value slot by
+   * MAR-589's ruling — straight into a sentence a novice reads before signing
+   * in. `disambiguateAgentTitles` gives the same suffix the per-agent list
+   * beside this sentence already uses, so two sharers named the same thing are
+   * still told apart in words rather than by falling back to an id.
+   */
+  const labels = disambiguateAgentTitles(
+    sharing.map((one) => ({ name: one.agent, title: one.title })),
+  );
+  const names = labels.map((one) => (one.suffix === null ? one.title : `${one.title} — ${one.suffix}`));
   const last = names[names.length - 1] as string;
   const list =
     names.length === 2

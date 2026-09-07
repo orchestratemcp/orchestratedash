@@ -1346,16 +1346,25 @@ export function fleetConnectorViews(
   capable: ReadonlyArray<{ name: string; manifest: ConnectionSourceManifest }>,
   storedDisplayNames: ReadonlyMap<string, string | null> = new Map(),
 ): FleetConnectorView[] {
+  const titleByAgent = new Map(
+    capable.map(({ name, manifest }) => [
+      name,
+      fleetAgentTitle(name, manifest, storedDisplayNames.get(name)),
+    ]),
+  );
+  /*
+   * MAR-883. `title` rides along on each candidate so `describeFleetReach`
+   * (`lib/fleet/grants.ts`) can name an agent in the "Connecting Gmail
+   * connects it for …" sentence the same way `agents`/`skipped` below already
+   * do, instead of falling back to `agent_id` — the fix this same function
+   * arrived without, and the id leak MAR-877's own handoff found and could
+   * not close from inside its own file ownership.
+   */
   const candidates = capable.map(({ name, manifest }) => ({
     agent_id: name,
     manifest,
+    title: titleByAgent.get(name),
   }));
-  const titleByAgent = new Map(
-    candidates.map((candidate) => [
-      candidate.agent_id,
-      fleetAgentTitle(candidate.agent_id, candidate.manifest, storedDisplayNames.get(candidate.agent_id)),
-    ]),
-  );
 
   return fleetCatalogue().map((connector) => {
     const stored = readFleetConnection(connector.provider);

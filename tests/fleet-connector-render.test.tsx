@@ -337,7 +337,55 @@ describe("agents that are waiting, and agents that are not coming", () => {
         waiting: ["news-scout"],
       }),
     );
-    expect(html).toContain("Give it to news-scout");
+    // MAR-883: the button names the agent, never its folder id.
+    expect(html).toContain("Give it to News scout");
+    expect(html).not.toContain("Give it to news-scout");
+  });
+
+  it("tells two same-named waiting agents apart by folder, not id", () => {
+    const html = draw(
+      connector({
+        held: {
+          masked_hint: "••••abcd",
+          account_hint: null,
+          since: null,
+          permissions: [],
+          secret_readable: true,
+          unreadable: null,
+        },
+        agents: [
+          { agent: "meeting-assistant-2", title: "Meeting Assistant", connected: false },
+          { agent: "standup-notes", title: "Meeting Assistant", connected: true },
+        ],
+        waiting: ["meeting-assistant-2"],
+      }),
+    );
+    expect(html).toContain("Give it to Meeting Assistant");
+    expect(html).toContain("Meeting assistant 2");
+    expect(html).not.toContain("Give it to meeting-assistant-2");
+  });
+
+  it("counts rather than names when more than one agent is waiting", () => {
+    const html = draw(
+      connector({
+        held: {
+          masked_hint: "••••abcd",
+          account_hint: null,
+          since: null,
+          permissions: [],
+          secret_readable: true,
+          unreadable: null,
+        },
+        agents: [
+          { agent: "news-scout", title: "News scout", connected: false },
+          { agent: "invoice-reviewer", title: "Invoice reviewer", connected: false },
+        ],
+        waiting: ["news-scout", "invoice-reviewer"],
+      }),
+    );
+    expect(html).toContain("Give it to 2 waiting agents");
+    expect(html).not.toContain("news-scout");
+    expect(html).not.toContain("invoice-reviewer");
   });
 
   it("draws an agent it will not reach, with the reason and the next move", () => {
