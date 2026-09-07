@@ -6,6 +6,16 @@
  * manifest validates against the same `agent.manifest.v2.schema.json` the
  * runner will hold it to, which is the whole point of a template existing.
  *
+ * ## What is left here, and what moved (MAR-888)
+ *
+ * The manifest is not assembled here any more. `agent-kit/recipe.ts` holds one
+ * `AgentRecipe` and one `planFromRecipe`, and this file's `recipeFor` is now
+ * the only statement of how an agent this tool builds differs from one the
+ * Agent Kit builds. The shape the two share — manifest version, safety
+ * contract, monitoring, and the runtime / trigger / locations / control
+ * skeleton — is assembled once, in one file, so a correction to it cannot land
+ * in one copy. What follows is still the record of *why* they differ.
+ *
  * ## Why this is not `agent-kit/scaffold.ts`
  *
  * It is deliberately close to it, and the kit's shape is where the proven parts
@@ -13,7 +23,7 @@
  * empty `connections` array so the agent can be added and watched working
  * without anybody having a credential to hand.
  *
- * It diverges in one place, and the divergence is this packet's reason to
+ * It diverges in one place, and the divergence is MAR-862's reason to
  * exist: the kit's template emits a v1 `digest` and stops. An agent that stops
  * there produces something readable and nothing judgeable. This one emits the
  * digest **and** a v2 `brief` bound to it by `derived_from`, so its output can
@@ -27,8 +37,8 @@
  * so DASH's ask composer (`lib/views/ask.ts`) refuses every agent this tool
  * builds with `no_provider`: there is no `connection_id` to spend against, so
  * every plugin-built agent is READY and unable to answer a single question.
- * `lib/sample-agent.ts`'s `declareModelProvider` already amends DASH's own
- * sample this way for exactly this reason (MAR-619); this file now does the
+ * `lib/sample-agent.ts`'s `modelProviderConnection` already amends DASH's own
+ * sample this way for exactly this reason (MAR-619); this file does the
  * same thing for the agent a coding assistant builds, on the same ADR 0013
  * shape, `optional: true` so import never depends on a key existing. Only the
  * capability differs — the sample's step curates a digest and declares a
