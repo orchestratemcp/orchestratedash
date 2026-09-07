@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 11:35: MAR-884 merged (#339); DASH rebuilding on 82e0972 for the installed proof pass (MAR-875/877/874/879/884). Everything else per the 2026-09-07 handoff.",
+  "lifecycle_note": "2026-09-07 11:40: installed proof pass on 82e0972: MAR-875 and MAR-884 proven; MAR-877 AI/Notifications/Connections seen (100%); MAR-871 Servers and MAR-879 Add agent seen; MAR-874 seen with three residuals -> MAR-885 (lane K). Sample press and Check now next.",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2050,10 +2050,14 @@
     },
     {
       "id": "MAR-875",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
       "commit": "4ae4625",
-      "note": "PR #328: one result per selected run on the Output stage; author panel per run (lib/views/panel-run.ts), Sources (N) closed disclosure, numbered citations, rail grouped by run; smoke 6n/6p rewritten and green on CI (85/85). Proof owed: before/after on the installed build against Proof Scout 30-item brief."
+      "note": "PR #328: one result per selected run on the Output stage; author panel per run (lib/views/panel-run.ts), Sources (N) closed disclosure, numbered citations, rail grouped by run; smoke 6n/6p rewritten and green on CI (85/85). Proof owed: before/after on the installed build against Proof Scout 30-item brief. PROVEN 2026-09-07 on the installed build; see proof.",
+      "proof": {
+        "command": "Proof Scout Output stage on Henrik's DASH relaunched on master 82e0972 (desktop launcher, real %APPDATA%orchestratedash store), 2026-09-07 11:34, photographed via the computer-use grant; before frame 2026-09-06 20:23 on the pre-#328 build. Linear MAR-875 proof comment.",
+        "run": "Results shows the brief once; each paragraph ends in numbered citations [1]..[30] wrapped on three lines; receipt beside citations; author region = one closed Sources (30) + How this agent has been doing; zero digest bodies, zero open tables; no refresh."
+      }
     },
     {
       "id": "MAR-876",
@@ -2113,10 +2117,21 @@
     },
     {
       "id": "MAR-884",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
       "commit": "82e0972",
-      "note": "PR #339: .brief-citation white-space nowrap (MAR-875) removed every wrap point; override in the MAR-884 fence. Capture witness before overflow 630 / after 0 on a 30-item scene; the harness page_overflows cannot see this class (nested overflow-x:auto), targeted metric added. Proof owed: installed Output stage with no horizontal scrollbar."
+      "note": "PR #339: .brief-citation white-space nowrap (MAR-875) removed every wrap point; override in the MAR-884 fence. Capture witness before overflow 630 / after 0 on a 30-item scene; the harness page_overflows cannot see this class (nested overflow-x:auto), targeted metric added. Proof owed: installed Output stage with no horizontal scrollbar. PROVEN 2026-09-07 on the installed build; see proof.",
+      "proof": {
+        "command": "Same page, same session, 2026-09-07 11:34; compared with the 08:55 frame on b38b28a where the row scrolled sideways.",
+        "run": "Citation row wraps to three lines; no horizontal scrollbar; vertical scroll only."
+      }
+    },
+    {
+      "id": "MAR-885",
+      "lifecycle": "planned",
+      "linear_status": "Backlog",
+      "commit": null,
+      "note": "Settings page: no model row for an agent without a model; on-this-computer sentence under a host schedule; raw ISO instant in Scheduled runs (found on the installed build). Lane K dispatched."
     }
   ]
 }
