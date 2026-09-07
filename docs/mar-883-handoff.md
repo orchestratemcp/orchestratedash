@@ -199,3 +199,65 @@ store does anything — `runFleet`/`run` still call the same `share` action
 with the same agent id they always did; nothing about *what* the button does
 changed, only what it *says*. The installed Connections page, at any scale,
 is the orchestrator's proof, per the lane brief.
+
+## 7. Addendum (2026-09-07) — §4 closed, ownership extended to `lib/views/build.ts`
+
+The orchestrator ruled §5.1 (§4's `describeFleetReach` id leak) back into this
+lane's ownership before merge, naming `lib/views/build.ts` specifically. That
+file is otherwise still not this lane's to write in general — this was a
+one-ticket extension, not a standing grant.
+
+**`lib/views/build.ts:1345-1367` (`fleetConnectorViews`).** `titleByAgent` is
+now built directly from `capable` instead of from `candidates` (it never
+needed `candidates` — `fleetAgentTitle` only reads `agent_id`, `manifest` and
+`storedDisplayNames`), and `candidates` now carries `title:
+titleByAgent.get(name)` alongside `agent_id`/`manifest`. Everything
+downstream of `titleByAgent` (`agents`, `skipped`) is unchanged; `reach`
+(from `fleetReach(connector, candidates, ...)`) is the only new reader of the
+added field, by way of `FleetMaterialization.title`.
+
+**`lib/fleet/grants.ts`.** `FleetCandidate` and `FleetMaterialization` both
+gained an optional `title?: string` (optional because `lib/fleet/actions.ts`'s
+own `candidates()` — untouched, no title source in `FleetActionDeps` — still
+builds one without it, and must keep compiling and behaving exactly as
+before). `describeFleetReach` now runs `reach.materializes` through
+`disambiguateAgentTitles` exactly the way `describeSharedGrant` and
+`shareLabel` do, falling back to `agent_id` per-agent when a given
+materialization has no title. New `everyFleetReachSentence()` enumerator
+(three shapes: one agent, a same-titled pair, three-plus) feeding
+`expectPlainLanguage` in `tests/fleet-grants.test.ts`.
+
+**`tests/fleet-grants.test.ts`** gained a `describe` block exercising
+`describeFleetReach` directly (title-not-id, the same-name collision, and the
+explicit fallback-to-id case for a title-less caller) plus the sweep over
+`everyFleetReachSentence()`.
+
+**`tests/fleet-connections.test.ts`**, the MAR-792 test: `before?.reach_sentence`
+now asserts on `"News scout"` / `"News scout two"` (`fleetAgentTitle`'s
+humanised fallback for `SCOUT`/`OTHER_SCOUT`, neither manifest declaring a
+display name) and explicitly asserts the raw ids `SCOUT`/`OTHER_SCOUT` are
+*absent* — inverting what the test checked for MAR-792's own invariant, which
+is otherwise untouched: the sentence still disappears once every named agent
+already has the credential.
+
+### Verification
+
+Run from **PowerShell**, `%TEMP%\dash-mcp-run-*` cleared first (MAR-702's
+known cleanup-vs-live-child flake in `tools/dash-mcp/tests/template-run.test.ts`,
+not touched by this branch).
+
+| Command | Result |
+|---|---|
+| `pnpm typecheck` | clean |
+| focused (`fleet-grants`, `connectors`, `fleet-connector-render`, `service-row-render`, `connections-list`, `agent-labels`, `fleet-connections`) | 7 files, **138 tests**, all passed (was 134 before this addendum — 4 new) |
+| `pnpm test`, after merging `origin/master` (`00758df` — one file, `.orchestrate/state.json`, no overlap) | see the line below |
+
+`pnpm test` result: **280 test files passed, 5321 tests passed, 13 skipped,
+exit 0.** No failing file this run — `tools/dash-mcp/tests/template-run.test.ts`
+(the MAR-702 flake from the earlier run in §4) was not red this time, so no
+re-run-alone was needed.
+
+### Needs orchestrator — updated
+
+§5.1 is closed by this addendum. §5.2 (`FLEET_SKIPS` has no caller) and §5.3/§5.4
+stand as written above.

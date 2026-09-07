@@ -670,10 +670,14 @@ describe("which agents a fleet connection reaches", () => {
     const capable = Object.entries(world).map(([name, manifest]) => ({ name, manifest }));
 
     // Before the sign-in, the sentence is the promise the press is about to
-    // keep — both names, because signing in would reach both.
+    // keep — both names, because signing in would reach both. MAR-883: by
+    // title (`fleetAgentTitle`'s humanised fallback, since neither manifest
+    // declares one), never by the folder id these two agents are keyed by.
     const before = fleetConnectorViews(capable).find((one) => one.provider === GMAIL);
-    expect(before?.reach_sentence).toContain(SCOUT);
-    expect(before?.reach_sentence).toContain(OTHER_SCOUT);
+    expect(before?.reach_sentence).toContain("News scout");
+    expect(before?.reach_sentence).toContain("News scout two");
+    expect(before?.reach_sentence).not.toContain(SCOUT);
+    expect(before?.reach_sentence).not.toContain(OTHER_SCOUT);
 
     // One sign-in reaches every agent that qualifies — `performFleetSignIn`
     // materializes the whole reach, not just the account holder.

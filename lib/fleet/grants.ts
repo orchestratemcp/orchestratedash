@@ -36,6 +36,16 @@ import type { FleetConnector } from "./catalogue";
 export interface FleetCandidate {
   agent_id: string;
   manifest: ConnectionSourceManifest;
+  /**
+   * `agentDisplayName`'s answer for this agent, when the caller has it
+   * (MAR-883). Optional and carried straight through to `FleetMaterialization`
+   * rather than resolved in here, because this module has no manifest field
+   * and no rename column to resolve it from — only `lib/views/build.ts`'s own
+   * `titleByAgent` does. A caller that omits it (`lib/fleet/actions.ts`'s own
+   * candidates, which have no title source available) gets exactly today's
+   * behaviour: `describeFleetReach` falls back to `agent_id`.
+   */
+  title?: string;
 }
 
 /**
@@ -49,6 +59,8 @@ export interface FleetCandidate {
 export interface FleetMaterialization {
   agent_id: string;
   target: CredentialTarget;
+  /** Carried from the matching `FleetCandidate`. See its own doc. */
+  title?: string;
 }
 
 /**
@@ -132,7 +144,7 @@ export function fleetReach(
       });
       continue;
     }
-    materializes.push({ agent_id: candidate.agent_id, target: resolved });
+    materializes.push({ agent_id: candidate.agent_id, target: resolved, title: candidate.title });
   }
 
   return { materializes, skipped };
@@ -244,12 +256,23 @@ export function describeSkip(reason: FleetSkip, service: string): {
  * agent that asked for more than this consent covers still shows "you did not
  * give this one" on its own actions, and this sentence must not promise
  * otherwise.
+ *
+ * MAR-883. Names by title, not by `agent_id` — the same fix and the same
+ * `disambiguateAgentTitles` source `shareLabel` and `describeSharedGrant`
+ * use, so a name collision reads the identical suffix wherever a person meets
+ * it. `title` is optional on `FleetMaterialization` because not every caller
+ * has one to give (`lib/fleet/actions.ts`'s own candidates do not); a missing
+ * title falls back to `agent_id`, which is exactly what this sentence said
+ * before this fix existed.
  */
 export function describeFleetReach(connector: FleetConnector, reach: FleetReach): string | null {
-  const names = reach.materializes.map((one) => one.agent_id);
-  if (names.length === 0) {
+  if (reach.materializes.length === 0) {
     return null;
   }
+  const labels = disambiguateAgentTitles(
+    reach.materializes.map((one) => ({ name: one.agent_id, title: one.title ?? one.agent_id })),
+  );
+  const names = labels.map((one) => (one.suffix === null ? one.title : `${one.title} — ${one.suffix}`));
   const last = names[names.length - 1] as string;
   const list =
     names.length === 1
@@ -270,6 +293,49 @@ export function describeFleetReach(connector: FleetConnector, reach: FleetReach)
     `Connecting ${connector.service} connects it for ${list}, each with its own ` +
     `record and only the actions it asked for.`
   );
+}
+
+/**
+ * Every sentence `describeFleetReach` can produce, for the copy sweep.
+ *
+ * `describeFleetReach` reads only `connector.service`, so a minimal stand-in
+ * is honest here rather than a full `FleetConnector` fixture nothing else in
+ * this enumerator needs. One of each shape: a single agent, a same-named pair
+ * (the MAR-883 case — this sentence used to say the id twice, indistinguishable
+ * from each other and from a novice's expectations), and three or more.
+ */
+export function everyFleetReachSentence(): string[] {
+  const connector = { service: "Gmail" } as FleetConnector;
+  const one: FleetReach = {
+    materializes: [
+      { agent_id: "news-scout", target: {} as CredentialTarget, title: "News Scout" },
+    ],
+    skipped: [],
+  };
+  const collision: FleetReach = {
+    materializes: [
+      {
+        agent_id: "meeting-assistant-2",
+        target: {} as CredentialTarget,
+        title: "Meeting Assistant",
+      },
+      { agent_id: "standup-notes", target: {} as CredentialTarget, title: "Meeting Assistant" },
+    ],
+    skipped: [],
+  };
+  const three: FleetReach = {
+    materializes: [
+      { agent_id: "a", target: {} as CredentialTarget, title: "News Scout" },
+      { agent_id: "b", target: {} as CredentialTarget, title: "Invoice Reviewer" },
+      { agent_id: "c", target: {} as CredentialTarget, title: "Ledger Reporter" },
+    ],
+    skipped: [],
+  };
+  return [
+    describeFleetReach(connector, one) ?? "",
+    describeFleetReach(connector, collision) ?? "",
+    describeFleetReach(connector, three) ?? "",
+  ];
 }
 
 /**
