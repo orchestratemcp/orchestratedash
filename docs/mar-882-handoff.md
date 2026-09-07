@@ -140,3 +140,19 @@ have: reshoot `qa-screenshots-mar-878`'s `ask-no-provider` scene, click
 through the chief entry, and confirm the composer's field shows
 `"About AI News Scout: "` and focus, on the real Electron shell rather than a
 static render.
+
+## Addendum — merged with `origin/master` before opening the PR
+
+`origin/master` moved from `fab9dce` to `00758df` while this lane was in
+progress (MAR-881 and MAR-885 merged in the interval). `git merge
+origin/master` produced no conflicts — MAR-881 landed entirely inside
+`app/agents/detail/page.tsx`, which this packet never touches, for the reason
+given above. Re-verified after the merge:
+
+- `npx tsc --noEmit -p tsconfig.json` — clean.
+- `pnpm brand:check` — `✓ brand:check passed — 12 characters audited …`
+- `pnpm test` — `Test Files 279 passed (279)` / `Tests 5320 passed | 13
+  skipped (5333)`. Clean this time, including the two files that raced in the
+  earlier run (`tests/path-guard.test.ts`, `tests/task-workspace.test.ts`) —
+  consistent with the documented flake being about parallel load rather than
+  anything this packet changed.
