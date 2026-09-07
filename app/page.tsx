@@ -315,11 +315,11 @@ function TryTheScout(): ReactNode {
         place in the product that gave a user coordinates, and the whole reason
         it had to was that the sample lived in a menu and nowhere else.
 
-        It lives on the Add agent page now, beside the other two doors. So this
-        card ends where it should have ended all along: with the control, and
-        with what the next screen will offer. `TrySampleAgent` there does the
-        pressing, and this is a link because the choice — sample, assistant, or
-        a folder somebody already has — is that page's to present.
+        The sample now has a control on the Add agent page beside the other two
+        doors, and it is the same component standing here — so this card ends
+        where it should have ended all along, with the press itself. The link
+        under it goes to the other two doors, and is deliberately quiet: a
+        person whose DASH is empty is being offered one thing.
       */}
       <TrySampleAgent canAct={canAct} />
       <p className="wrap">

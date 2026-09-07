@@ -76,7 +76,8 @@ tests/copy-nouns.test.ts             new
 tests/copy-add-agent.test.ts
 tests/add-agent-render.test.tsx
 docs/mar-879-handoff.md              new
-qa-screenshots-mar-879/              frames + layout.json
+qa-screenshots-mar-879/              32 frames + layout.json
+qa-screenshots-mar-879-empty/        the empty-fleet card + the chief's transcript
 ```
 
 `electron/capture-add-agent.ts` is outside the ownership list I was given. It is
@@ -103,8 +104,11 @@ pnpm vitest run tests/copy-add-agent.test.ts tests/add-agent-render.test.tsx \
   tests/brand-surfaces.test.tsx tests/record-card.test.tsx
                                      6 files, 78 passed
 pnpm vitest run tests/tokens.test.ts 63 passed
-pnpm test                            (summary line pasted below)
+pnpm test                            Test Files 278 passed (278)
+                                     Tests 5280 passed | 13 skipped (5293)
 ```
+
+Nothing failed, so nothing needed re-running alone.
 
 ### Frames
 
@@ -130,6 +134,29 @@ the measurement for every frame. What it says:
 - `agent_links: 0` — the page still grows no listing of its own;
 - every disclosure scene opened, including the new assistant one, found by the
   words on its own summary rather than by an id.
+
+The scale pass is the eight `add-agent-scale*` frames: 1280 and 768, both
+themes, at `setZoomFactor` 0.8 and 1. At 80% the whole page — three doors, both
+old disclosures — fits one screen with no scroll. `page_overflows` is false at
+every one.
+
+### The empty fleet
+
+```
+$env:DASH_CAPTURE_DIR='qa-screenshots-mar-879-empty'
+pnpm exec electron dist\electron\capture-chief-zero-agents.mjs --user-data-dir=…
+```
+
+`qa-screenshots-mar-879-empty/01-cold-zero-agents.png` is the card a person with
+an empty DASH meets, and it now ends with a **Try a sample agent** button and a
+quiet link to the other two doors instead of a paragraph naming the ☰ button.
+The harness's own claim (the chief answers honestly with zero agents) still
+passes.
+
+That run also **confirmed** one of the items below rather than inferring it: the
+chief's answer in `transcript.json` still reads *"Choose \"Try a sample agent\"
+from the menu button at the top left of the window"* — `lib/copy/chief.ts:164`,
+outside this lane.
 
 ## What is NOT done
 
@@ -203,7 +230,10 @@ one `<details>`.
 3. **Two more copies of the menu instruction**, both outside this lane and both
    still telling a person to go and find the ☰ button:
    `lib/chief/briefing.ts:166` and `lib/copy/chief.ts:164`. Both now have a real
-   destination to name instead — the Add agent page.
+   destination to name instead — the Add agent page. The second is **confirmed
+   on screen**, not inferred: it is in
+   `qa-screenshots-mar-879-empty/transcript.json`, in the chief's answer to
+   "what agents do I have?".
 4. **`CopyableCommand` duplicates `CopyableText`** in
    `app/_components/server-card.tsx` (MAR-871). Eleven lines, deliberately
    copied rather than extracted because lifting it into a shared component means

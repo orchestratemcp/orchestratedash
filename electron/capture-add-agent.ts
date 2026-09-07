@@ -347,6 +347,18 @@ async function scaleSweep(target: BrowserWindow): Promise<void> {
     nativeTheme.themeSource = theme;
     for (const viewport of [VIEWPORTS[0], VIEWPORTS[1]] as const) {
       for (const scale of [0.8, 1] as const) {
+        /*
+         * Back to 1 before measuring the window, and it cost a run to learn.
+         *
+         * `resizeTo` sets the *content* size in device-independent pixels and
+         * then checks `window.innerWidth`, which is in CSS pixels — and zoom is
+         * exactly the ratio between them. At 0.8 a 1280-wide window reports
+         * 1599, the check never converges, and the harness dies with "the page
+         * reports 1599px" on the second pass rather than the first. So the
+         * window is resized unzoomed and zoomed afterwards, which is also the
+         * order a person does it in.
+         */
+        target.webContents.setZoomFactor(1);
         await go(target, ADD_AGENT);
         await resizeTo(target, viewport.width, viewport.height);
         target.webContents.setZoomFactor(scale);
