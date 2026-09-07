@@ -276,3 +276,149 @@ Run `electron/capture-cockpit.ts` on a fresh scratch `DASH_DATA_DIR` and look at
 the brief and the chat at 1280 and 375, both themes. That is the half of this
 packet with no picture of it: the Add agent page is proven by 32 frames and the
 readability change is proven by a stylesheet and an argument.
+
+---
+
+# Addendum — ownership extension
+
+The orchestrator extended this lane's ownership after the PR was first marked
+ready, ruling that items 1, 2 and 3 of "Needs orchestrator" had to land before
+#336 merged: the acceptance line — *all three entry paths without terminal
+steps* — is not met while the sample path opens a menu. Items 4 and 5 stay as
+follow-ups. The prose-face decision stands as recorded above.
+
+## 1. `sample.create` — the sample is one press
+
+`shell.menu` carries two numbers and deliberately cannot name an item, so the
+first version of the sample door could show DASH's menu and never press it. The
+command channel gained a second member of the `sample.*` family instead.
+
+- **`lib/shell/ipc.ts`** — the catalogue entry, the `SAMPLE_ACTIONS` member, the
+  widened `sampleAction` seam (`agent_id` is now optional), and the dispatcher
+  reading `payload.agent_id` instead of coercing it. `String(undefined)` would
+  have handed main the literal word "undefined" as an agent id — the same
+  correction `folder.choose` needed.
+- **`electron/preload.ts`** — `createSampleAgent()`, a named method rather than
+  a generic `sample(action)`, for `refreshSampleAgent`'s reason.
+- **`electron/main.ts`** — the handler, routed to the same
+  `offerSampleAgent(handoffContext)` that `runMenuAction` calls. **Not a second
+  implementation.** `lib/shell/menu.ts` is untouched and `tests/menu.test.ts`
+  still pins its label.
+- **`app/_data/source.ts`** — the bridge member and the wrapper, which composes
+  both refusals. The second one is the interesting one: an installed build older
+  than this command still has the application menu, so the sentence names the
+  door that exists on *their* build rather than describing one that does not.
+- **`app/_components/choose-folder.tsx`** — `SampleAgentControl` fires the
+  command. The `aria-haspopup="menu"` and the availability effect are gone; the
+  wrapper's honest refusal replaced the effect.
+- **`lib/copy/add-agent.ts`** — `sample.detail` described the menu because the
+  press could only open one. It describes the operation now, and
+  `sample_pending` was added for `CHOOSE_FOLDER_COPY.pending`'s reason.
+
+Why it is safe is entirely structural and is written out at the catalogue entry:
+**the payload is empty.** There is nothing a renderer can name — not a template,
+a folder, a project or an agent — so the widest thing a compromised renderer can
+ask for is exactly what the menu's first item already performs. What it starts
+ends at a native consent dialog page script cannot answer or read.
+
+Tests: `tests/shell.test.ts` gains the command to its inventory and a `describe`
+covering routing (`agent_id` arrives `undefined`, not `"undefined"`), refusal of
+six payload fields including `agent_id`, the audit record, and the
+trusted-side-only throw. `tests/add-agent-render.test.tsx` asserts the control
+is a plain button with **no** `aria-haspopup`, and a new `describe` fakes the
+bridge to prove what the press reaches in all three states.
+
+## 2. The four retired nouns, retired at their sites
+
+- `lib/copy/agent-page.ts` — `AGENT_OUTPUTS_COPY.heading` → **Results**.
+- `lib/copy/panel.ts` — `PANEL_ALREADY_SHOWN` names that heading verbatim, so it
+  moved in the same commit. Half the rename would have left a sentence pointing
+  at a section that no longer existed.
+- `app/settings/servers/page.tsx` — the `<h1>` → **Servers**.
+- `tests/agent-cockpit-render.test.tsx` — its fixture heading.
+
+Every other pin is by identity (`PANEL_ALREADY_SHOWN`, `AGENT_OUTPUTS_COPY.heading`
+in `tests/agent-feed-render.test.tsx`, `tests/agent-one-home.test.tsx`,
+`tests/one-result-per-run.test.tsx`, `tests/copy-agent-page.test.ts`) and needed
+no edit. `electron/smoke.ts` 6n and 6p were grepped and assert neither phrase.
+
+**One test did have to change its mind**, and it was not on the list:
+`tests/settings-tabs.test.tsx` holds MAR-593/MAR-599's rule that a Settings
+page's `<h1>` must not repeat its tab. Good rule with one blind spot — it treats
+every repetition as waste, and some words are not the page's to vary. Servers
+joins Add agent in `HELD_VERBATIM`, with the argument written beside it, and the
+rule goes on protecting the four pages whose titles are genuinely theirs. The
+definition the old heading carried is not lost; it is `SECTION_NOUNS.servers.means`.
+
+`tests/copy-nouns.test.ts` is now a **ban**: `BASELINE` is empty, which is the
+state the ratchet existed to reach. The shape is kept rather than flattened to a
+`not.toContain`, so a phrase that one day belongs somewhere again has to be
+written down. The scan reads comments too, which is why `lib/copy/nouns.ts` is
+the only file that still spells the retired names — the docblocks elsewhere
+describe the old name instead of quoting it.
+
+## 3. The chief stops giving coordinates
+
+`lib/copy/chief.ts`'s `CHIEF_WAITING` and `lib/chief/briefing.ts`'s
+`EMPTY_BRIEFING` both sent people to *"the menu button at the top left of the
+window"*. Both now name **Add agent** on the Agents page. `tests/chief.test.ts`
+and `tests/chief-briefing.test.ts` gained negative assertions (`not /menu/i`,
+`not /top left/i`) so a well-meaning revert has to come and say so. The briefing
+one matters most: it is the text a model reads, and a model repeating stale
+directions is a wrong answer nobody can trace back to a constant.
+
+## Files outside the original ownership list
+
+Every one of these was written under the extension:
+
+```
+lib/shell/ipc.ts                     catalogue entry, family member, seam, dispatch
+electron/preload.ts                  createSampleAgent
+electron/main.ts                     the handler, routed to offerSampleAgent
+app/_data/source.ts                  bridge member + wrapper + refusals
+lib/copy/agent-page.ts               Generated assets -> Results
+lib/copy/panel.ts                    the sentence that names that heading
+app/settings/servers/page.tsx        Remote machines -> Servers
+lib/copy/chief.ts                    CHIEF_WAITING
+lib/chief/briefing.ts                EMPTY_BRIEFING
+tests/shell.test.ts                  inventory + sample.create describe
+tests/settings-tabs.test.tsx         the stutter rule's boundary
+tests/chief.test.ts                  negative assertions
+tests/chief-briefing.test.ts         negative assertions
+tests/agent-cockpit-render.test.tsx  fixture heading
+```
+
+`electron/capture-add-agent.ts` was already recorded above.
+
+## Verified again, after the extension
+
+```
+pnpm typecheck                       clean
+pnpm brand:check                     clean
+pnpm test                            Test Files 278 passed (278)
+                                     Tests 5293 passed | 13 skipped (5306)
+```
+
+**One failure was investigated and is not this packet's.**
+`tools/dash-mcp/tests/template-run.test.ts` failed twice with
+`EPERM ... dash-mcp-run-*` in its `afterEach` `rmSync`, and a different test
+inside the file failed each time — the signature of a race, not a regression. It
+also failed on the *stashed* tree, three runs in a row, with the count climbing
+1 → 2 → 3. The cause was 69 orphaned `dash-mcp-run-*` directories in `%TEMP%`
+left by earlier runs on this machine. Clearing them made the file pass alone and
+the whole suite pass. Nothing in this packet touches `tools/dash-mcp`.
+
+Frames re-shot after the change, same harness and the same scratch-store
+procedure, so `qa-screenshots-mar-879/` shows the one-press button rather than
+the menu-opener.
+
+## What this does *not* change
+
+The evidence class is unchanged: fixture tests plus scratch-store frames. In
+particular the sample button has still never been pressed against a real
+`offerSampleAgent` on an installed build — `tests/shell.test.ts` proves the
+command routes and `tests/add-agent-render.test.tsx` proves the control calls
+it, and the native consent dialog on the far side is the orchestrator's walk.
+
+Items 4 (missing requirements after import) and 5 (`CopyableCommand` duplicating
+`CopyableText`) stay as follow-ups.
