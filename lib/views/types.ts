@@ -930,6 +930,8 @@ export interface RunModelView {
  * `notFound()`, an HTTP route returns 404, and the IPC channel returns a
  * document. One shape means one branch in the page.
  */
+import type { RunTraceView } from "./run-trace";
+
 export type RunView =
   | { found: false }
   | {
@@ -972,6 +974,16 @@ export type RunView =
        * finding against text the user cannot see.
        */
       grounding: GroundingAnalysis | null;
+      /**
+       * What the run actually did, as a tree (MAR-889).
+       *
+       * Never null: a run whose agent sent no spans gets an empty trace, and the
+       * page says the run has no step trace. A null would have made "DASH holds
+       * nothing" and "DASH did not look" the same value, and those are different
+       * claims — the first is what an older agent produces and the second is
+       * what a bug produces.
+       */
+      trace: RunTraceView;
     };
 
 /* ---------------------------------------------------------------------- *

@@ -74,6 +74,9 @@ import {
 import { readStandingAnswers } from "../agent-dom/standing-answers";
 import { readAgentSchedule, readScheduleRuns, readScheduleSpend } from "../schedule/store";
 import { buildAgentScheduleView, residentHostLabel } from "./agent-schedule";
+// MAR-889. Pure — no Node builtin on any path — so the same builder serves this
+// module and the client component that draws its output.
+import { buildRunTrace } from "./run-trace";
 import { dataDir } from "../db";
 /* MAR-697. The exports folder and the two words DASH puts around a file in it.
    `listAgentExports` reaches `node:fs`, which is ordinary here — this module
@@ -137,6 +140,7 @@ import {
   readNotificationSettings,
   resolveArtifactAvailability,
   readStore,
+  spansForRun,
   type ArtifactAvailability,
   type EvidencePullRecord,
   type StoreShape,
@@ -481,6 +485,7 @@ export function runView(
   // Newest first, and the newest is the one judged. A run that revised its
   // digest corrected it; grading the superseded copy would report a finding the
   // user cannot see on the page in front of them.
+  const storedSpans = spansForRun(agent, runId);
   const artifactRecords = artifactRecordsForRun(agent, runId);
   const artifacts = artifactRecords.map((record) => record.artifact);
   const availabilityForArtifact = resolveArtifactAvailability(agent, runId);
@@ -530,6 +535,22 @@ export function runView(
       artifacts[0] === undefined || !isDigestArtifact(artifacts[0])
         ? null
         : analyzeGrounding(artifacts[0]),
+    /*
+     * MAR-889. The tree, built here beside the plan/actual join for the same
+     * reason that join is here: the page is handed the answer rather than the
+     * ingredients, and both hosts hand it the same one.
+     *
+     * `runIsOver` comes from the run's own events and not from the spans. A root
+     * span with no end is precisely the case the spans cannot answer — asking
+     * them whether the run finished would be asking the unfinished thing about
+     * itself — and the terminal telemetry event is the record that can.
+     */
+    trace: buildRunTrace(storedSpans.spans, {
+      dropped: storedSpans.dropped,
+      runIsOver: events.some(
+        (event) => event.type === "run_completed" || event.type === "run_failed",
+      ),
+    }),
   };
 }
 

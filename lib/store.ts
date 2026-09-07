@@ -3,10 +3,12 @@ import {
   validateArtifact,
   validateEvent,
   validateManifest,
+  validateSpan,
   type AgentManifestV2,
   type AnyAgentManifest,
   type RunArtifact,
   type RunEvent,
+  type RunSpan,
 } from "./contracts";
 import { O_FLEET, isOName, oFor, type OName } from "./brand/o-cast";
 import { agentDisplayName } from "./copy/agent-name";
@@ -359,6 +361,12 @@ export function resetStore(): void {
     database.exec("DELETE FROM command_audit");
     database.exec("DELETE FROM agent_handoffs");
     database.exec("DELETE FROM run_artifacts");
+    // MAR-889. A trace goes with the run it explains, for the reason the pull
+    // record below goes with the evidence it was a reading of: a reset that kept
+    // the spans would leave the run inspector drawing a tree of operations
+    // belonging to a run nothing else in the store has heard of.
+    database.exec("DELETE FROM run_spans");
+    database.exec("DELETE FROM run_span_drops");
     database.exec("DELETE FROM workspace_artifacts");
     // MAR-488. DASH's record of its own reading goes with the thing it was a
     // reading of: a reset that kept it would leave the Runs page disclosing a
@@ -1255,6 +1263,404 @@ export function ingestArtifacts(input: unknown, options: IngestOptions = {}): In
   }
 
   return { accepted: accepted.length, rejected };
+}
+
+/* ---------------------------------------------------------------------- *
+ * Run spans (MAR-889)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * How many spans DASH will keep for one run.
+ *
+ * The durable half of the bound `MAX_TRACE_BUFFER_SPANS` sets on the runner's
+ * memory. Two thousand is far more than a readable tree and far less than a
+ * store an agent in a loop could fill: past it the span is refused and counted,
+ * and `lib/views/run-trace.ts` puts the count on the page. A trace that says it
+ * is incomplete is worth more than a shorter one that does not.
+ *
+ * The cap counts *distinct* spans in the run, not writes. Every span arrives
+ * twice — once open, once closed — and the second write revises the first, so a
+ * run at the cap can still finish the spans it already has.
+ */
+export const MAX_SPANS_PER_RUN = 2_000;
+
+/** How long a span attribute value may be before it is truncated. */
+const MAX_ATTRIBUTE_CHARS = 200;
+
+/**
+ * The only attribute keys DASH stores.
+ *
+ * An allowlist rather than a size limit, because the failure being prevented is
+ * not a large attribute bag — it is a *free* one. An open object beside an
+ * operation is where a prompt, a fetched page, a mailbox subject line or a
+ * bearer token eventually arrives, and no bound on its size stops any of that.
+ * These are the facts DASH draws, and a key not on this list is dropped in
+ * silence rather than kept and hidden, because a column nothing renders is a
+ * column somebody will render later.
+ *
+ * Widening it is a decision about what the page shows, and it is made here.
+ */
+const SPAN_ATTRIBUTE_ALLOWLIST = new Set([
+  /** Which try this was. The retry story on the page is built from it. */
+  "attempt",
+  /** The planned-route component this operation belongs to. */
+  "component_id",
+  /** The brokered operation's name — `gmail.search`, never its input. */
+  "operation",
+  /** Which connection was asked. An id the user's own page also shows. */
+  "connection_id",
+  /** Scheme and host of a page a run read. Never a path and never a query. */
+  "origin",
+  /** `digest` or `brief`. What kind of document an artifact span emitted. */
+  "artifact_kind",
+  /** How many things the operation handled. A count, never the things. */
+  "item_count",
+  /** An HTTP status, when the operation had one. */
+  "status_code",
+]);
+
+/**
+ * Values that must never be stored, whatever an agent put them in.
+ *
+ * Deliberately the same rules `tests/contracts.test.ts` applies to every
+ * example in the repository — `forbiddenCredentialKeys` and
+ * `obviousSecretValues` — rather than a second, softer transcription of them.
+ * That test is the standing statement of what a credential looks like in this
+ * repository; a filter that agreed with it only approximately would be a second
+ * answer to the question, and the drift would be invisible until something
+ * leaked.
+ *
+ * This is a net, not a boundary. The boundary is that a span has nowhere to put
+ * a payload at all: no input member, no output member, and an attribute
+ * allowlist above. `docs/telemetry-contract-v1.md` says the same thing about
+ * events and it is true here for the same reason — an agent that writes a
+ * credential into a sentence has made a mistake DASH catches, not a mistake
+ * DASH is designed around.
+ */
+const OBVIOUS_SECRET_VALUES = [
+  /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/i,
+  /\bsk-[A-Za-z0-9_-]{16,}\b/,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+  /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/,
+];
+
+const FORBIDDEN_ATTRIBUTE_KEYS = new Set([
+  "password",
+  "secret",
+  "token",
+  "access_token",
+  "refresh_token",
+  "client_secret",
+  "api_key",
+  "credential_value",
+]);
+
+/** What a string becomes when it carried something that looked like a secret. */
+export const REDACTED = "[redacted]";
+
+/**
+ * One string, with anything that looks like a credential replaced.
+ *
+ * The whole value goes, not the match. A sentence reading "the call failed with
+ * [redacted]" is honest and useless in the right way; leaving the words around a
+ * redacted token would let a caller reconstruct which token it was from what was
+ * said about it.
+ */
+function scrub(value: string): string {
+  return OBVIOUS_SECRET_VALUES.some((pattern) => pattern.test(value)) ? REDACTED : value;
+}
+
+/**
+ * The attributes DASH will keep, from the ones an agent sent.
+ *
+ * Three things happen and each has its own reason. A key not on the allowlist is
+ * dropped, because the bag must stay closed. A key on the forbidden list is
+ * dropped even if it were somehow allowlisted, because those two lists are
+ * maintained by different people at different times. And a value that looks like
+ * a credential becomes `[redacted]`, because an allowlisted key holding a token
+ * is exactly the accident this is downstream of.
+ *
+ * Returns null when nothing survived, so the column stays null rather than
+ * holding `{}` — an empty object and no attributes are the same fact and should
+ * not be two different rows.
+ */
+function keepAttributes(
+  input: RunSpan["attributes"],
+): Record<string, string | number | boolean | null> | null {
+  if (input === undefined || input === null || typeof input !== "object") {
+    return null;
+  }
+  const kept: Record<string, string | number | boolean | null> = {};
+  let any = false;
+  for (const [key, value] of Object.entries(input)) {
+    const lowered = key.toLowerCase();
+    if (!SPAN_ATTRIBUTE_ALLOWLIST.has(lowered) || FORBIDDEN_ATTRIBUTE_KEYS.has(lowered)) {
+      continue;
+    }
+    if (typeof value === "string") {
+      kept[lowered] = scrub(value).slice(0, MAX_ATTRIBUTE_CHARS);
+    } else if (typeof value === "number" || typeof value === "boolean" || value === null) {
+      kept[lowered] = value;
+    } else {
+      // An object or an array under an allowlisted key is a payload wearing an
+      // approved name. Dropped rather than stringified.
+      continue;
+    }
+    any = true;
+  }
+  return any ? kept : null;
+}
+
+/** The error DASH will keep, bounded and scrubbed, or null. */
+function keepError(input: RunSpan["error"]): { code?: string; message?: string } | null {
+  if (input === undefined || input === null || typeof input !== "object") {
+    return null;
+  }
+  const code = typeof input.code === "string" ? scrub(input.code).slice(0, 80) : undefined;
+  // 300, which is telemetry v1's own bound on `detail`. The same sentence
+  // written to both channels should not survive one and be cut by the other.
+  const message =
+    typeof input.message === "string" ? scrub(input.message).slice(0, 300) : undefined;
+  if (code === undefined && message === undefined) {
+    return null;
+  }
+  return { ...(code === undefined ? {} : { code }), ...(message === undefined ? {} : { message }) };
+}
+
+/**
+ * The usage DASH will keep, or null.
+ *
+ * `source` is forced to `"reported"` rather than copied. It is the field that
+ * stops a renderer presenting this as a provider's charge, and a value DASH
+ * wrote itself is the only one that can carry that weight — see
+ * `docs/telemetry-contract-v1.md` on why DASH computes no price, and
+ * `lib/ai/ask.ts` for the one place a provider-stated charge is recorded, which
+ * is not this one.
+ */
+function keepUsage(input: RunSpan["usage"]): RunSpan["usage"] {
+  if (input === undefined || input === null || typeof input !== "object") {
+    return null;
+  }
+  const numbers: Record<string, number> = {};
+  for (const key of ["tokens_in", "tokens_out", "cost_usd"] as const) {
+    const value = input[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      numbers[key] = value;
+    }
+  }
+  if (Object.keys(numbers).length === 0) {
+    return null;
+  }
+  return { ...numbers, source: "reported" };
+}
+
+/**
+ * Accept one run span, or a batch (MAR-889).
+ *
+ * The same boundary discipline as `ingestEvents` and `ingestArtifacts`: every
+ * candidate is validated on its own, one malformed span never discards its
+ * neighbours, and the accepted set lands in a single transaction.
+ *
+ * `sourceAgents` is the provenance binding the runner supplies, and it matters
+ * for the reason it matters on an artifact: a span is drawn on a page beside a
+ * run, so a hosted child publishing spans under another agent's run id would be
+ * describing another agent's work in its own words.
+ *
+ * ## Written twice on purpose
+ *
+ * A span arrives when the operation opens and again when it closes, and the
+ * upsert makes the second write a revision of the first. That is what gives a
+ * run in flight a tree — and it is what makes an unfinished span honest: if the
+ * closing write never comes, the row keeps `ended_at` null and `status`
+ * "unknown" for good, and the page says so rather than completing the shape.
+ *
+ * The one thing the upsert must not do is lose a close to a late-arriving open.
+ * It does not, because the two writes are a strict progression — `ended_at` and
+ * a terminal `status` only ever move away from null and "unknown" — and the
+ * drain preserves the order the agent wrote them in.
+ */
+export function ingestSpans(input: unknown, options: IngestOptions = {}): IngestResult {
+  const items = Array.isArray(input) ? input : [input];
+  const accepted: RunSpan[] = [];
+  const rejected: IngestResult["rejected"] = [];
+
+  items.forEach((item, index) => {
+    const result = validateSpan(item);
+    if (result.ok) {
+      const sourceAgent = options.sourceAgents?.[index];
+      if (sourceAgent !== undefined && result.value.agent !== sourceAgent) {
+        rejected.push({ index, errors: ["/agent must match the runner-hosted source"] });
+      } else {
+        accepted.push(result.value);
+      }
+    } else {
+      rejected.push({ index, errors: result.errors });
+    }
+  });
+
+  if (accepted.length === 0) {
+    return { accepted: 0, rejected };
+  }
+
+  const database = db();
+  const receivedAt = new Date().toISOString();
+  let stored = 0;
+
+  transact(database, () => {
+    /*
+     * Counted per run and inside the transaction, because two batches for the
+     * same run can arrive from two polls and the cap is a property of the run
+     * rather than of a batch. Read once per distinct run and then kept in step
+     * as rows are inserted, which is what stops a two-thousand-span batch
+     * costing two thousand counts.
+     */
+    const counts = new Map<string, number>();
+    const dropsByRun = new Map<string, { agent: string; run_id: string; dropped: number }>();
+
+    for (const span of accepted) {
+      const runKey = `${span.agent} / ${span.run_id}`;
+      if (!counts.has(runKey)) {
+        const row = database
+          .prepare("SELECT COUNT(*) AS n FROM run_spans WHERE agent = ? AND run_id = ?")
+          .get(span.agent, span.run_id) as { n: number } | undefined;
+        counts.set(runKey, row?.n ?? 0);
+      }
+
+      const existing = database
+        .prepare(
+          "SELECT 1 FROM run_spans WHERE agent = ? AND run_id = ? AND span_id = ?",
+        )
+        .get(span.agent, span.run_id, span.span_id) !== undefined;
+
+      // A revision of a span already stored is never refused: the run is at its
+      // cap either way, and dropping a close would strand a finished operation
+      // as permanently unknown.
+      if (!existing && (counts.get(runKey) ?? 0) >= MAX_SPANS_PER_RUN) {
+        const tally = dropsByRun.get(runKey) ?? {
+          agent: span.agent,
+          run_id: span.run_id,
+          dropped: 0,
+        };
+        tally.dropped += 1;
+        dropsByRun.set(runKey, tally);
+        continue;
+      }
+
+      const attributes = keepAttributes(span.attributes);
+      const error = keepError(span.error);
+      const usage = keepUsage(span.usage);
+
+      database
+        .prepare(
+          "INSERT INTO run_spans " +
+            "(agent, run_id, span_id, parent_span_id, name, kind, started_at, ended_at, " +
+            "status, error_json, attributes_json, usage_json, received_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+            "ON CONFLICT (agent, run_id, span_id) DO UPDATE SET " +
+            "parent_span_id = excluded.parent_span_id, name = excluded.name, " +
+            "kind = excluded.kind, started_at = excluded.started_at, " +
+            "ended_at = excluded.ended_at, status = excluded.status, " +
+            "error_json = excluded.error_json, attributes_json = excluded.attributes_json, " +
+            "usage_json = excluded.usage_json, received_at = excluded.received_at",
+        )
+        .run(
+          span.agent,
+          span.run_id,
+          span.span_id,
+          span.parent_span_id,
+          // Bounded here as well as in the schema. The schema is the contract
+          // and this is the column; a name that got past one should not be able
+          // to get past the other.
+          scrub(span.name).slice(0, 120),
+          span.kind,
+          span.started_at,
+          span.ended_at ?? null,
+          span.status,
+          error === null ? null : JSON.stringify(error),
+          attributes === null ? null : JSON.stringify(attributes),
+          usage === null || usage === undefined ? null : JSON.stringify(usage),
+          receivedAt,
+        );
+
+      if (!existing) {
+        counts.set(runKey, (counts.get(runKey) ?? 0) + 1);
+      }
+      stored += 1;
+    }
+
+    for (const tally of dropsByRun.values()) {
+      database
+        .prepare(
+          "INSERT INTO run_span_drops (agent, run_id, dropped, updated_at) VALUES (?, ?, ?, ?) " +
+            "ON CONFLICT (agent, run_id) DO UPDATE SET " +
+            "dropped = run_span_drops.dropped + excluded.dropped, updated_at = excluded.updated_at",
+        )
+        .run(tally.agent, tally.run_id, tally.dropped, receivedAt);
+    }
+  });
+
+  return { accepted: stored, rejected };
+}
+
+/** A stored span, and how many its run's cap refused. */
+export interface StoredRunSpans {
+  spans: RunSpan[];
+  /** Spans DASH refused because the run was already at `MAX_SPANS_PER_RUN`. */
+  dropped: number;
+}
+
+/**
+ * Every span a run produced, in the order they opened.
+ *
+ * Read straight from the table rather than through `StoreShape`, for
+ * `artifactsForRun`'s reason: a trace is joined to a run on demand by the one
+ * page that draws it, and folding every span a machine has ever recorded into
+ * the snapshot every page reads would make the agents list pay for the run
+ * inspector.
+ *
+ * A row that will not parse is skipped rather than thrown, exactly as a damaged
+ * event and a damaged artifact are. A run page that goes blank because one
+ * attribute blob is corrupt is the failure MAR-449 already paid for once.
+ */
+export function spansForRun(agent: string, runId: string): StoredRunSpans {
+  const rows = db()
+    .prepare(
+      "SELECT span_id, parent_span_id, name, kind, started_at, ended_at, status, " +
+        "error_json, attributes_json, usage_json FROM run_spans " +
+        "WHERE agent = ? AND run_id = ? ORDER BY started_at ASC, span_id ASC",
+    )
+    .all(agent, runId) as Array<Record<string, unknown>>;
+
+  const spans: RunSpan[] = [];
+  for (const row of rows) {
+    const parent = row["parent_span_id"];
+    const ended = row["ended_at"];
+    spans.push({
+      trace_version: 1,
+      agent,
+      run_id: runId,
+      span_id: text(row, "span_id"),
+      parent_span_id: typeof parent === "string" ? parent : null,
+      name: text(row, "name"),
+      kind: text(row, "kind") as RunSpan["kind"],
+      started_at: text(row, "started_at"),
+      ended_at: typeof ended === "string" ? ended : null,
+      status: text(row, "status") as RunSpan["status"],
+      error: parseOrNull<NonNullable<RunSpan["error"]>>(String(row["error_json"] ?? "")),
+      attributes: parseOrNull<NonNullable<RunSpan["attributes"]>>(
+        String(row["attributes_json"] ?? ""),
+      ),
+      usage: parseOrNull<NonNullable<RunSpan["usage"]>>(String(row["usage_json"] ?? "")),
+    });
+  }
+
+  const drop = db()
+    .prepare("SELECT dropped FROM run_span_drops WHERE agent = ? AND run_id = ?")
+    .get(agent, runId) as { dropped: number } | undefined;
+
+  return { spans, dropped: drop?.dropped ?? 0 };
 }
 
 /**

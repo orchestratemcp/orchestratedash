@@ -419,6 +419,41 @@ describe("POST /telemetry/drain", () => {
 });
 
 /* ---------------------------------------------------------------------- *
+ * Trace drain (MAR-889)
+ * ---------------------------------------------------------------------- */
+
+describe("POST /traces/drain", () => {
+  beforeEach(async () => {
+    harness = await startRunner();
+    harness.supervisor.start(AGENT);
+    await waitFor(() => harness.supervisor.report(AGENT) !== null, "the agent's first report");
+  });
+  afterEach(async () => {
+    await harness.close();
+  });
+
+  it("is on the runner's own credential, exactly as the other drains are", async () => {
+    // The route carries what an agent said about its own steps and nothing a
+    // caller could act on, but it is on the authenticated channel regardless:
+    // an unauthenticated route on this server would be a precedent, and the
+    // next one added beside it would carry something worse.
+    const unauthorized = await harness.call(`${harness.base}/traces/drain`, { method: "POST" });
+    expect(unauthorized.status).toBe(401);
+
+    const response = await harness.call(`${harness.base}/traces/drain`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(response.status).toBe(200);
+    // The fixture agent writes no spans, so this is the shape a runner answers
+    // for every agent built before MAR-889 — an empty batch rather than an
+    // error, which is what makes the older-agent path indistinguishable from a
+    // quiet one.
+    expect(await response.json()).toEqual({ ok: true, spans: [], dropped: 0 });
+  });
+});
+
+/* ---------------------------------------------------------------------- *
  * Commands
  * ---------------------------------------------------------------------- */
 

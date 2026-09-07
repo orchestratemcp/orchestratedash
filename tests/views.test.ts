@@ -27,6 +27,7 @@ process.env.DASH_DATA_DIR = dataDir;
 const {
   importManifest,
   ingestEvents,
+  ingestSpans,
   recordAgentBroughtHome,
   recordAgentDeploy,
   resetStore,
@@ -340,6 +341,69 @@ describe("runView", () => {
     expect(view.manifest_imported).toBe(false);
     expect(view.unplanned_component_ids).toEqual([]);
     expect(view.planned_route).toEqual([]);
+  });
+
+  it("carries an empty trace for a run whose agent sent no spans (MAR-889)", () => {
+    /*
+     * The compatibility claim, made through the reader the page uses. Every run
+     * already in somebody's store is this run: telemetry and no spans. The view
+     * must carry an empty trace rather than a null, because a null would make
+     * "DASH holds nothing for this run" and "this build has no trace support"
+     * the same value, and the page draws different sentences for them.
+     */
+    ingestEvents(violatingRun);
+
+    const view = runView("email-lead-to-crm", "run-gate-violation-demo");
+    expect(view.found).toBe(true);
+    if (!view.found) {
+      return;
+    }
+    expect(view.trace).toMatchObject({ roots: [], orphans: [], total: 0, dropped: 0 });
+    // The run ended, so an unfinished span on it would mean the agent died
+    // inside one. Read from the run's own terminal event and not from the spans.
+    expect(view.trace.run_is_over).toBe(true);
+    // And nothing else on the page moved: the events are still the record.
+    expect(view.events.length).toBeGreaterThan(0);
+  });
+
+  it("builds the tree from what the store holds", () => {
+    ingestEvents(violatingRun);
+    const runId = "run-gate-violation-demo";
+    ingestSpans([
+      {
+        trace_version: 1,
+        agent: "email-lead-to-crm",
+        run_id: runId,
+        span_id: "root",
+        parent_span_id: null,
+        name: "This run",
+        kind: "run",
+        started_at: "2026-07-04T09:15:00.000Z",
+        ended_at: "2026-07-04T09:15:30.000Z",
+        status: "ok",
+      },
+      {
+        trace_version: 1,
+        agent: "email-lead-to-crm",
+        run_id: runId,
+        span_id: "step-1",
+        parent_span_id: "root",
+        name: "Read the mailbox",
+        kind: "step",
+        started_at: "2026-07-04T09:15:02.000Z",
+        ended_at: "2026-07-04T09:15:09.000Z",
+        status: "ok",
+      },
+    ]);
+
+    const view = runView("email-lead-to-crm", runId);
+    expect(view.found).toBe(true);
+    if (!view.found) {
+      return;
+    }
+    expect(view.trace.total).toBe(2);
+    expect(view.trace.roots[0]?.span.span_id).toBe("root");
+    expect(view.trace.roots[0]?.children[0]?.span.name).toBe("Read the mailbox");
   });
 });
 

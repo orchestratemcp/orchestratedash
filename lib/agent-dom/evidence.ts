@@ -62,6 +62,7 @@
 import {
   ingestArtifacts,
   ingestEvents,
+  ingestSpans,
   syncWorkspaceArtifacts,
   type IngestResult,
 } from "../store";
@@ -142,10 +143,22 @@ export interface EvidencePull {
   /** Candidates the runner's bounded buffer destroyed before DASH got there. */
   telemetry_dropped: number;
   artifacts_dropped: number;
+  /**
+   * Spans the runner's bounded trace buffer destroyed before DASH got there
+   * (MAR-889).
+   *
+   * Its own member beside the two above rather than a share of either, because
+   * the three answer different questions about the same poll: how much of what
+   * the run *did* was lost, how much of what it *produced* was lost, and how
+   * much of the *explanation* was. Only the third can be non-zero on a run whose
+   * record is otherwise complete.
+   */
+  spans_dropped: number;
   /** The runner's artifact index was longer than the one route returns. */
   workspace_truncated: boolean;
   events_ingested: number;
   artifacts_ingested: number;
+  spans_ingested: number;
   /**
    * Every file-backed output the runner named in this pass (MAR-611).
    *
@@ -273,6 +286,71 @@ async function drainArtifacts(
 }
 
 /**
+ * Drain the run-span side channel, on the same channel as the two above
+ * (MAR-889).
+ *
+ * Separate from `drainTelemetry` for the reason the runner keeps a separate
+ * route: spans are validated against `contracts/run-span.schema.json` at
+ * `ingestSpans`, and events against the frozen v1 schema at `ingestEvents`. One
+ * reply carrying both would make this process sort untrusted bodies apart by
+ * inspecting them.
+ *
+ * ## A runner that has never heard of this route
+ *
+ * Answers 404, `response.ok` is false, and this returns `reached: false` with no
+ * log line — exactly what `syncWorkspace` does for a runner built without a
+ * workspace, and for the same reason: an older runner answering the routes it
+ * has is not a fault worth a line on every five-second poll. The consequence
+ * downstream is the honest one. DASH holds no spans for that run, and
+ * `lib/views/run-trace.ts` says the run has no step trace rather than drawing a
+ * tree it inferred from the events.
+ *
+ * An older *agent* on a current runner arrives at the same place by a different
+ * road: the route answers, the batch is empty, nothing is stored. Both cases
+ * were the whole point of putting spans on their own message and their own
+ * route instead of widening telemetry v1.
+ */
+async function drainTraces(
+  channel: RemoteRunnerChannel,
+  log: (line: string) => void,
+): Promise<{ dropped: number; ingested: number; reached: boolean }> {
+  try {
+    const response = await channel.call("/traces/drain", {
+      method: "POST",
+      signal: AbortSignal.timeout(DRAIN_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      return { dropped: 0, ingested: 0, reached: false };
+    }
+
+    const body = (await response.json()) as { spans?: unknown; dropped?: unknown };
+    const dropped = typeof body.dropped === "number" && body.dropped > 0 ? body.dropped : 0;
+    if (dropped > 0) {
+      log(
+        `[dash-shell] runner trace buffer dropped ${String(dropped)} ` +
+          `span${dropped === 1 ? "" : "s"} before this poll`,
+      );
+    }
+    if (!Array.isArray(body.spans) || body.spans.length === 0) {
+      return { dropped, ingested: 0, reached: true };
+    }
+
+    const batch = envelopes(body.spans, "span", log, "span");
+    const result = ingestSpans(
+      batch.map((candidate) => candidate.payload),
+      { sourceAgents: batch.map((candidate) => candidate.agent_id) },
+    );
+    report(result, log, "runner-hosted run span");
+    return { dropped, ingested: result.accepted, reached: true };
+  } catch {
+    // Fire-and-forget, exactly as the two above are. A trace is an explanation
+    // of a run and never the run's own record, so a failed drain costs a
+    // drawing rather than anything a person cannot get back another way.
+    return { dropped: 0, ingested: 0, reached: false };
+  }
+}
+
+/**
  * Take up the runner's picture of its file-backed artifacts (MAR-434).
  *
  * A GET of the whole index rather than a drain, because availability is a state
@@ -384,18 +462,36 @@ export async function pullEvidence(
 
   const telemetry = await drainTelemetry(channel, log);
   const artifacts = await drainArtifacts(channel, log);
+  /*
+   * Fourth in the sequence and after the events it explains, deliberately.
+   *
+   * Not for correctness — `run_spans` has no foreign key into `runs` and a span
+   * is stored whether or not its run's events arrived — but for what a person
+   * sees on a page refreshing every five seconds. Drained first, a run would
+   * flash a tree of operations above a page that did not yet know the run
+   * existed. The ordering costs nothing: a runner that stopped answering costs
+   * four timeouts either way, and sequential is what this loop's self-scheduling
+   * timeout has always been sized against.
+   */
+  const traces = await drainTraces(channel, log);
   const workspace = await syncWorkspace(channel, log);
 
   return {
     source: options.source,
     kind: options.kind,
     observed_at: now(),
-    reached: telemetry.reached || artifacts.reached || workspace.reached,
+    // A runner that served telemetry and 404'd `/traces/drain` is a runner DASH
+    // reached — which is the ordinary case for every runner built before
+    // MAR-889, and treating it as unreachable would make the honesty sentence
+    // say DASH never looked on a poll where it did.
+    reached: telemetry.reached || artifacts.reached || traces.reached || workspace.reached,
     telemetry_dropped: telemetry.dropped,
     artifacts_dropped: artifacts.dropped,
+    spans_dropped: traces.dropped,
     workspace_truncated: workspace.truncated,
     events_ingested: telemetry.ingested,
     artifacts_ingested: artifacts.ingested,
+    spans_ingested: traces.ingested,
     workspace_index: workspace.indexed,
   };
 }
@@ -415,7 +511,7 @@ export async function pullEvidence(
  */
 function envelopes(
   candidates: readonly unknown[],
-  member: "event" | "artifact",
+  member: "event" | "artifact" | "span",
   log: (line: string) => void,
   what: string,
 ): Array<{ agent_id: string; payload: unknown }> {
