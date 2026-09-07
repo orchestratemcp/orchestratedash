@@ -8802,3 +8802,84 @@ main:has(.agent-cockpit) {
   background: var(--surface-2);
 }
 /* ==== MAR-875 end ==== */
+
+/* ==== MAR-878 begin ==== */
+/*
+ * Truthful readiness: the capability chip beside the runtime pill, and the
+ * three-line footer that replaced a one-line one.
+ *
+ * Layout and tone only. Every colour is a token — `app/tokens.css` owns them
+ * and this block defines none.
+ */
+
+/* The header chip. Sized off the status pill beside it rather than given its
+   own scale, so the two read as one row of facts about one agent. */
+.ask-capability-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.ask-capability-chip .ask-capability-label {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.68rem;
+}
+
+.ask-capability-chip .ask-capability-value {
+  color: var(--text);
+}
+
+/* Exactly one tone is allowed to be loud, `StatusTone`'s own rule applied to
+   the chip beside it: an agent that cannot be asked anything is a thing to
+   notice, and an agent that can is not. */
+.ask-capability-chip.is-attention {
+  border-color: var(--warn);
+}
+
+.ask-capability-chip.is-attention .ask-capability-value {
+  color: var(--warn);
+}
+
+/* The footer. Three stacked lines and a row of actions, where the blocked bar
+   used to be a sentence and a link on one line. */
+.cockpit-chat-blocked .ask-capability-line {
+  margin: 0 0 0.35rem;
+}
+
+.cockpit-chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* The chief entry: a control and the one line that says what pressing it does.
+   Wraps as a unit so the sentence never orphans itself under a button. */
+.ask-chief-entry {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ask-chief-entry .muted {
+  font-size: 0.8rem;
+}
+
+.ask-blocked-card .ask-capability-line {
+  margin: 0 0 0.4rem;
+}
+
+.ask-blocked-card .ask-chief-entry {
+  margin-top: 0.6rem;
+}
+/* ==== MAR-878 end ==== */

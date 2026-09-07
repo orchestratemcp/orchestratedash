@@ -68,6 +68,7 @@ function header(over: Partial<Parameters<typeof AgentCockpitHeader>[0]> = {}): s
         agent={AGENT}
         avatar="wizard"
         busy={null}
+        capability={describeAskCapability("available", { agent: AGENT, service: "OpenRouter" })}
         control={READY}
         goal="Reads the news and writes you a digest."
         hasFolder

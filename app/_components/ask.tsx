@@ -6,6 +6,8 @@ import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction
 import { AGENT_COCKPIT_COPY } from "../../lib/copy/agent-page";
 import {
   ASK_ACTIVITY_LABEL,
+  ASK_CHIEF_ENTRY,
+  ASK_CHIEF_ENTRY_DETAIL,
   ASK_CLEAR,
   ASK_CLEAR_DETAIL,
   ASK_CLOSE,
@@ -14,6 +16,7 @@ import {
   describeAgentScopeChip,
   describeAskActivity,
   describeChatSubject,
+  type AskCapabilityAction,
 } from "../../lib/copy/ask";
 import type { OName } from "../../lib/brand/o-cast";
 import type { AgentAskView, AskExchangeView } from "../../lib/views/types";
@@ -171,17 +174,35 @@ export function AskThread({
          * fix-it card is.
          */
         <div className="ask-blocked-card">
+          {/* MAR-878. The capability, first and in the same three words the
+              header chip and the footer use, so a person arriving here from
+              either of them recognises where they landed. `.chip` rather than
+              a heading: the sentence under it is the headline, and two
+              headlines would be two claims. */}
+          <p className="ask-capability-line">
+            <span className="chip">{ask.capability.label}</span>
+          </p>
           <p className="wrap">
             <strong>{ask.blocked.headline}</strong>
           </p>
           <p className="muted wrap">{ask.blocked.meaning}</p>
+          {/* A held key the provider turned down when DASH last checked. Said
+              here and never used to refuse — see `AskCapability.caution`. */}
+          {ask.capability.caution === null ? null : (
+            <p className="muted wrap">{ask.capability.caution}</p>
+          )}
           {ask.connect === null || !canAct ? (
             <p className="ask-next wrap">{ask.blocked.next_action}</p>
           ) : (
             <button type="button" className="primary" disabled={busy} onClick={() => void connect()}>
-              {ask.blocked.next_action}
+              {ask.capability.action.label}
             </button>
           )}
+          {/* MAR-878. Direct chat is unavailable on every arm of this card, so
+              the chief entry is on every arm of it — the surface that can still
+              answer questions about this agent, told the same reason id and the
+              same recovery sentence this card shows. */}
+          <ChiefEntry />
         </div>
       )}
 
@@ -532,6 +553,62 @@ function AskActivity({
 }
 
 /**
+ * Where the one action that meets an unmet requirement actually lives
+ * (MAR-878).
+ *
+ * `AskCapabilityAction`'s kind, resolved to a stage of this agent — or, for
+ * `chief`, to the fleet, which is where DASH's own composer is.
+ *
+ * Every arm is a *link*, and that is deliberate rather than a shortcut. This
+ * band is pinned to the bottom of the frame from every stage, and a bar that
+ * fired a connect flow from here would be offering the consequence without the
+ * two sentences that explain it — the rule `AgentChatBar` has kept since
+ * MAR-641. What the link does that "Open chat" did not is *say which act it is
+ * taking you to*, which is `AgentChecklistStep.action`'s own shape: a labelled
+ * pointer into the stage that owns the decision.
+ */
+function capabilityHref(agent: string, action: AskCapabilityAction): string {
+  switch (action.kind) {
+    case "connect":
+      // The Chat stage: the fix-it card there carries the actual connect
+      // button and the two sentences under it.
+      return agentStageHref(agent, "chat");
+    case "settings":
+      return agentStageHref(agent, "settings");
+    case "run":
+      return agentStageHref(agent, "run");
+    case "chief":
+    case "ask":
+      // The fleet, where the chief's composer is. `ask` never reaches here —
+      // an agent that can be asked draws a composer, not a link — and it is
+      // answered rather than thrown so a future arm cannot crash a footer.
+      return "/";
+  }
+}
+
+/**
+ * The chief entry, offered wherever this agent cannot be asked directly
+ * (MAR-878).
+ *
+ * Not a repair and never presented as one. It says what it is: DASH's own
+ * chief answers from the records it keeps about every agent, including this
+ * one, and the briefing it is given for that turn carries this agent's exact
+ * reason id and the same recovery sentence shown here — see
+ * `lib/chief/briefing.ts`. So the two surfaces cannot send somebody to
+ * different places.
+ */
+function ChiefEntry(): ReactNode {
+  return (
+    <span className="ask-chief-entry">
+      <Link className="button-link" href="/">
+        {ASK_CHIEF_ENTRY}
+      </Link>
+      <span className="muted wrap">{ASK_CHIEF_ENTRY_DETAIL}</span>
+    </span>
+  );
+}
+
+/**
  * The chat bar pinned to the bottom of the cockpit (MAR-641).
  *
  * One band of the frame, on screen whatever stage is showing, and the reason it
@@ -617,10 +694,37 @@ export function AgentChatBar({
         />
       ) : (
         <div className="cockpit-chat-blocked">
-          <p className="wrap">{ask.blocked.headline}</p>
-          <Link className="button-link" href={agentStageHref(agent, "chat")}>
-            {AGENT_COCKPIT_COPY.chat_open}
-          </Link>
+          {/*
+            MAR-878. Three lines where there was one, because there were always
+            three facts and the bar showed only the middle one.
+
+            The label is the same short phrase the header's chip carries, so a
+            person who read "Built without a model" up there meets the same
+            words down here rather than a second wording of the same state. The
+            sentence is `describeUnavailable`'s own headline — the line this bar
+            already drew. The control names the one act that would change it and
+            goes to the stage that owns that act.
+          */}
+          <p className="ask-capability-line wrap">
+            <span className="chip">{ask.capability.label}</span>{" "}
+            {ask.capability.sentence}
+          </p>
+          {ask.capability.caution === null ? null : (
+            <p className="muted wrap">{ask.capability.caution}</p>
+          )}
+          <div className="cockpit-chat-actions">
+            <Link
+              className="button-link"
+              href={capabilityHref(agent, ask.capability.action)}
+            >
+              {ask.capability.action.label}
+            </Link>
+            {/* The chief is offered beside every other action and instead of
+                none of them — except on `no_provider`, where it *is* the
+                action and drawing it twice would be two buttons doing one
+                thing. */}
+            {ask.capability.action.kind === "chief" ? null : <ChiefEntry />}
+          </div>
         </div>
       )}
     </div>

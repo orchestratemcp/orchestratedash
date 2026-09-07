@@ -20,6 +20,10 @@
 import { readChiefModelChoice, readFleetModelDefault } from "../ai/model-store";
 import { aiProviderById } from "../ai/providers";
 import { briefingFor, fleetChangedSince, type ChiefBriefingRow } from "../chief/briefing";
+import { askCapabilityFor } from "./ask";
+import { readAgentManifest } from "../store";
+import type { ConnectionSourceManifest } from "../connections";
+import type { AskCapability } from "../copy/ask";
 import type { ChiefEvidence } from "../chief/evidence";
 import {
   describeChiefFetched,
@@ -42,7 +46,7 @@ import type { AgentRow, ChiefEvidenceView, ChiefRoomView, ChiefTurnView } from "
  * the tab is the only place a fleet default is set.
  */
 export function chiefRoomView(agents: readonly AgentRow[]): ChiefRoomView {
-  const now = briefingFor(agents);
+  const now = briefingFor(agents, askCapabilities(agents));
   const fleet = chiefFleetFrom(agents);
   const turns = readChiefTurns().map((turn) => toTurnView(turn, now, fleet));
 
@@ -98,6 +102,41 @@ export function chiefRoomView(agents: readonly AgentRow[]): ChiefRoomView {
     blocked: null,
     turns,
   };
+}
+
+/**
+ * What each of these agents can be asked, for the briefing (MAR-878).
+ *
+ * ## Why it is resolved here and not on `AgentRow`
+ *
+ * The fleet row is the document both hosts build for the cards, and a card asks
+ * *does this agent need me* — an unanswerable chat is not that. Putting it on
+ * the row would make every fleet render pay for a manifest, a key card, an
+ * effective model and a saved-report count per agent whether or not anything
+ * asked. This function is reached only when the chief's room is built, which is
+ * the one place the answer is used.
+ *
+ * ## Why an agent DASH cannot read a manifest for is simply absent
+ *
+ * `readAgentManifest` returns null for a row whose document DASH does not hold,
+ * and the map is left without an entry rather than filled with a guess.
+ * `ChiefBriefingRow.ask` is null there, and the briefing says nothing about
+ * questions for that agent — which is true, and better than a sentence claiming
+ * an agent cannot be asked something when nobody looked.
+ */
+function askCapabilities(agents: readonly AgentRow[]): Map<string, AskCapability> {
+  const capabilities = new Map<string, AskCapability>();
+  for (const agent of agents) {
+    const manifest = readAgentManifest(agent.name);
+    if (manifest === null) {
+      continue;
+    }
+    capabilities.set(
+      agent.name,
+      askCapabilityFor(agent.name, manifest as ConnectionSourceManifest, agent.title),
+    );
+  }
+  return capabilities;
 }
 
 /**

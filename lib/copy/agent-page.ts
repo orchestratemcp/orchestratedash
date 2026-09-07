@@ -988,6 +988,16 @@ export const AGENT_COCKPIT_COPY = {
    */
   chat_open: "Open chat",
   /**
+   * The chip beside the runtime pill, naming what this agent can be asked
+   * (MAR-878).
+   *
+   * A label rather than a bare value for `place_label`'s reason: two chips on
+   * one line, both short, and a reader needs to know which question each one
+   * is answering. "Questions" rather than "Chat" because chat is the surface
+   * and a question is the thing a person wants.
+   */
+  capability_label: "Questions",
+  /**
    * The stage names, for the region's accessible name.
    *
    * A screen reader announces the region a person has just moved into, and

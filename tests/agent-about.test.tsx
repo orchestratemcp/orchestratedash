@@ -19,6 +19,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { AgentCockpitHeader } from "../app/_components/agent-header";
 import { describeAgentPlan, type PlannedRouteStepFull } from "../lib/agent-plan";
+import { describeAskCapability } from "../lib/copy/ask";
 import type { AgentControlView } from "../lib/views/agent-control";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -76,6 +77,7 @@ function header(plan: PlannedRouteStepFull[] = ROUTE): string {
         agent={AGENT}
         avatar="wizard"
         busy={null}
+        capability={describeAskCapability("available", { agent: AGENT, service: "OpenRouter" })}
         control={READY}
         goal={GOAL}
         hasFolder={false}

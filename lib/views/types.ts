@@ -451,6 +451,23 @@ export interface ChiefReceiptRow {
   last_run: string | null;
   /** Declared component ids. Values, never labels. */
   capabilities: readonly string[];
+  /**
+   * Whether this agent could be asked a question when the turn was answered,
+   * and what would change that (MAR-878).
+   *
+   * Restated structurally, like the row around it. Null for a receipt written
+   * before the field existed and for a host that resolved no capability —
+   * `ChiefBriefingRow.ask` is where that reading is argued.
+   */
+  ask: {
+    available: boolean;
+    /** The enumerated reason. A value: compared, never printed. */
+    reason: "available" | "no_provider" | "no_key" | "no_model_chosen" | "nothing_saved";
+    /** The page's own headline for what is missing. */
+    requirement: string;
+    /** The page's own next action. */
+    recovery: string;
+  } | null;
 }
 
 /**
