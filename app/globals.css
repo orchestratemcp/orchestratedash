@@ -9291,3 +9291,177 @@ details.agent-settings-danger > summary {
   margin-top: var(--space-2);
 }
 /* ==== MAR-878 end ==== */
+
+/* ==== MAR-879 begin ==== */
+
+/*
+ * Everyday readability: reports and chat (MAR-879).
+ *
+ * ## The measurement this starts from
+ *
+ * The audit that produced this packet was taken at 80% UI scale, and the first
+ * conclusion drawn from it was "the app is small". Half true. `--text-base` is
+ * 13px, and at 80% zoom that is a rendered 10.4px for the paragraphs somebody
+ * is meant to *read* — an agent's briefing, the chief's answer, an agent's
+ * reply — set at the same size as a chip label and a table cell. The other half
+ * is that a briefing paragraph had no measure at all: on a maximised window it
+ * ran the full width of the content column, which is over 140 characters, and
+ * a line that long loses the reader on the return sweep whatever size it is.
+ *
+ * So three things move, and only for prose:
+ *
+ * - **size**, from `--text-base` (13px) to `--text-md` (15px);
+ * - **leading**, from 1.5 to 1.7, which is the number long-form text wants and
+ *   the number `app/tokens.css` deliberately declined to change globally;
+ * - **measure**, capped at 70ch — the same cap `.ask-answer` and `.chief-reply`
+ *   already carry, now applied to the brief and the digest, which did not.
+ *
+ * ## What deliberately does not move
+ *
+ * **The face.** `--font-ui` is JetBrains Mono and `app/globals.css`' own body
+ * rule cites `DESIGN.md`: *"All text should feel like it was rendered by a
+ * system console."* Bit-Command is the adopted design system, not a default to
+ * be improved on, and swapping prose to a proportional face would be the
+ * generic redesign MAR-879 explicitly rules out. Mono at 15px with 1.7 leading
+ * and a 70-character measure is a legible reading setting; mono at 13px with
+ * 1.5 leading and no measure was not. The orchestrator's brief proposed
+ * "monospace for identifiers and code only"; that is recorded as a deviation
+ * in `docs/mar-879-handoff.md` rather than taken, because it is a brand
+ * decision and not this packet's to make.
+ *
+ * **`app/tokens.css`.** Nothing here is a token change. `--prose-*` are three
+ * new names defined against the existing ramp, so every value on screen is
+ * still one of the eight sizes and three leadings the concept specifies.
+ *
+ * **The user's UI scale.** The whole point of the audit's 80% finding is that
+ * DASH must not answer it by writing to a preference somebody set. Zoom is
+ * `webContents.setZoomFactor`, so these rules scale with it in both directions
+ * and the persisted value is never touched.
+ */
+:root {
+  --prose-size: var(--text-md);
+  --prose-leading: var(--leading-loose);
+  /*
+   * 70 characters, not 70 of anything else: `ch` is the width of a `0` in the
+   * element's own font, so the measure survives the size change above and the
+   * user's zoom without being recomputed anywhere.
+   */
+  --prose-measure: 70ch;
+}
+
+/*
+ * The reading surfaces, named one at a time.
+ *
+ * A blanket rule over `p` would have been shorter and would have caught the
+ * hundred paragraphs in DASH that are labels, receipts and one-line notices —
+ * text that is *read at* rather than read, and which the density work in
+ * MAR-528 sized on purpose. Every selector below is a paragraph somebody sits
+ * and reads:
+ *
+ * - `.brief-section p` — the briefing's own body, `digest.tsx`'s `BriefBody`.
+ * - `.digest-deep-dive-text`, `.digest-curation-overview` — the two prose
+ *   blocks an agent's digest can carry.
+ * - `.chief-says`, `.chief-asked` — the chief's answer and the question above
+ *   it.
+ * - `.ask-answer`, `.ask-question` — the same two on an agent's own page.
+ */
+.brief-section p,
+.digest-deep-dive-text,
+.digest-curation-overview,
+.chief-says,
+.chief-asked,
+.ask-answer,
+.ask-question {
+  font-size: var(--prose-size);
+  line-height: var(--prose-leading);
+  max-width: var(--prose-measure);
+}
+
+/*
+ * Headings inside a briefing, given room proportional to the prose under them.
+ *
+ * At 1.5 leading a section heading sat close enough to the paragraph above it
+ * to read as part of it. Nothing about the heading changes; the space before it
+ * does.
+ */
+.brief-section + .brief-section {
+  margin-top: var(--space-6);
+}
+
+/*
+ * The one line that says what to do next, at reading size.
+ *
+ * `.next-action` is accent-coloured and 650-weight and was 13px, which made it
+ * the most emphasised small text on a card rather than the most readable
+ * sentence on it. It is the sentence a beginner is looking for — MAR-879's
+ * acceptance names finding "the result and the next action" — so it reads at
+ * prose size and keeps the same measure as the prose it follows.
+ */
+.next-action {
+  font-size: var(--prose-size);
+  line-height: var(--prose-leading);
+  max-width: var(--prose-measure);
+}
+
+/*
+ * The three doors on Add agent (MAR-879).
+ *
+ * A column rather than a grid of three, and that is the decision worth writing
+ * down. Three side-by-side cards would fit at 1280 and would be the reason the
+ * page broke at 768 — and worse, they would present the three as equivalent
+ * when they are not: they are in the order of how much a person has to have
+ * already, and a row has no order a reader can feel. Stacked, the first one is
+ * first.
+ *
+ * Each door carries the panel treatment `.try-sample` already uses on the
+ * Agents page, so the one a person met when their DASH was empty and the three
+ * they meet here look like the same kind of thing.
+ */
+.add-agent-paths {
+  display: grid;
+  gap: var(--density-stack);
+  max-width: calc(var(--prose-measure) + var(--space-8));
+  margin-bottom: var(--density-stack);
+}
+
+.add-agent-path {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-5);
+  background: var(--panel);
+  /* The card owns its own spacing; `.section`'s stack margin would double the
+     grid gap above. */
+  margin-bottom: 0;
+}
+
+.add-agent-path > h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xl);
+}
+
+.add-agent-path > p {
+  margin: 0 0 var(--space-3);
+  max-width: var(--prose-measure);
+}
+
+/* The folder door's own control block, which brings its own `.section`. */
+.add-agent-path .choose-folder {
+  margin-bottom: 0;
+}
+
+/*
+ * The setup disclosure, which is the one place on this page a command appears.
+ *
+ * `<summary>` is a whole sentence here rather than a two-word label, so it
+ * needs to wrap like prose and not sit on one clipped line.
+ */
+.add-agent-path details > summary {
+  max-width: var(--prose-measure);
+  cursor: pointer;
+}
+
+.add-agent-path details > * + * {
+  margin-top: var(--space-3);
+}
+
+/* ==== MAR-879 end ==== */

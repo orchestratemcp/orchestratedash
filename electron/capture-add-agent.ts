@@ -69,6 +69,16 @@ const ADD_AGENT = "/settings/add-agent";
  */
 const SCENES = [
   { name: "add-agent", open: null },
+  /*
+   * MAR-879. The builder's setup line, which is a disclosure for the same
+   * reason the two below are: it is done once. A sweep that only shot the page
+   * as it loads would photograph three headings and prove nothing about the one
+   * path that has something to reveal.
+   */
+  {
+    name: "add-agent-assistant",
+    open: "The builder is a plugin for your coding assistant",
+  },
   { name: "add-agent-scaffold", open: "Building an agent from scratch?" },
   { name: "add-agent-plan", open: "I have a plan file instead of a folder" },
 ] as const;
@@ -270,8 +280,17 @@ async function layout(target: BrowserWindow): Promise<unknown> {
            page_overflows: root.scrollWidth > root.clientWidth,
            heading_text: h1 === null ? null : h1.textContent,
            primary_label: primary === null ? null : primary.textContent,
+           // MAR-879. The page offers three doors now, so the claim is no
+           // longer "the first control chooses a folder" — it is that all three
+           // are on the page and the folder chooser is still one of them. The
+           // old boolean is kept beside the new ones so a reader comparing this
+           // record with MAR-598's can see which claim changed and when.
            primary_is_choose_folder:
              primary !== null && primary.textContent.trim() === "Choose a folder",
+           path_headings: Array.from(document.querySelectorAll("main .add-agent-path > h2")).map(
+             (heading) => heading.textContent,
+           ),
+           paths_offered: document.querySelectorAll("main .add-agent-path").length,
            command_visible: shown,
            command_above_fold: preTop !== null && preTop < window.innerHeight,
            agent_links: document.querySelectorAll("main a[href^='/agents']").length,
