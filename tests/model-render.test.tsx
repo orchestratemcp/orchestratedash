@@ -8,7 +8,8 @@
  * - the recommended option is first and is what a person lands on;
  * - a model already chosen is in the list even before a provider has been asked,
  *   so a `select` cannot silently show the wrong option;
- * - nothing is drawn at all for an agent whose plan uses no model;
+ * - a row still renders for an agent whose plan uses no model (MAR-885), rather
+ *   than the section vanishing;
  * - the per-step controls are visible and inert rather than hidden when a named
  *   model has set them aside;
  * - a browser tab is told which window can act rather than shown a dead control.
@@ -161,10 +162,34 @@ function adoptable(steps: ModelStepView[] = []): AgentModelSettingsView {
 }
 
 describe("the model section", () => {
-  it("draws nothing at all when the plan uses no model", () => {
-    // A notice explaining an absence would be DASH describing its own internals
-    // at somebody who came to look at their agent — `FolderUpdate`'s own call.
-    expect(section(noChoice("no_model_needed"))).toBe("");
+  /**
+   * MAR-885. The section used to draw nothing at all here — see the removed
+   * early return `app/_components/model-choice.tsx` used to carry — which
+   * made a plan with no model step the one agent in a fleet with no model
+   * row at all, indistinguishable from the section being broken. The row now
+   * renders in every state: `describeNoChoice`'s own honest sentence, and the
+   * one action that exists anywhere near it, which is not a fix for this
+   * agent but the door to building a different one that can be asked
+   * something.
+   */
+  it("says this agent uses no model, and offers the one nearby door", () => {
+    const html = section(noChoice("no_model_needed"));
+    expect(text(html)).toContain("This agent does not use a language model");
+    expect(html).toContain(AGENT_SETTINGS_COPY.model.build_with_assistant);
+    expect(html).toContain('href="/settings/add-agent?path=assistant"');
+  });
+
+  /**
+   * The other two no-choice reasons must not pick up the same link: each of
+   * them already has its own next step, and this one is not it.
+   */
+  it("offers the assistant door on no other no-choice reason", () => {
+    expect(section(noChoice("no_provider_key", STEPS))).not.toContain(
+      AGENT_SETTINGS_COPY.model.build_with_assistant,
+    );
+    expect(section(noChoice("no_key_held"))).not.toContain(
+      AGENT_SETTINGS_COPY.model.build_with_assistant,
+    );
   });
 
   /**
@@ -400,6 +425,8 @@ describe("the model section", () => {
       section(choosable({ chosen_model_id: "anthropic/claude-sonnet-5", steps_in_force: false })),
       section(noChoice("no_provider_key", STEPS)),
       section(noChoice("no_key_held")),
+      // MAR-885's fifth state: nothing wrong, one link, not a fix for this agent.
+      section(noChoice("no_model_needed")),
       // MAR-874's fourth state, and the read-only rendering of it.
       section(adoptable()),
       section(adoptable(), false),

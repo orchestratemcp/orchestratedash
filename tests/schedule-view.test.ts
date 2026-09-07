@@ -110,6 +110,40 @@ describe("what became of the last window", () => {
     expect(view.settled_count).toBe(3);
   });
 
+  /**
+   * MAR-885. `due_at` used to reach the screen as the raw ISO instant this
+   * fixture spells above. `due_label` is the words a person reads instead —
+   * `lib/copy/when.ts`'s `plainMoment` — and it carries no `T`, no `Z`, and
+   * none of the digits that make a timestamp read as a machine's own note to
+   * itself.
+   */
+  it("says the settled window's moment in words, not as the record spells it", () => {
+    const view = buildAgentScheduleView(standing, [settled("refused", "2026-09-05T18:20:00.000Z")]);
+    expect(view.last?.due_label).not.toContain("T18:20");
+    expect(view.last?.due_label).not.toContain("Z");
+    expect(view.last?.due_label).toContain("2026");
+  });
+
+  /**
+   * The same window, for an agent DASH has enrolled on a server. The number
+   * is not converted — MAR-872 owns that — only whose clock it is credited
+   * to, exactly as `standing_line` and `time_hint` already say for the
+   * schedule itself.
+   */
+  it("names the host's clock beside a settled window, without converting the number", () => {
+    const view = buildAgentScheduleView(
+      standing,
+      [settled("refused", "2026-09-05T18:20:00.000Z")],
+      null,
+      "My server",
+    );
+    const label = view.last?.due_label ?? "";
+    expect(label).toContain("My server's clock");
+    // Named at the end, `AGENT_TRIGGER_COPY.due_at_on_host`'s own shape — the
+    // moment leads, the machine follows, so a reader meets the number first.
+    expect(label.startsWith("My server")).toBe(false);
+  });
+
   it("words each outcome", () => {
     expect(buildAgentScheduleView(standing, [settled("ran")]).last?.outcome_label).toBe("Ran");
     expect(buildAgentScheduleView(standing, [settled("missed")]).last?.outcome_label).toBe("Missed");
