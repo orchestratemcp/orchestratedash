@@ -31,7 +31,7 @@ function request(overrides: Partial<Parameters<typeof scaffoldManifest>[0]> = {}
 
 const TEMPLATES = {
   agent: "// agent\n",
-  fingerprint: "// fingerprint\n",
+  sdk: "// the runtime\n",
   openInDash: "// open in dash\n",
 };
 
@@ -146,7 +146,7 @@ describe("the scaffolded manifest", () => {
 });
 
 describe("the file plan", () => {
-  it("carries the program, the fingerprint mirror and the author's own install script", () => {
+  it("carries the program, the runtime it imports and the author's own install script", () => {
     const plan = planScaffold(request(), TEMPLATES);
     expect(plan.ok).toBe(true);
     if (!plan.ok) {
@@ -157,7 +157,7 @@ describe("the file plan", () => {
       "README.md",
       "agent.manifest.json",
       "agent.mjs",
-      "brief-fingerprint.mjs",
+      "dash-agent-sdk.mjs",
       "package.json",
       "scripts/open-in-dash.mjs",
       "sources.json",
@@ -172,7 +172,7 @@ describe("the file plan", () => {
     }
     const byPath = new Map(plan.files.map((file) => [file.path, file.contents]));
     expect(byPath.get("agent.mjs")).toBe(TEMPLATES.agent);
-    expect(byPath.get("brief-fingerprint.mjs")).toBe(TEMPLATES.fingerprint);
+    expect(byPath.get("dash-agent-sdk.mjs")).toBe(TEMPLATES.sdk);
     expect(byPath.get("scripts/open-in-dash.mjs")).toBe(TEMPLATES.openInDash);
   });
 

@@ -9,8 +9,9 @@
  * that never sends a `broker_request` produces a perfectly good digest, and the
  * only symptom is that it is never grouped.
  *
- * So this spawns `agent-kit/template/agent.mjs` as the runner would, speaks the
- * newline-JSON protocol at it over stdin and stdout, serves it a real RSS feed
+ * So this spawns `agent-kit/template/agent.mjs` and the runtime beside it as the
+ * runner would, speaks the newline-JSON protocol at it over stdin and stdout,
+ * serves it a real RSS feed
  * from `127.0.0.1`, and answers its brokered request the way `electron/broker-host.ts`
  * would. No provider, no key, no Electron, no network beyond the loopback.
  *
@@ -34,7 +35,17 @@ import { CURATE_OPERATION_ID } from "../lib/sample-agent";
 import type { DigestArtifact } from "../lib/contracts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const templatePath = path.join(repoRoot, "agent-kit", "template", "agent.mjs");
+const templateDir = path.join(repoRoot, "agent-kit", "template");
+
+/**
+ * The two files a generated agent carries, copied together.
+ *
+ * `agent.mjs` imports `dash-agent-sdk.mjs` by relative path (MAR-887, ADR
+ * 0034), so copying the program alone produces a process that dies on its
+ * first line and a test that times out waiting for an artifact rather than
+ * saying what happened.
+ */
+const PROGRAM_FILES = ["agent.mjs", "dash-agent-sdk.mjs"] as const;
 
 const created: string[] = [];
 afterAll(() => {
@@ -98,7 +109,9 @@ function project(feedUrl: string, declaresProvider: boolean): string {
   const dir = mkdtempSync(path.join(tmpdir(), "dash-scout-"));
   created.push(dir);
 
-  copyFileSync(templatePath, path.join(dir, "agent.mjs"));
+  for (const file of PROGRAM_FILES) {
+    copyFileSync(path.join(templateDir, file), path.join(dir, file));
+  }
   writeFileSync(
     path.join(dir, "sources.json"),
     JSON.stringify({ sources: [{ name: "Test Wire", url: feedUrl, format: "rss" }] }),

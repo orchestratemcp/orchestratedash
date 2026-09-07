@@ -108,7 +108,7 @@ describe("an agent this plugin built, imported by DASH", () => {
     const stored = agentFolderPath(dataDir, "example-agent");
     expect(existsSync(path.join(stored, "agent.manifest.json"))).toBe(true);
     expect(existsSync(path.join(stored, "code", "agent.mjs"))).toBe(true);
-    expect(existsSync(path.join(stored, "code", "brief-fingerprint.mjs"))).toBe(true);
+    expect(existsSync(path.join(stored, "code", "dash-agent-sdk.mjs"))).toBe(true);
   });
 
   /**

@@ -56,7 +56,11 @@ function tempDir(prefix: string): string {
  * Kit's business and `tests/agent-kit.test.ts` covers them; what matters here is
  * that they are copied through untouched.
  */
-const SOURCES = { agent: "// the agent\n", openInDash: "// open in dash\n" };
+const SOURCES = {
+  agent: "// the agent\n",
+  sdk: "// the runtime DASH upgrades\n",
+  openInDash: "// open in dash\n",
+};
 
 const IDS = { handoff_id: "a".repeat(32), nonce: "b".repeat(64) };
 const NOW = new Date("2026-07-29T10:00:00.000Z");
