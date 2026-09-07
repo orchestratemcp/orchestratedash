@@ -35,8 +35,9 @@ import {
   HOST_REACH_PROBLEMS,
   type HostConnectState,
 } from "../lib/host-connect";
-import { standingChip } from "../lib/server-card";
+import { primaryServerAction, standingChip } from "../lib/server-card";
 import { RESIDENCY_COPY } from "../lib/copy/host-residency";
+import type { HostServiceReport } from "../lib/deploy/service-unit";
 import type { AgentDeployChoice, SavedServerView } from "../lib/views/types";
 
 const SERVER: SavedServerView = {
@@ -67,7 +68,7 @@ const NOTHING = {
   installKey: () => undefined,
   // MAR-795, ADR 0031. Null is the honest fixture answer: the card must draw
   // itself from DASH's own record before any server has been asked anything.
-  readResidency: () => Promise.resolve(null),
+  // MAR-871 removed `readResidency` — one Check now asks both questions.
   setResidency: () => Promise.resolve(null),
 };
 
@@ -138,7 +139,19 @@ function card(
       server={server}
       standing={standing}
       checkedAt={checkedAt}
-      agents={[SENDABLE]}
+      /*
+       * MAR-871. Null is the honest fixture answer, and the state every card
+       * opens in: the restart section is drawn from what the server said on the
+       * one Check, and nothing has checked.
+       */
+      residency={null}
+      /*
+       * Two, deliberately. With exactly one sendable agent the card's **Put an
+       * agent here** becomes a direct link to it, which is the right behaviour
+       * and the wrong fixture for a file whose other assertions are about the
+       * chooser — see the block that drives the one-agent case on purpose.
+       */
+      agents={[SENDABLE, MIGRATED]}
       busy={false}
       notice={notice}
       canAct
@@ -173,25 +186,82 @@ describe("the card, in every standing", () => {
       card({ step: "unreachable", label: SERVER.label, problem }),
     );
     expect(new Set(rendered).size).toBe(HOST_REACH_PROBLEMS.length);
-    for (const html of rendered) {
-      expect(html).toContain("next-action");
+    /*
+     * MAR-871 split the second half of this assertion in two, and kept what it
+     * was protecting. Six situations with six fixes must not look like one
+     * shrug — so each card still carries its own way forward. What changed is
+     * *where*: where the card's one control performs the fix, the sentence
+     * repeating it is gone, because noise directly above the thing a person is
+     * meant to press is the worst place to put it.
+     */
+    for (const problem of HOST_REACH_PROBLEMS) {
+      const state = { step: "unreachable", label: SERVER.label, problem } as const;
+      const primary = primaryServerAction(state);
+      const html = card(state);
+      if (primary?.kind === "check") {
+        // Nothing on the card installs an SSH client or fixes an address, so
+        // the guidance stays a sentence.
+        expect(html, problem).toContain("next-action");
+      } else {
+        expect(html, problem).toContain(primary?.label ?? "");
+      }
     }
   });
 
-  it("offers every action on every card, because a broken server is what you act on", () => {
-    // The one that would fail if "check" were hidden behind a working state.
-    // Somebody whose server cannot be reached is the person most likely to press
-    // it, and a card that offered nothing would be a dead end.
+  /*
+   * MAR-871 rewrote this block, and the rewrite is the packet.
+   *
+   * It used to assert that **every** card offers check, put-an-agent-here and
+   * stop-using — which it did, on all fifteen states at once, and that is the
+   * defect: five controls of equal weight on a card whose reader wanted to know
+   * what to press. The invariant worth keeping is the one the old test's comment
+   * names — *"a broken server is what you act on"*, nothing may be a dead end —
+   * and it is kept here in its stronger form: every state offers exactly one
+   * primary action, and everything that came off the face is still reachable.
+   */
+  it("gives every state one primary action, and never none", () => {
     for (const standing of STANDINGS) {
       const html = card(standing);
-      // "Checking..." while a check is in flight — the same control, saying
-      // what it is doing, which is the brief's rule about nothing moving
-      // without saying it did.
-      expect(html, standing.step).toContain(
-        standing.step === "probing" ? "Checking..." : "Check this server",
-      );
-      expect(html, standing.step).toContain("Put an agent here");
+      const primary = primaryServerAction(standing);
+      if (standing.step === "probing") {
+        // "Checking..." while a check is in flight — the same control, saying
+        // what it is doing, which is the brief's rule about nothing moving
+        // without saying it did.
+        expect(html, standing.step).toContain("Checking...");
+        continue;
+      }
+      expect(primary, standing.step).not.toBeNull();
+      expect(html, standing.step).toContain(primary?.label ?? "");
+      expect(html, standing.step).toContain("button-primary");
+    }
+  });
+
+  it("keeps everything that came off the face reachable, in one overflow", () => {
+    /*
+     * Unfindable is the same as missing. Disconnecting, the setup text and
+     * putting a second agent on a machine that has one all still exist — one
+     * summary line in, rather than four buttons competing with the one the state
+     * is about.
+     */
+    for (const standing of STANDINGS) {
+      const html = card(standing);
+      expect(html, standing.step).toContain("More about this server");
       expect(html, standing.step).toContain("Stop using this server");
+      expect(html, standing.step).toContain("Put an agent here");
+    }
+  });
+
+  it("offers the setup text on a server that is already set up", () => {
+    /*
+     * The attended run's own finding: once a server was enrolled there was **no
+     * route back to the setup text at all**. The only way to read it again was
+     * to start adding the same machine twice, which lands in the duplicate this
+     * page apologises for.
+     */
+    for (const standing of STANDINGS) {
+      // Either wording — the card that is *not* set up says so on its primary
+      // control, every other card offers the same recipe from the overflow.
+      expect(card(standing), standing.step).toMatch(/Set up this server|Set it up again/u);
     }
   });
 });
@@ -222,15 +292,22 @@ describe("what is on the server", () => {
 });
 
 describe("the standing at a glance", () => {
-  it("never draws a reachable server with nothing on it as an error", () => {
+  it("draws a reachable server with nothing on it as a success, not a warning", () => {
     /*
      * The attended run's own copy calls this *"reachable, with nothing running
      * on it"*, and it is what a machine looks like on the day it is rented.
-     * Colouring it red tells somebody their working server is broken.
+     * Colouring it red tells somebody their working server is broken — which is
+     * what this assertion originally protected, as `not chip-err`.
+     *
+     * MAR-871 moved it one rung further, on Henrik's ruling. Amber reads as
+     * *almost*, and this is the state every freshly enrolled server is in with
+     * nothing left for the person to repair: it is the one clear **your server
+     * is up**. The one thing left is an invitation, not a fault, and the card
+     * draws it as the single primary action.
      */
-    expect(standingChip({ step: "unreachable", label: "x", problem: "no_runner_there" }).tone).toBe(
-      "chip-warn",
-    );
+    const chip = standingChip({ step: "unreachable", label: "x", problem: "no_runner_there" });
+    expect(chip.tone).toBe("chip-ok");
+    expect(chip.label).toBe("Signed in, ready");
   });
 
   it("draws a server nobody has checked as unknown rather than as broken", () => {
@@ -279,13 +356,14 @@ describe("the standing at a glance", () => {
      * and MAR-605's own words are the test: a person reading the chip should
      * conclude they have one step left, not that their network is broken.
      */
-    for (const problem of [
-      "key_not_on_server",
-      "helper_not_installed",
-      "no_runner_there",
-    ] as const) {
+    for (const problem of ["key_not_on_server", "helper_not_installed"] as const) {
       expect(standingChip({ step: "unreachable", label: "x", problem }).tone).toBe("chip-warn");
     }
+    // MAR-871. `no_runner_there` left this list: there is no step left, so
+    // amber would be reporting an absence of work as an outstanding task.
+    expect(standingChip({ step: "unreachable", label: "x", problem: "no_runner_there" }).tone).toBe(
+      "chip-ok",
+    );
     for (const problem of [
       "no_answer_at_address",
       "sign_in_refused",
@@ -394,30 +472,44 @@ describe("the enrollment and setup affordances (MAR-579)", () => {
     expect(html).toContain("only you can confirm");
   });
 
-  it("offers the setup step when the server is not set up for DASH yet", () => {
+  it("leads with the setup step when the server is not set up for DASH yet", () => {
+    /*
+     * MAR-579 asserted the snippet's own button was on the card. MAR-871 put
+     * the recipe behind the card's single primary control instead — the run of
+     * 2026-09-05 found that a wall of shell script with no sign-in instructions
+     * around it is where a novice stops — so what is asserted now is that this
+     * state's one control is the way in.
+     */
     for (const problem of ["helper_not_installed", "key_not_on_server"] as const) {
-      const html = card({ step: "unreachable", label: SERVER.label, problem });
-      expect(html, problem).toContain("Show the setup text");
+      const state = { step: "unreachable", label: SERVER.label, problem } as const;
+      expect(primaryServerAction(state)?.kind, problem).toBe("setup");
+      expect(card(state), problem).toContain("Set up this server");
     }
   });
 
-  it("does not offer setup on a reachable server or one still to be checked", () => {
-    expect(card({ step: "not_checked", label: SERVER.label })).not.toContain("Show the setup text");
-    expect(
-      card({
-
+  it("still offers it on a server that is already set up, one level in", () => {
+    /*
+     * The reversal MAR-871 made deliberately, and the reason is on the record:
+     * *"no way to re-obtain the setup text for an enrolled server"*. The only
+     * route back to it was to start adding the same machine a second time,
+     * which lands in the duplicate this page apologises for. It is in the
+     * overflow rather than on the face — a working server's card is not about
+     * setting it up — and the wording says so.
+     */
+    for (const standing of [
+      { step: "not_checked", label: SERVER.label } as const,
+      {
         step: "reachable",
-
         label: SERVER.label,
-
         runner_build: "96cef120",
-
-        agents_running: 0,
-
+        agents_running: 1,
         agents_there: [{ agent_id: "News Scout", running: true }],
-
-      }),
-    ).not.toContain("Show the setup text");
+      } as const,
+    ]) {
+      const html = card(standing);
+      expect(html, standing.step).toContain("More about this server");
+      expect(html, standing.step).toContain("Set up this server again");
+    }
   });
 });
 
@@ -464,6 +556,7 @@ describe("a window that cannot act", () => {
         server={SERVER}
         standing={{ step: "not_checked", label: SERVER.label }}
         checkedAt={null}
+        residency={null}
         agents={[]}
         busy={false}
         notice={null}
@@ -471,7 +564,7 @@ describe("a window that cannot act", () => {
         actions={NOTHING}
       />,
     );
-    expect(html).toContain("Check this server");
+    expect(html).toContain("Check now");
     expect(html).toContain("disabled");
   });
 });
@@ -506,7 +599,62 @@ describe("putting an agent here starts on the agent", () => {
   });
 
   it("says why this page no longer asks, once, above the list", () => {
-    expect(list()).toContain(DEPLOY_LIVES_ON_THE_AGENT);
+    // Derived from the constant rather than typed out — React escapes the
+    // apostrophe, and the assertion must still fail if the sentence is reworded
+    // anywhere but in `lib/server-card.ts`.
+    expect(list()).toContain(DEPLOY_LIVES_ON_THE_AGENT.replaceAll("'", "&#x27;"));
+  });
+
+  /*
+   * MAR-871, D8: *"Put an agent here does not put an agent there."*
+   *
+   * The attended run pressed a primary-styled control reading **Put an agent
+   * here** and was answered, in DASH's voice, with a paragraph saying the thing
+   * they had just pressed happens somewhere else. The routing decision is
+   * unchanged — a deploy begins on the agent, which is MAR-642's ruling and
+   * Henrik's — but the words a person meets are now an instruction to finish
+   * the act rather than an explanation of why they cannot.
+   */
+  it("instructs rather than explaining a routing decision", () => {
+    const html = list();
+    expect(html).toContain("Choose the agent to put here");
+    // The row's own control names the act, not the page it lands on.
+    expect(html).toContain("Put it here");
+    expect(html).not.toContain("Open its settings");
+  });
+
+  it("tells two agents with the same name apart", () => {
+    /*
+     * D4. The run found **Meeting Assistant** listed twice with two different
+     * refusal reasons, because two store rows carry a null display name and
+     * both resolve to one title from their manifests. A person asked to choose
+     * between two identical rows with contradictory explanations has been asked
+     * an unanswerable question.
+     *
+     * The id is drawn as a value in its own element — the rule the fingerprint
+     * and the public key are already under here — and only where the names
+     * collide, so MAR-589's ruling holds everywhere it still can.
+     */
+    const twin: AgentDeployChoice = { ...MIGRATED, name: "dash-google-proof", title: SENDABLE.title };
+    const html = list([SENDABLE, twin]);
+    expect(html).toContain(SENDABLE.name);
+    expect(html).toContain("dash-google-proof");
+    expect(html).toContain("send-here-id");
+
+    // And says nothing extra when the names are already distinct.
+    expect(list([SENDABLE])).not.toContain("send-here-id");
+  });
+
+  it("separates a refusal's headline from its detail", () => {
+    /*
+     * The same run: *"Meeting Assistant cannot be put on a server DASH cannot
+     * read what it saved for this agent"*. `describeUndeployable`'s headline
+     * ends on a noun with no full stop, so a renderer that ran the two together
+     * produced one unreadable sentence. Fixed here rather than by rewording
+     * `lib/deploy/deploying.ts`, because it is a layout fault.
+     */
+    const html = list();
+    expect(html).toContain("cannot be put on a server.</strong>");
   });
 
   it("draws an agent it cannot send with its reason, rather than a link", () => {
@@ -766,13 +914,18 @@ describe("the consent ceremony", () => {
  * ---------------------------------------------------------------------- */
 
 describe("the residency section", () => {
-  function residency(server: SavedServerView): string {
+  function residency(server: SavedServerView, report: HostServiceReport | null = null): string {
     return renderToStaticMarkup(
       <ResidencyOnThisServer
         server={server}
+        /*
+         * MAR-871. The section no longer asks the server itself — one **Check
+         * now** does, and hands the answer here. Null is what every card opens
+         * with and is the state most of these assertions are about.
+         */
+        report={report}
         busy={false}
         canAct
-        onRead={() => Promise.resolve(null)}
         onSet={() => Promise.resolve(null)}
       />,
     );
@@ -830,5 +983,60 @@ describe("the residency section", () => {
       residency: { asked_on: "25 August 2026", told_on: null, told_count: null },
     });
     expect(html).not.toContain(RESIDENCY_COPY.removal_label);
+  });
+
+  /* ------------------------------------------------------------------ *
+   * MAR-871: one switch, one honesty sentence
+   * ------------------------------------------------------------------ */
+
+  it("has one control, and it is the switch", () => {
+    /*
+     * The section shipped with two — **Ask the server** and **Turn on** — and
+     * the first of them was a second refresh on a card that already had
+     * **Check this server**. Both signed in; a person had to know which one
+     * asked which question before pressing either.
+     */
+    const html = residency(SERVER);
+    expect(html).not.toContain("Ask the server");
+    expect(html.match(/<button/gu) ?? []).toHaveLength(1);
+  });
+
+  it("says DASH has not asked, rather than drawing its own record as the machine's answer", () => {
+    /*
+     * The load-bearing honesty of one switch. `asked_on` is a row in DASH's
+     * store and stays true with the server asleep — somebody can switch this
+     * off on the machine itself and DASH's record would go on saying on. So
+     * until a check has asked, the section says exactly that.
+     */
+    const html = residency({
+      ...SERVER,
+      residency: { asked_on: "25 August 2026", told_on: null, told_count: null },
+    });
+    expect(html).toContain(RESIDENCY_COPY.not_asked);
+  });
+
+  it("says the server's own answer once there is one, and stops guessing", () => {
+    const html = residency(
+      { ...SERVER, residency: { asked_on: "25 August 2026", told_on: null, told_count: null } },
+      { state: "enabled", starts_at_boot: true, units: ["orchestratedash-news.service"] },
+    );
+    expect(html).toContain("This server starts your agents when it reboots.");
+    expect(html).not.toContain(RESIDENCY_COPY.not_asked);
+    // And the operator's escape hatch, now that the server has named the entry.
+    expect(html).toContain(RESIDENCY_COPY.removal_label);
+  });
+
+  it("draws linger being refused as the server's answer, not as DASH's inference", () => {
+    /*
+     * ADR 0030 decision 2, one machine over, and the sentence MAR-865's own
+     * note is about: an entry that exists is not the same fact as an account
+     * whose programs run with nobody signed in. Reporting `enabled` without the
+     * second would draw *On* over a reboot that does nothing.
+     */
+    const html = residency(
+      { ...SERVER, residency: { asked_on: "25 August 2026", told_on: null, told_count: null } },
+      { state: "enabled", starts_at_boot: false, units: [] },
+    );
+    expect(html).toContain("will only start your agents when somebody signs in");
   });
 });

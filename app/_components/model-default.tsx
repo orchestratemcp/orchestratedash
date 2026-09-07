@@ -51,6 +51,7 @@ export function ModelDefault({
   keys,
   canAct,
   onChanged,
+  standing = true,
 }: {
   setting: FleetModelDefaultView;
   /**
@@ -67,6 +68,22 @@ export function ModelDefault({
   keys: readonly FleetConnectorView[];
   canAct: boolean;
   onChanged: () => void;
+  /**
+   * Whether this component draws the three lines that say what is in force
+   * (MAR-877).
+   *
+   * True everywhere by default, which is what it has always done. The AI tab
+   * passes false because it now says those three lines *above* the fold this
+   * component sits inside — and a heading, a detail and an in-force sentence
+   * repeated inside a closed disclosure would be the same words twice in one
+   * page's markup, read twice by anybody using a screen reader and counted
+   * twice by the copy gates.
+   *
+   * A prop rather than a second component: the picker, the level rows and the
+   * catalogue state below them are the thing worth not duplicating, and they
+   * are identical in both placements.
+   */
+  standing?: boolean;
 }): ReactNode {
   const held = keys.filter((connector) => connector.held !== null);
   /**
@@ -147,10 +164,31 @@ export function ModelDefault({
   }
 
   return (
-    <section className="section model-default" aria-labelledby="model-default">
-      <h2 id="model-default">{setting.headline}</h2>
-      <p className="muted wrap">{setting.detail}</p>
-      <p className="model-in-force wrap">{setting.in_force}</p>
+    <section
+      className="section model-default"
+      {...(standing ? { "aria-labelledby": "model-default" } : {})}
+    >
+      {standing ? (
+        <>
+          <h2 id="model-default">{setting.headline}</h2>
+          <p className="muted wrap">{setting.detail}</p>
+          <p className="model-in-force wrap">{setting.in_force}</p>
+        </>
+      ) : (
+        /*
+         * The detail stays even when the standing does not (MAR-877).
+         *
+         * `standing={false}` suppresses the two lines the page above is already
+         * saying — the headline and the in-force sentence — and nothing else.
+         * `setting.detail` is the sentence that says whose decision this is:
+         * choosing a model on an agent's own page always wins, and changing
+         * this never moves an agent that has chosen. That is a consequence, not
+         * a repetition, and the first draft of this prop dropped it — caught by
+         * comparing the capture harness's own word counts before and after,
+         * which is what those counters are for.
+         */
+        <p className="muted wrap">{setting.detail}</p>
+      )}
 
       {held.length === 0 ? (
         /*

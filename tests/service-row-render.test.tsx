@@ -464,3 +464,80 @@ describe("one service, once", () => {
     expect(html).not.toContain("Disconnect everywhere");
   });
 });
+
+/* ---------------------------------------------------------------------- *
+ * Task-first Settings (MAR-877, UX-3)
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Two agents an author gave the same name, under one service.
+ *
+ * Henrik's Gmail row drew two rows both reading **Meeting Assistant**, both NOT
+ * CONNECTED, with a control each — and a grant is keyed per agent, so the two
+ * presses do different things and nothing on the row said which was which.
+ *
+ * The rule itself is `tests/agent-labels.test.ts`'. What is proved here is that
+ * the row asks it, and asks it in both places an agent's name is drawn: the
+ * list above the fold, and the per-agent receipt inside it.
+ */
+describe("two agents with the same name on one row (MAR-877)", () => {
+  const TWINS = (): AgentConnections[] => [
+    { name: "meeting-assistant-2", title: "Meeting Assistant", avatar: "ninja", rows: [row({ connection_id: "gmail" })], lapses: [] },
+    { name: "standup-notes", title: "Meeting Assistant", avatar: "ninja", rows: [row({ connection_id: "mail" })], lapses: [] },
+  ];
+
+  it("adds the folder that tells them apart, in words", () => {
+    const html = draw(TWINS());
+    expect(html).toContain("Meeting Assistant");
+    expect(html).toContain("Meeting assistant 2");
+    expect(html).toContain("Standup notes");
+    // Never the folder spelled the computer's way — MAR-589's ruling is that an
+    // id is a value and a name is a label, and this goes in a label.
+    expect(html).not.toContain("standup-notes<");
+  });
+
+  it("says nothing extra when the names are already distinct", () => {
+    // A suffix on a unique name is DASH explaining a distinction the reader
+    // cannot see the need for, paid for by every row on the page.
+    const html = draw(SHARED());
+    expect(html).toContain("News Scout");
+    expect(html).not.toContain("News scout —");
+  });
+});
+
+/**
+ * The consequences, still above the button and now under a heading (MAR-877).
+ *
+ * ADR 0002 amendment 2's rule is that a consequence lands before the press, and
+ * `the disclosure that one sign-in serves two agents` above still asserts the
+ * position. What this adds is the half MAR-877 changed: the fold is **open**
+ * while the decision is live, so the person the rule is for reads every word
+ * without pressing anything, and folded once the grant exists, when the same
+ * paragraphs are the record of a decision already taken.
+ */
+describe("the consequences before authorization (MAR-877)", () => {
+  it("is open, not folded, while nothing is connected", () => {
+    const html = draw(SHARED());
+    const at = html.indexOf("Before you sign in");
+    expect(at).toBeGreaterThan(-1);
+    // The `<details>` immediately before that summary carries `open`.
+    const opening = html.lastIndexOf("<details", at);
+    expect(html.slice(opening, at)).toContain("open");
+    // And the consequence itself is still in the markup, unfolded.
+    expect(html).toContain("One sign-in connects Gmail");
+  });
+
+  it("folds once the grant exists, without losing a word of it", () => {
+    const connectedTwins: AgentConnections[] = [
+      { name: "news-scout", title: "News Scout", avatar: "ninja", rows: [row({ connection_id: "gmail", masked_hint: "••••1234" })], lapses: [] },
+      { name: "meeting-assistant", title: "Meeting Assistant", avatar: "ninja", rows: [row({ connection_id: "mail", masked_hint: "••••1234" })], lapses: [] },
+    ];
+    const html = draw(connectedTwins);
+    const at = html.indexOf("Before you sign in");
+    expect(at).toBeGreaterThan(-1);
+    const opening = html.lastIndexOf("<details", at);
+    expect(html.slice(opening, at)).not.toContain("open");
+    // Moved, not deleted. The sentence is still there for anybody who opens it.
+    expect(html).toContain("One sign-in connects Gmail");
+  });
+});

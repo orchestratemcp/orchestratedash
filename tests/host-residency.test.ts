@@ -595,6 +595,20 @@ describe("the reported state", () => {
     expectPlainLanguage([RESIDENCY_COPY.opt_in, RESIDENCY_COPY.toggle.label, RESIDENCY_COPY.toggle.detail]);
   });
 
+  it("keeps DASH's own record apart from the machine's answer (MAR-871)", () => {
+    /*
+     * One switch now, and this is its honest half. `asked_on` is a row in
+     * DASH's store and stays true with the server asleep — somebody can switch
+     * this off on the machine itself and DASH's record would go on saying on.
+     * So until a check has asked, the section says exactly that rather than
+     * drawing DASH's record as though it were the server's answer.
+     */
+    expect(RESIDENCY_COPY.not_asked).toMatch(/has not asked/i);
+    // And it names the one control that would settle it, which is the card's.
+    expect(RESIDENCY_COPY.not_asked).toContain("Check now");
+    expectPlainLanguage([RESIDENCY_COPY.not_asked]);
+  });
+
   it("prints removal instructions somebody can run with DASH already gone", () => {
     const lines = describeResidencyRemoval("orchestratedash-news.service");
     expect(lines).toEqual([

