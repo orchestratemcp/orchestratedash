@@ -286,10 +286,11 @@ flake in §7.3; it did not fire this time.
    force-killed, never had their stores deleted. `scripts/retire-groupD-runners.mjs`
    is the graceful end for them; it points at the group-D root, so it needs the
    path adjusting or the runners retiring by hand.
-6. **A second worktree exists**: `C:\Users\henri\AppData\Local\Temp\wt-ux877-before`,
-   detached at `0e52211` with its own `node_modules`, created only to build the
-   "before" frames. Safe to `git worktree remove --force` once the frames are
-   accepted. Worth knowing: **Turbopack refuses a junctioned `node_modules`**
+6. **The comparison worktree is already gone.** `wt-ux877-before` was detached
+   at `0e52211` with its own `node_modules`, existed only to build the "before"
+   frames, and was removed with `git worktree remove --force` once they were
+   committed — nothing left to clean up there. Worth keeping, though:
+   **Turbopack refuses a junctioned `node_modules`**
    (*"Symlink [project]/node_modules is invalid, it points out of the filesystem
    root"*), so a comparison worktree needs its own real install — about 100
    seconds — rather than a link to a sibling's.
