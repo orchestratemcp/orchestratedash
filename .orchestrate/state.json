@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 12:30: MAR-878 proven (adoption + real question, /usr/bin/bash.0072); MAR-881 merged (#345). DASH on b0631be. Lanes MAR-882/883 running. MAR-874 stays merged (one-screen + MAR-885 look pending).",
+  "lifecycle_note": "2026-09-07 12:35: MAR-885 proven. Proven this wave: MAR-868, MAR-875, MAR-878, MAR-884, MAR-885. Lanes MAR-882/883 running. MAR-874 merged (one-screen check pending).",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2132,10 +2132,14 @@
     },
     {
       "id": "MAR-885",
-      "lifecycle": "merged",
+      "lifecycle": "proven",
       "linear_status": "Backlog",
       "commit": "64c3386",
-      "note": "PR #342: ModelChoice renders the no_model_needed arm (honest sentence + Build one that can link); every-day radio detail follows residency; Scheduled runs show a plain moment on the host clock. Fixture tests only. Proof owed: installed Settings for proof-scout-mar861."
+      "note": "PR #342: ModelChoice renders the no_model_needed arm (honest sentence + Build one that can link); every-day radio detail follows residency; Scheduled runs show a plain moment on the host clock. Fixture tests only. Proof owed: installed Settings for proof-scout-mar861. PROVEN 2026-09-07.",
+      "proof": {
+        "command": "Proof Scout > Settings on Henrik's DASH, master b0631be (includes #342), 2026-09-07 12:25, via the computer-use grant. Linear MAR-885 proof comment.",
+        "run": "Which model it talks with row present (This agent does not use a language model / Build one that can); every-day radio detail says on Vultr box; Scheduled runs reads 6 September 2026 at 20:20, by Vultr box's clock; no ISO instant; Advanced and Remove collapsed."
+      }
     }
   ]
 }
