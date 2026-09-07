@@ -2256,15 +2256,59 @@ async function run(): Promise<void> {
     const at = await resizeTo(window, viewport.width, viewport.height);
     await go(window, citationWrapRoute);
     const citationMeasured = await measure(window);
+    /*
+     * `measure()`'s own `widest_overflow` is the worst single element on the
+     * WHOLE page — useful as a general alarm, but not this scene's own claim,
+     * because a page this rich in fixtures can have an unrelated overflow
+     * elsewhere (MAR-879's own prose change on the same page, an existing
+     * `.visually-hidden` artefact, and so on) that outweighs the citation
+     * row and would make the page-wide number rise or fall for a reason that
+     * has nothing to do with this fix. So the row itself is read directly:
+     * its own `scrollWidth` against its own `clientWidth`, scoped to
+     * `.cockpit-stage` so a same-named element in the rail or elsewhere on
+     * the page can never be the one answering.
+     */
+    const citationRow = (await within(
+      "read the citation row's own overflow",
+      5_000,
+      window.webContents.executeJavaScript(
+        `(() => {
+           const row = document.querySelector(".cockpit-stage .output-card .brief-cited");
+           if (row === null) return { found: false };
+           const box = row.getBoundingClientRect();
+           return {
+             found: true,
+             scroll_width: row.scrollWidth,
+             client_width: row.clientWidth,
+             overflow: row.scrollWidth - row.clientWidth,
+             box_height: box.height,
+             mark_count: row.querySelectorAll(".brief-citation").length,
+           };
+         })()`,
+      ),
+    )) as {
+      found: boolean;
+      scroll_width?: number;
+      client_width?: number;
+      overflow?: number;
+      box_height?: number;
+      mark_count?: number;
+    };
     measurements.push({
       stage: "citation-wrap",
       theme: "light",
       viewport: viewport.name,
+      citation_row_found: citationRow.found,
+      citation_row_scroll_width: citationRow.scroll_width ?? null,
+      citation_row_client_width: citationRow.client_width ?? null,
+      citation_row_overflow: citationRow.overflow ?? null,
+      citation_row_box_height: citationRow.box_height ?? null,
+      citation_row_mark_count: citationRow.mark_count ?? null,
       ...(citationMeasured as object),
     });
     console.log(
       `[cockpit] citation-wrap/${viewport.name} (window reports ${String(at)}px) ` +
-        `${JSON.stringify(citationMeasured)}`,
+        `row=${JSON.stringify(citationRow)} page=${JSON.stringify(citationMeasured)}`,
     );
     await shoot(window, `qa-mar884-citation-wrap-${viewport.name}`);
   }
