@@ -3,7 +3,7 @@
   "project": "DASH",
   "updated_at": "2026-09-07",
   "current_wave": "Wave 3 - Agent Tank (deadline 2026-09-17 15:30 UTC)",
-  "lifecycle_note": "2026-09-07 12:35: MAR-885 proven. Proven this wave: MAR-868, MAR-875, MAR-878, MAR-884, MAR-885. Lanes MAR-882/883 running. MAR-874 merged (one-screen check pending).",
+  "lifecycle_note": "2026-09-07 12:55: every follow-up lane landed (MAR-881 #345, MAR-882 #349, MAR-883 #348, MAR-885 #342). Proven this wave: MAR-868, MAR-875, MAR-878, MAR-884, MAR-885. DASH rebuilding on b019b69 for the last installed looks (881/882/883, 874 one-screen).",
   "authority": {
     "implementation": "Git",
     "intent": "Linear",
@@ -2107,17 +2107,17 @@
     },
     {
       "id": "MAR-882",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "Ask the chief about this agent opens the fleet page cold; prefill the composer (found by MAR-878b). Serialized behind MAR-879 on app/page.tsx."
+      "commit": "b019b69",
+      "note": "PR #349: chiefAskHref + ?ask= on the fleet page prefills the chief composer (About <name>: ) with focus; both Ask-the-chief entries carry the id. Fixture tests. Proof owed: installed press."
     },
     {
       "id": "MAR-883",
-      "lifecycle": "planned",
+      "lifecycle": "merged",
       "linear_status": "Backlog",
-      "commit": null,
-      "note": "Connections Gmail row renders agent ids as labels (GIVE IT TO MEETING-ASSISTANT); pre-existing, found by MAR-877 frames. lib/connectors.ts / lib/fleet/**."
+      "commit": "f4e6d89",
+      "note": "PR #348: shareLabel + titled describeSharedGrant / describeFleetReach; Connections names agents by disambiguated display name, ids behind details. Fixture tests. Proof owed: installed Connections page."
     },
     {
       "id": "MAR-884",
